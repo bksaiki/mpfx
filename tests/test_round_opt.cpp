@@ -10,41 +10,41 @@ using namespace mpfx;
 using round_test_t = std::tuple<exp_t, mant_t, exp_t, mant_t, mpfx::RM>;
 
 TEST(RoundOpt, TestRoundExamples) {
-    EXPECT_EQ(round_opt::round(0.0, 1, std::nullopt, RM::RNE), 0.0);
-    EXPECT_EQ(round_opt::round(std::bit_cast<double>(1ULL), 1, std::nullopt, RM::RNE), std::bit_cast<double>(1ULL));
-    EXPECT_EQ(round_opt::round(std::bit_cast<double>(3ULL), 1, std::nullopt, RM::RTZ), std::bit_cast<double>(2ULL));
+    EXPECT_EQ(round(0.0, 1, std::nullopt, RM::RNE), 0.0);
+    EXPECT_EQ(round(std::bit_cast<double>(1ULL), 1, std::nullopt, RM::RNE), std::bit_cast<double>(1ULL));
+    EXPECT_EQ(round(std::bit_cast<double>(3ULL), 1, std::nullopt, RM::RTZ), std::bit_cast<double>(2ULL));
 
-    EXPECT_EQ(round_opt::round(0.75, 8, -1, RM::RNE), 1.0);
-    EXPECT_EQ(round_opt::round(0.75, 8, -1, RM::RAZ), 1.0);
-    EXPECT_EQ(round_opt::round(0.75, 8, -1, RM::RTZ), 0.0);
+    EXPECT_EQ(round(0.75, 8, -1, RM::RNE), 1.0);
+    EXPECT_EQ(round(0.75, 8, -1, RM::RAZ), 1.0);
+    EXPECT_EQ(round(0.75, 8, -1, RM::RTZ), 0.0);
 
-    EXPECT_EQ(round_opt::round(0.5, 8, -1, RM::RNE), 0.0);
-    EXPECT_EQ(round_opt::round(0.5, 8, -1, RM::RAZ), 1.0);
-    EXPECT_EQ(round_opt::round(0.5, 8, -1, RM::RTZ), 0.0);
+    EXPECT_EQ(round(0.5, 8, -1, RM::RNE), 0.0);
+    EXPECT_EQ(round(0.5, 8, -1, RM::RAZ), 1.0);
+    EXPECT_EQ(round(0.5, 8, -1, RM::RTZ), 0.0);
     
-    EXPECT_EQ(round_opt::round(0.25, 8, -1, RM::RNE), 0.0);
-    EXPECT_EQ(round_opt::round(0.25, 8, -1, RM::RAZ), 1.0);
-    EXPECT_EQ(round_opt::round(0.25, 8, -1, RM::RTZ), 0.0);
+    EXPECT_EQ(round(0.25, 8, -1, RM::RNE), 0.0);
+    EXPECT_EQ(round(0.25, 8, -1, RM::RAZ), 1.0);
+    EXPECT_EQ(round(0.25, 8, -1, RM::RTZ), 0.0);
 }
 
 TEST(RoundOpt, TestRoundFixedExamples) {
-    EXPECT_EQ(round_opt::round(0, 50, 1, std::nullopt, RM::RNE), 0.0);
-    EXPECT_EQ(round_opt::round(1, 0, 1, std::nullopt, RM::RNE), 1.0);
-    EXPECT_EQ(round_opt::round(3, 0, 1, std::nullopt, RM::RTZ), 2.0);
-    EXPECT_EQ(round_opt::round(-1, 0, 1, std::nullopt, RM::RNE), -1.0);
-    EXPECT_EQ(round_opt::round(-3, 0, 1, std::nullopt, RM::RTZ), -2.0);
+    EXPECT_EQ(round(0, 50, 1, std::nullopt, RM::RNE), 0.0);
+    EXPECT_EQ(round(1, 0, 1, std::nullopt, RM::RNE), 1.0);
+    EXPECT_EQ(round(3, 0, 1, std::nullopt, RM::RTZ), 2.0);
+    EXPECT_EQ(round(-1, 0, 1, std::nullopt, RM::RNE), -1.0);
+    EXPECT_EQ(round(-3, 0, 1, std::nullopt, RM::RTZ), -2.0);
 
-    EXPECT_EQ(round_opt::round(3, -2, 8, -1, RM::RNE), 1.0);
-    EXPECT_EQ(round_opt::round(3, -2, 8, -1, RM::RAZ), 1.0);
-    EXPECT_EQ(round_opt::round(3, -2, 8, -1, RM::RTZ), 0.0);
+    EXPECT_EQ(round(3, -2, 8, -1, RM::RNE), 1.0);
+    EXPECT_EQ(round(3, -2, 8, -1, RM::RAZ), 1.0);
+    EXPECT_EQ(round(3, -2, 8, -1, RM::RTZ), 0.0);
 
-    EXPECT_EQ(round_opt::round(2, -2, 8, -1, RM::RNE), 0.0);
-    EXPECT_EQ(round_opt::round(2, -2, 8, -1, RM::RAZ), 1.0);
-    EXPECT_EQ(round_opt::round(2, -2, 8, -1, RM::RTZ), 0.0);
+    EXPECT_EQ(round(2, -2, 8, -1, RM::RNE), 0.0);
+    EXPECT_EQ(round(2, -2, 8, -1, RM::RAZ), 1.0);
+    EXPECT_EQ(round(2, -2, 8, -1, RM::RTZ), 0.0);
 
-    EXPECT_EQ(round_opt::round(1, -2, 8, -1, RM::RNE), 0.0);
-    EXPECT_EQ(round_opt::round(1, -2, 8, -1, RM::RAZ), 1.0);
-    EXPECT_EQ(round_opt::round(1, -2, 8, -1, RM::RTZ), 0.0);
+    EXPECT_EQ(round(1, -2, 8, -1, RM::RNE), 0.0);
+    EXPECT_EQ(round(1, -2, 8, -1, RM::RAZ), 1.0);
+    EXPECT_EQ(round(1, -2, 8, -1, RM::RTZ), 0.0);
 }
 
 
@@ -88,9 +88,9 @@ TEST(RoundOpt, TestRoundWithPrec) {
     };
 
     for (const auto& [exp_in, c_in, exp_out, c_out, rm] : inputs) {
-        const auto x = static_cast<double>(mpfx::RealFloat(false, exp_in, c_in));
-        const auto y_expect = static_cast<double>(mpfx::RealFloat(false, exp_out, c_out));
-        const auto y = round_opt::round(x, 2, std::nullopt, rm);
+        const auto x = static_cast<double>(mpfx::digits_to_double(false, exp_in, c_in));
+        const auto y_expect = static_cast<double>(mpfx::digits_to_double(false, exp_out, c_out));
+        const auto y = round(x, 2, std::nullopt, rm);
         EXPECT_EQ(y, y_expect);
     }
 }
@@ -135,8 +135,8 @@ TEST(RoundOpt, TestRoundWithPrecFixed) {
     };
 
     for (const auto& [exp_in, c_in, exp_out, c_out, rm] : inputs) {
-        const auto y_expect = static_cast<double>(mpfx::RealFloat(false, exp_out, c_out));
-        const auto y = round_opt::round(c_in, exp_in, 2, std::nullopt, rm);
+        const auto y_expect = static_cast<double>(mpfx::digits_to_double(false, exp_out, c_out));
+        const auto y = round(c_in, exp_in, 2, std::nullopt, rm);
         EXPECT_EQ(y, y_expect);
     }
 }
@@ -181,9 +181,9 @@ TEST(RoundOpt, TestRoundWithN) {
     };
 
     for (const auto& [exp_in, c_in, exp_out, c_out, rm] : inputs) {
-        const auto x = static_cast<double>(mpfx::RealFloat(false, exp_in, c_in));
-        const auto y_expect = static_cast<double>(mpfx::RealFloat(false, exp_out, c_out));
-        const auto y = round_opt::round(x, 3, -2, rm);
+        const auto x = static_cast<double>(mpfx::digits_to_double(false, exp_in, c_in));
+        const auto y_expect = static_cast<double>(mpfx::digits_to_double(false, exp_out, c_out));
+        const auto y = round(x, 3, -2, rm);
         EXPECT_EQ(y, y_expect);
     }
 }
@@ -228,8 +228,8 @@ TEST(RoundOpt, TestRoundWithNFixed) {
     };
 
     for (const auto& [exp_in, c_in, exp_out, c_out, rm] : inputs) {
-        const auto y_expect = static_cast<double>(mpfx::RealFloat(false, exp_out, c_out));
-        const auto y = round_opt::round(c_in, exp_in, 3, -2, rm);
+        const auto y_expect = static_cast<double>(mpfx::digits_to_double(false, exp_out, c_out));
+        const auto y = round(c_in, exp_in, 3, -2, rm);
         EXPECT_EQ(y, y_expect);
     }
 }

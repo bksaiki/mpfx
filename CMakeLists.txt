@@ -91,9 +91,7 @@ set(SOURCES
     src/convert.cpp
     src/engine.cpp
     src/ops.cpp
-    src/real.cpp
     src/round.cpp
-    src/round_opt.cpp
 )
 
 # Header files (for IDE organization)
@@ -107,9 +105,7 @@ set(HEADERS
     include/mpfx/engine.hpp
     include/mpfx/ops.hpp
     include/mpfx/params.hpp
-    include/mpfx/real.hpp
     include/mpfx/round.hpp
-    include/mpfx/round_opt.hpp
     include/mpfx/types.hpp
 )
 

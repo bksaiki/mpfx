@@ -1,7 +1,7 @@
 #pragma once
 
 #include "context.hpp"
-#include "round_opt.hpp"
+#include "round.hpp"
 #include "types.hpp"
 
 namespace mpfx {
@@ -36,11 +36,11 @@ public:
     }
 
     inline double round(double x) const override {
-        return round_opt::round(x, prec_, std::nullopt, rm_);
+        return mpfx::round(x, prec_, std::nullopt, rm_);
     }
 
     inline double round(int64_t m, exp_t exp) const override {
-        return round_opt::round(m, exp, prec_, std::nullopt, rm_);
+        return mpfx::round(m, exp, prec_, std::nullopt, rm_);
     }
 };
 
