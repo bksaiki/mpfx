@@ -6,24 +6,26 @@
 
 namespace mpfx {
 
-inline prec_t __ieee754_prec(prec_t es, prec_t nbits) {
+namespace {
+
+inline prec_t ieee754_prec(prec_t es, prec_t nbits) {
     return nbits - es;
 }
 
-inline exp_t __ieee754_emax(prec_t es) {
+inline exp_t ieee754_emax(prec_t es) {
     return static_cast<exp_t>(bitmask<uint32_t>(es - 1));
 }
 
-inline exp_t __ieee754_emin(prec_t es) {
-    return 1 - __ieee754_emax(es);
+inline exp_t ieee754_emin(prec_t es) {
+    return 1 - ieee754_emax(es);
 }
 
-inline double __ieee754_max_value(prec_t es, prec_t nbits) {
+inline double ieee754_max_value(prec_t es, prec_t nbits) {
     using FP64 = ieee754_consts<11, 64>; // IEEE 754 double precision
 
     // format parameters
-    const prec_t prec = __ieee754_prec(es, nbits);
-    const exp_t emax = __ieee754_emax(es);
+    const prec_t prec = ieee754_prec(es, nbits);
+    const exp_t emax = ieee754_emax(es);
 
     // encode maximum value as double
     const uint64_t mbits = bitmask<mant_t>(prec - 1) << (FP64::P - prec);
@@ -31,6 +33,8 @@ inline double __ieee754_max_value(prec_t es, prec_t nbits) {
     const uint64_t bits = ebits | mbits;
     return std::bit_cast<double>(bits);
 }
+
+} // anonymous namespace
 
 /// @brief IEEE 754 floating-point rounding context.
 ///
@@ -51,9 +55,9 @@ public:
     /// @param rm rounding mode
     inline IEEE754Context(prec_t es, prec_t nbits, RM rm)
         : MPBContext(
-            __ieee754_prec(es, nbits),
-            __ieee754_emin(es), rm,
-            __ieee754_max_value(es, nbits)),
+            ieee754_prec(es, nbits),
+            ieee754_emin(es), rm,
+            ieee754_max_value(es, nbits)),
         es_(es), nbits_(nbits) {}
 
     /// @brief Gets the number of exponent bits.
