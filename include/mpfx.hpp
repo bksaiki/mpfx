@@ -15,7 +15,6 @@
 
 // rounding
 #include <mpfx/round.hpp>
-#include <mpfx/round_opt.hpp>
 
 // utility macros and functions
 #include <mpfx/types.hpp>

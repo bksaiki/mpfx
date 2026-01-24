@@ -92,7 +92,6 @@ set(SOURCES
     src/engine.cpp
     src/ops.cpp
     src/round.cpp
-    src/round_opt.cpp
 )
 
 # Header files (for IDE organization)
@@ -107,7 +106,6 @@ set(HEADERS
     include/mpfx/ops.hpp
     include/mpfx/params.hpp
     include/mpfx/round.hpp
-    include/mpfx/round_opt.hpp
     include/mpfx/types.hpp
 )
 
