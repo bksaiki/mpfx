@@ -43,5 +43,8 @@ struct ieee754_consts {
     static constexpr mant_t IMPLICIT1 = 1ULL << M;
 };
 
+
+
+
 } // namespace mpfx
 

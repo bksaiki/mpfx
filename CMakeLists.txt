@@ -86,12 +86,9 @@ include_directories(
 
 # Source files
 set(SOURCES
-    src/context_ieee754.cpp
-    src/context_mpb.cpp
     src/convert.cpp
     src/engine.cpp
     src/ops.cpp
-    src/round.cpp
 )
 
 # Header files (for IDE organization)
