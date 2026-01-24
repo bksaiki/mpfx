@@ -48,8 +48,6 @@ inline bool is_nearest(RoundingMode mode) noexcept {
 /// For nearest rounding modes, the direction is for tie-breaking.
 RoundingDirection get_direction(RoundingMode mode, bool sign);
 
-namespace round_opt {
-
 /// @brief Finalizes the rounding procedure.
 /// @tparam P the precision of the significand `c`
 /// @param s sign
@@ -214,7 +212,5 @@ double round(double x, prec_t p, const std::optional<exp_t>& n, RM rm);
 /// Assumes that the argument has at least p + 2 bits of precision,
 /// where p is the target precision.
 double round(int64_t m, exp_t exp, prec_t p, const std::optional<exp_t>& n, RM rm);
-
-} // namespace round_opt
 
 } // namespace mpfx

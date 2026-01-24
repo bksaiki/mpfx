@@ -28,8 +28,6 @@ RoundingDirection get_direction(RoundingMode mode, bool sign) {
     }
 }
 
-namespace round_opt {
-
 double round(double x, prec_t p, const std::optional<exp_t>& n, RM rm) {
     using FP = ieee754_consts<11, 64>; // double precision
 
@@ -99,8 +97,6 @@ double round(int64_t m, exp_t exp, prec_t p, const std::optional<exp_t>& n, RM r
     // finalize rounding (mantissa has precision 63)
     return __round_finalize<63>(s, e, c, p, n, rm);
 }
-
-} // namespace round_opt
 
 } // namespace mpfx
 
