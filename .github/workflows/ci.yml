@@ -16,18 +16,14 @@ jobs:
             install_deps: |
               sudo apt-get update
               sudo apt-get install -y libgmp-dev libmpfr-dev cmake build-essential
+              ./install_softfloat.sh
 
           # macOS ARM64 (Apple Silicon)
           - os: macos-latest
             arch: arm64
             install_deps: |
               brew install gmp mpfr cmake
-
-          # macOS x86_64 (Intel)
-          - os: macos-13
-            arch: x86_64
-            install_deps: |
-              brew install gmp mpfr cmake
+              ./install_softfloat.sh
 
     steps:
       - name: Checkout code
@@ -52,7 +48,8 @@ jobs:
           ctest --output-on-failure --verbose
 
       - name: Run examples
-        run: ./run_examples.sh
+        run: |
+          ./run_examples.sh
 
       - name: Upload build artifacts
         if: failure()
