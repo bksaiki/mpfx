@@ -1,0 +1,65 @@
+name: CI
+
+on: [push]
+
+jobs:
+  build-and-test:
+    name: ${{ matrix.os }} (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x86_64
+          - os: ubuntu-latest
+            arch: x86_64
+            install_deps: |
+              sudo apt-get update
+              sudo apt-get install -y libgmp-dev libmpfr-dev cmake build-essential
+
+          # macOS ARM64 (Apple Silicon)
+          - os: macos-latest
+            arch: arm64
+            install_deps: |
+              brew install gmp mpfr cmake
+
+          # macOS x86_64 (Intel)
+          - os: macos-13
+            arch: x86_64
+            install_deps: |
+              brew install gmp mpfr cmake
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: ${{ matrix.install_deps }}
+
+      - name: Configure CMake
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTS=ON \
+            -DBUILD_EXAMPLES=ON
+
+      - name: Build
+        run: cmake --build build --config Release -j$(nproc 2>/dev/null || sysctl -n hw.ncpu)
+
+      - name: Run tests
+        run: |
+          cd build
+          ctest --output-on-failure --verbose
+
+      - name: Run examples
+        run: ./run_examples.sh
+
+      - name: Upload build artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            build/CMakeFiles/CMakeOutput.log
+            build/CMakeFiles/CMakeError.log
+          if-no-files-found: ignore
