@@ -37,11 +37,12 @@ struct ieee754_consts {
     static constexpr uint64_t SMASK = 1ULL << (N - 1);
     static constexpr uint64_t EMASK = __bitmask<uint64_t, E>::val << M;
     static constexpr uint64_t MMASK = __bitmask<uint64_t, M>::val;
-
     static constexpr uint64_t EONES = __bitmask<uint64_t, E>::val;
-
     static constexpr mant_t IMPLICIT1 = 1ULL << M;
 };
+
+
+
 
 } // namespace mpfx
 
