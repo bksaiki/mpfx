@@ -37,7 +37,8 @@ jobs:
           cmake -B build \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_TESTS=ON \
-            -DBUILD_EXAMPLES=ON
+            -DBUILD_EXAMPLES=ON \
+            -DUSE_SOFTFLOAT=ON
 
       - name: Build
         run: cmake --build build --config Release -j$(nproc 2>/dev/null || sysctl -n hw.ncpu)
