@@ -84,13 +84,6 @@ include_directories(
     ${MPFR_INCLUDE_DIR}
 )
 
-# Source files
-set(SOURCES
-    src/convert.cpp
-    src/engine.cpp
-    src/ops.cpp
-)
-
 # Header files (for IDE organization)
 set(HEADERS
     include/mpfx/context.hpp
@@ -106,21 +99,22 @@ set(HEADERS
     include/mpfx/types.hpp
 )
 
-# Create library
-add_library(${PROJECT_NAME} ${SOURCES} ${HEADERS})
+# Create interface library (header-only)
+add_library(${PROJECT_NAME} INTERFACE)
 
-# Set library properties
-set_target_properties(${PROJECT_NAME} PROPERTIES
-    VERSION ${PROJECT_VERSION}
-    SOVERSION ${PROJECT_VERSION_MAJOR}
-    PUBLIC_HEADER "${HEADERS}"
+# Set interface include directories
+target_include_directories(${PROJECT_NAME} INTERFACE
+    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
 )
 
 # Install targets
 install(TARGETS ${PROJECT_NAME}
-    LIBRARY DESTINATION lib
-    ARCHIVE DESTINATION lib
-    PUBLIC_HEADER DESTINATION include/mpfx
+    EXPORT ${PROJECT_NAME}Targets
+)
+
+install(DIRECTORY include/mpfx
+    DESTINATION include
 )
 
 # Tests
