@@ -88,8 +88,8 @@ TEST(RoundOpt, TestRoundWithPrec) {
     };
 
     for (const auto& [exp_in, c_in, exp_out, c_out, rm] : inputs) {
-        const auto x = static_cast<double>(mpfx::RealFloat(false, exp_in, c_in));
-        const auto y_expect = static_cast<double>(mpfx::RealFloat(false, exp_out, c_out));
+        const auto x = static_cast<double>(mpfx::digits_to_double(false, exp_in, c_in));
+        const auto y_expect = static_cast<double>(mpfx::digits_to_double(false, exp_out, c_out));
         const auto y = round_opt::round(x, 2, std::nullopt, rm);
         EXPECT_EQ(y, y_expect);
     }
@@ -135,7 +135,7 @@ TEST(RoundOpt, TestRoundWithPrecFixed) {
     };
 
     for (const auto& [exp_in, c_in, exp_out, c_out, rm] : inputs) {
-        const auto y_expect = static_cast<double>(mpfx::RealFloat(false, exp_out, c_out));
+        const auto y_expect = static_cast<double>(mpfx::digits_to_double(false, exp_out, c_out));
         const auto y = round_opt::round(c_in, exp_in, 2, std::nullopt, rm);
         EXPECT_EQ(y, y_expect);
     }
@@ -181,8 +181,8 @@ TEST(RoundOpt, TestRoundWithN) {
     };
 
     for (const auto& [exp_in, c_in, exp_out, c_out, rm] : inputs) {
-        const auto x = static_cast<double>(mpfx::RealFloat(false, exp_in, c_in));
-        const auto y_expect = static_cast<double>(mpfx::RealFloat(false, exp_out, c_out));
+        const auto x = static_cast<double>(mpfx::digits_to_double(false, exp_in, c_in));
+        const auto y_expect = static_cast<double>(mpfx::digits_to_double(false, exp_out, c_out));
         const auto y = round_opt::round(x, 3, -2, rm);
         EXPECT_EQ(y, y_expect);
     }
@@ -228,7 +228,7 @@ TEST(RoundOpt, TestRoundWithNFixed) {
     };
 
     for (const auto& [exp_in, c_in, exp_out, c_out, rm] : inputs) {
-        const auto y_expect = static_cast<double>(mpfx::RealFloat(false, exp_out, c_out));
+        const auto y_expect = static_cast<double>(mpfx::digits_to_double(false, exp_out, c_out));
         const auto y = round_opt::round(c_in, exp_in, 3, -2, rm);
         EXPECT_EQ(y, y_expect);
     }

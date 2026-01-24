@@ -4,8 +4,6 @@
 set(TEST_SOURCES
     test_context.cpp
     test_ops.cpp
-    test_real.cpp
-    test_round.cpp
     test_round_opt.cpp
 )
 
