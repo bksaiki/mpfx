@@ -60,7 +60,7 @@ static double run_rto_engine(
 
     double sum = 0.0;
     for (size_t i = 0; i < N; i++) {
-        sum += mpfx::mul<mpfx::EngineType::RTO>(x_vals[i], y_vals[i], ROUND_CTX);
+        sum += mpfx::mul<mpfx::EngineType::FP_RTO>(x_vals[i], y_vals[i], ROUND_CTX);
     }
 
     auto end = high_resolution_clock::now();
@@ -80,7 +80,7 @@ static double run_exact_engine(
 
     double sum = 0.0;
     for (size_t i = 0; i < N; i++) {
-        sum += mpfx::mul<mpfx::EngineType::EXACT>(x_vals[i], y_vals[i], ROUND_CTX);
+        sum += mpfx::mul<mpfx::EngineType::FP_EXACT>(x_vals[i], y_vals[i], ROUND_CTX);
     }
 
     auto end = high_resolution_clock::now();

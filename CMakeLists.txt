@@ -15,7 +15,6 @@ endif()
 # Options
 option(BUILD_TESTS "Build test executables" ON)
 option(BUILD_EXAMPLES "Build example programs" OFF)
-option(USE_SOFTFLOAT "Enable SoftFloat benchmarks" OFF)
 option(ENABLE_PROFILING "Enable profiling support" OFF)
 
 # C++ standard
@@ -53,16 +52,13 @@ if(NOT MPFR_INCLUDE_DIR OR NOT MPFR_LIBRARY)
 endif()
 
 # SoftFloat (optional)
-if(USE_SOFTFLOAT)
-    list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
-    find_package(SoftFloat)
-    if(SOFTFLOAT_FOUND)
-        message(STATUS "SoftFloat found: ${SOFTFLOAT_LIBRARIES}")
-        add_definitions(-DUSE_SOFTFLOAT)
-    else()
-        message(WARNING "SoftFloat not found. Run install_softfloat.sh to install it.")
-        set(USE_SOFTFLOAT OFF)
-    endif()
+list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
+find_package(SoftFloat)
+if(SOFTFLOAT_FOUND)
+    message(STATUS "SoftFloat found: ${SOFTFLOAT_LIBRARIES}")
+    add_definitions(-DUSE_SOFTFLOAT)
+else()
+    message(ERROR "SoftFloat not found. Run install_softfloat.sh to install it.")
 endif()
 
 # Add GoogleTest
@@ -91,7 +87,9 @@ set(HEADERS
     include/mpfx/context_mps.hpp
     include/mpfx/context_mpb.hpp
     include/mpfx/convert.hpp
-    include/mpfx/engine.hpp
+    include/mpfx/engine_fp.hpp
+    include/mpfx/engine_fpe.hpp
+    include/mpfx/engine_fx.hpp
     include/mpfx/ops.hpp
     include/mpfx/params.hpp
     include/mpfx/round.hpp
