@@ -13,11 +13,10 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 # Options
-option(BUILD_SHARED_LIBS "Build shared libraries" ON)
 option(BUILD_TESTS "Build test executables" ON)
 option(BUILD_EXAMPLES "Build example programs" OFF)
-option(ENABLE_PROFILING "Enable profiling support" OFF)
 option(USE_SOFTFLOAT "Enable SoftFloat benchmarks" OFF)
+option(ENABLE_PROFILING "Enable profiling support" OFF)
 
 # C++ standard
 set(CMAKE_CXX_STANDARD 20)
