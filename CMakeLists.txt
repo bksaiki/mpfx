@@ -18,7 +18,7 @@ option(BUILD_EXAMPLES "Build example programs" OFF)
 option(ENABLE_PROFILING "Enable profiling support" OFF)
 
 # C++ standard
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -51,7 +51,36 @@ if(NOT MPFR_INCLUDE_DIR OR NOT MPFR_LIBRARY)
     message(FATAL_ERROR "MPFR not found")
 endif()
 
-# SoftFloat (optional)
+# FetchContent for external dependencies
+include(FetchContent)
+
+# Add GoogleTest
+FetchContent_Declare(
+  googletest
+  GIT_REPOSITORY https://github.com/google/googletest.git
+  GIT_TAG        v1.17.0 # Use a specific, stable release tag
+)
+# For Windows: Prevent overriding the parent project's compiler/linker settings
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(googletest)
+
+# FloppyFloat
+set(FLOPPYFLOAT_BUILD_TESTS OFF CACHE BOOL "Disable FloppyFloat tests" FORCE)
+set(FLOPPYFLOAT_BUILD_EXAMPLES OFF CACHE BOOL "Disable FloppyFloat examples" FORCE)
+FetchContent_Declare(
+  floppyfloat
+  GIT_REPOSITORY https://github.com/bksaiki/FloppyFloat.git
+  GIT_TAG        main
+)
+FetchContent_MakeAvailable(floppyfloat)
+
+# Include FloppyFloat headers
+if(floppyfloat_POPULATED)
+    include_directories(${floppyfloat_SOURCE_DIR}/src)
+    add_definitions(-DUSE_FLOPPYFLOAT)
+endif()
+
+# SoftFloat
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
 find_package(SoftFloat)
 if(SOFTFLOAT_FOUND)
@@ -61,17 +90,6 @@ if(SOFTFLOAT_FOUND)
 else()
     message(STATUS "SoftFloat not found. SoftFloat benchmarks will be disabled.")
 endif()
-
-# Add GoogleTest
-include(FetchContent)
-FetchContent_Declare(
-  googletest
-  GIT_REPOSITORY https://github.com/google/googletest.git
-  GIT_TAG        v1.17.0 # Use a specific, stable release tag
-)
-# For Windows: Prevent overriding the parent project's compiler/linker settings
-set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(googletest)
 
 # Include directories
 include_directories(
@@ -88,6 +106,7 @@ set(HEADERS
     include/mpfx/context_mps.hpp
     include/mpfx/context_mpb.hpp
     include/mpfx/convert.hpp
+    include/mpfx/engine_ff.hpp
     include/mpfx/engine_fp.hpp
     include/mpfx/engine_fpe.hpp
     include/mpfx/engine_fx.hpp

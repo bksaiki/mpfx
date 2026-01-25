@@ -12,7 +12,7 @@ namespace mpfx {
 
 namespace engine_sf {
 
-/// @brief Computes `x + y` using round-to-odd arithmetic.
+/// @brief Computes `x + y` using softfloat.
 ///
 /// Ensures the result has at least `p` bits of precision.
 /// Otherwise, an exception is thrown.
@@ -36,7 +36,7 @@ inline double add(double x, double y, prec_t p) {
     return std::bit_cast<double>(sf_result.v);
 }
 
-/// @brief Computes `x - y` using round-to-odd arithmetic.
+/// @brief Computes `x - y` using softfloat.
 ///
 /// Ensures the result has at least `p` bits of precision.
 /// Otherwise, an exception is thrown.
@@ -60,7 +60,7 @@ inline double sub(double x, double y, prec_t p) {
     return std::bit_cast<double>(sf_result.v);
 }
 
-/// @brief Computes `x * y` using round-to-odd arithmetic.
+/// @brief Computes `x * y` using softfloat.
 ///
 /// Ensures the result has at least `p` bits of precision.
 /// Otherwise, an exception is thrown.
@@ -84,7 +84,7 @@ inline double mul(double x, double y, prec_t p) {
     return std::bit_cast<double>(sf_result.v);
 }
 
-/// @brief Computes `x / y` using round-to-odd arithmetic.
+/// @brief Computes `x / y` using softfloat.
 ///
 /// Ensures the result has at least `p` bits of precision.
 /// Otherwise, an exception is thrown.
@@ -108,7 +108,7 @@ inline double div(double x, double y, prec_t p) {
     return std::bit_cast<double>(sf_result.v);
 }
 
-/// @brief Computes `sqrt(x)` using round-to-odd arithmetic.
+/// @brief Computes `sqrt(x)` using softfloat.
 ///
 /// Ensures the result has at least `p` bits of precision.
 /// Otherwise, an exception is thrown.
@@ -131,7 +131,7 @@ inline double sqrt(double x, prec_t p) {
     return std::bit_cast<double>(sf_result.v);
 }
 
-/// @brief Computes `x * y + z` using round-to-odd arithmetic.
+/// @brief Computes `x * y + z` using softfloat.
 ///
 /// Ensures the result has at least `p` bits of precision.
 /// Otherwise, an exception is thrown.
