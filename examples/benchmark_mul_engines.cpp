@@ -6,16 +6,22 @@
 
 #include <mpfx.hpp>
 
+#ifdef USE_SOFTFLOAT
+extern "C" {
+#include <softfloat.h>
+}
+#endif
+
 using namespace std::chrono;
 
 // Global configuration
 static constexpr size_t N = 100'000'000; // 100 million operations
 
 // Global rounding context (target precision for multiplication)
-static const mpfx::IEEE754Context ROUND_CTX(8, 32, mpfx::RM::RNE); // BF16
+static const mpfx::IEEE754Context ROUND_CTX(8, 16, mpfx::RM::RNE); // BF16
 
 // Global input context for sampling
-static const mpfx::IEEE754Context INPUT_CTX(8, 32, mpfx::RM::RNE); // MX_E5M2
+static const mpfx::IEEE754Context INPUT_CTX(5, 8, mpfx::RM::RNE); // MX_E5M2
 
 static void generate_inputs(std::vector<double>& x_vals, std::vector<double>& y_vals) {
     std::cout << "Generating " << N << " random test pairs...\n";
@@ -111,6 +117,26 @@ static double run_fixed_engine(
     return duration;
 }
 
+static double run_softfloat_engine(
+    const std::vector<double>& x_vals,
+    const std::vector<double>& y_vals
+) {
+    std::cout << "Running SoftFloat engine...\n";
+    auto start = high_resolution_clock::now();
+
+    double sum = 0.0;
+    for (size_t i = 0; i < N; i++) {
+        sum += mpfx::mul<mpfx::EngineType::SOFTFLOAT>(x_vals[i], y_vals[i], ROUND_CTX);
+    }
+
+    auto end = high_resolution_clock::now();
+    auto duration = duration_cast<microseconds>(end - start).count();
+
+    std::cout << "  Result checksum: " << sum << "\n";
+    std::cout << "  Duration: " << duration * 1e-6 << " seconds\n\n";
+    return duration;
+}
+
 int main() {
     std::cout << "=== Multiplication Engine Benchmark ===\n";
     std::cout << "Operations: " << N << "\n";
@@ -127,6 +153,7 @@ int main() {
     const double duration_rto = run_rto_engine(x_vals, y_vals);
     const double duration_exact = run_exact_engine(x_vals, y_vals);
     const double duration_fixed = run_fixed_engine(x_vals, y_vals);
+    const double duration_softfloat = run_softfloat_engine(x_vals, y_vals);
 
     // Print summary
     std::cout << "=== Performance Summary ===\n";
@@ -138,6 +165,8 @@ int main() {
               << duration_exact / duration_ref << "x slowdown)\n";
     std::cout << "FIXED engine:  " << duration_fixed * 1e-6 << "s (" 
               << duration_fixed / duration_ref << "x slowdown)\n";
+    std::cout << "SoftFloat:     " << duration_softfloat * 1e-6 << "s (" 
+              << duration_softfloat / duration_ref << "x slowdown)\n";
 
     return 0;
 }

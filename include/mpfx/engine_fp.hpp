@@ -16,7 +16,7 @@ inline double finalize(double result, unsigned int fexps) {
     // check if overflow or underflow occurred
     FPY_DEBUG_ASSERT(
         !(fexps & (arch::EXCEPT_OVERFLOW | arch::EXCEPT_UNDERFLOW)),
-        "rto_add: overflow or underflow occurred"
+        "overflow or underflow occurred"
     );
 
     // check inexactness
@@ -39,7 +39,7 @@ inline double add(double x, double y, prec_t p) {
     // double-precision only guarantees 53 bits of precision
     FPY_DEBUG_ASSERT(
         p <= 53,
-        "rto_add: requested precision exceeds double-precision capability"
+        "add: requested precision exceeds double-precision capability"
     );
 
     // prepare floating-point environment

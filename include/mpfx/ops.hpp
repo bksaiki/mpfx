@@ -6,6 +6,7 @@
 #include "engine_fp.hpp"
 #include "engine_fpe.hpp"
 #include "engine_fx.hpp"
+#include "engine_sf.hpp"
 #include "round.hpp"
 
 namespace mpfx {
@@ -14,7 +15,8 @@ namespace mpfx {
 enum class EngineType {
     FP_RTO,   // Native floating-point using RTO emulation
     FP_EXACT, // Exact computation engine
-    FIXED     // Fixed-point arithmetic engine
+    FIXED,    // Fixed-point arithmetic engine
+    SOFTFLOAT // SoftFloat engine
 };
 
 /// @brief Rounds `x` according to the given context.
@@ -53,6 +55,11 @@ double add(double x, double y, const Context& ctx) {
     } else if constexpr (E == EngineType::FP_EXACT) {
         // compute result using exact engine
         const double r = engine_fpe::add(x, y, ctx.round_prec());
+        // use context to round
+        return ctx.round(r);
+    } else if constexpr (E == EngineType::SOFTFLOAT) {
+        // compute result using SoftFloat engine
+        const double r = engine_sf::add(x, y, ctx.round_prec());
         // use context to round
         return ctx.round(r);
     }
@@ -103,6 +110,11 @@ double mul(double x, double y, const Context& ctx) {
             // use context to round
             return ctx.round(r);
         }
+    } else if constexpr (E == EngineType::SOFTFLOAT) {
+        // compute result using SoftFloat engine
+        const double r = engine_sf::mul(x, y, p);
+        // use context to round
+        return ctx.round(r);
     }
 }
 

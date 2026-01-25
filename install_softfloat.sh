@@ -62,9 +62,9 @@ echo "Using build target: $BUILD_TARGET"
 # Build SoftFloat
 cd "build/$BUILD_TARGET"
 
-echo "Building SoftFloat..."
+echo "Building SoftFloat with round-to-odd support..."
 make clean 2>/dev/null || true  # Clean if possible
-make
+make EXTRACFLAGS="-DSOFTFLOAT_ROUND_ODD"
 
 # Create installation directory structure
 echo "Installing SoftFloat to $INSTALL_DIR..."

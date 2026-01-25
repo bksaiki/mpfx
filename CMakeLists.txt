@@ -56,9 +56,10 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
 find_package(SoftFloat)
 if(SOFTFLOAT_FOUND)
     message(STATUS "SoftFloat found: ${SOFTFLOAT_LIBRARIES}")
+    include_directories(${SOFTFLOAT_INCLUDE_DIRS})
     add_definitions(-DUSE_SOFTFLOAT)
 else()
-    message(ERROR "SoftFloat not found. Run install_softfloat.sh to install it.")
+    message(STATUS "SoftFloat not found. SoftFloat benchmarks will be disabled.")
 endif()
 
 # Add GoogleTest
@@ -90,6 +91,7 @@ set(HEADERS
     include/mpfx/engine_fp.hpp
     include/mpfx/engine_fpe.hpp
     include/mpfx/engine_fx.hpp
+    include/mpfx/engine_sf.hpp
     include/mpfx/ops.hpp
     include/mpfx/params.hpp
     include/mpfx/round.hpp
