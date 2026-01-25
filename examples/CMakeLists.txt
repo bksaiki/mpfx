@@ -50,5 +50,10 @@ target_link_libraries(benchmark_mul_engines
     mpfx
     SoftFloat::softfloat)
 
+add_executable(benchmark_div_engines benchmark_div_engines.cpp)
+target_link_libraries(benchmark_div_engines
+    mpfx
+    SoftFloat::softfloat)
+
 add_executable(mixed_dot_prod mixed_dot_prod.cpp)
 target_link_libraries(mixed_dot_prod mpfx)

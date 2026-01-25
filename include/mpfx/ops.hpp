@@ -52,11 +52,6 @@ double add(double x, double y, const Context& ctx) {
         const double r = engine_fp::add(x, y, ctx.round_prec());
         // use context to round
         return ctx.round(r);
-    } else if constexpr (E == EngineType::FP_EXACT) {
-        // compute result using exact engine
-        const double r = engine_fpe::add(x, y, ctx.round_prec());
-        // use context to round
-        return ctx.round(r);
     } else if constexpr (E == EngineType::SOFTFLOAT) {
         // compute result using SoftFloat engine
         const double r = engine_sf::add(x, y, ctx.round_prec());
@@ -74,9 +69,9 @@ double sub(double x, double y, const Context& ctx) {
         const double r = engine_fp::sub(x, y, ctx.round_prec());
         // use context to round
         return ctx.round(r);
-    } else if constexpr (E == EngineType::FP_EXACT) {
-        // compute result using exact engine
-        const double r = engine_fpe::sub(x, y, ctx.round_prec());
+    } else if constexpr (E == EngineType::SOFTFLOAT) {
+        // compute result using SoftFloat engine
+        const double r = engine_sf::sub(x, y, ctx.round_prec());
         // use context to round
         return ctx.round(r);
     }
@@ -120,32 +115,53 @@ double mul(double x, double y, const Context& ctx) {
 
 /// @brief Computes `x / y` using the given context.
 /// Must be the case that `ctx.round_prec() <= 53`.
-inline double div(double x, double y, const Context& ctx) {
-    // compute result using RTO engine
-    const double r = engine_fp::div(x, y, ctx.round_prec());
-
-    // use context to round
-    return ctx.round(r);
+template<EngineType E = EngineType::FP_RTO>
+double div(double x, double y, const Context& ctx) {
+    if constexpr (E == EngineType::FP_RTO) {
+        // compute result using RTO engine
+        const double r = engine_fp::div(x, y, ctx.round_prec());
+        // use context to round
+        return ctx.round(r);
+    } else if constexpr (E == EngineType::SOFTFLOAT) {
+        // compute result using SoftFloat engine
+        const double r = engine_sf::div(x, y, ctx.round_prec());
+        // use context to round
+        return ctx.round(r);
+    }
 }
 
 /// @brief Computes `sqrt(x)` using the given context.
 /// Must be the case that `ctx.round_prec() <= 53`.
-inline double sqrt(double x, const Context& ctx) {
-    // compute result using RTO engine
-    const double r = engine_fp::sqrt(x, ctx.round_prec());
-
-    // use context to round
-    return ctx.round(r);
+template<EngineType E = EngineType::FP_RTO>
+double sqrt(double x, const Context& ctx) {
+    if constexpr (E == EngineType::FP_RTO) {
+        // compute result using RTO engine
+        const double r = engine_fp::sqrt(x, ctx.round_prec());
+        // use context to round
+        return ctx.round(r);
+    } else if constexpr (E == EngineType::SOFTFLOAT) {
+        // compute result using SoftFloat engine
+        const double r = engine_sf::sqrt(x, ctx.round_prec());
+        // use context to round
+        return ctx.round(r);
+    }
 }
 
 /// @brief Computes `x * y + z` using the given context.
 /// Must be the case that `ctx.round_prec() <= 53`.
-inline double fma(double x, double y, double z, const Context& ctx) {
-    // compute result using RTO engine
-    const double r = engine_fp::fma(x, y, z, ctx.round_prec());
-
-    // use context to round
-    return ctx.round(r);
+template<EngineType E = EngineType::FP_RTO>
+double fma(double x, double y, double z, const Context& ctx) {
+    if constexpr (E == EngineType::FP_RTO) {
+        // compute result using RTO engine
+        const double r = engine_fp::fma(x, y, z, ctx.round_prec());
+        // use context to round
+        return ctx.round(r);
+    } else if constexpr (E == EngineType::SOFTFLOAT) {
+        // compute result using SoftFloat engine
+        const double r = engine_sf::fma(x, y, z, ctx.round_prec());
+        // use context to round
+        return ctx.round(r);
+    }
 }
 
 } // end namespace mpfx
