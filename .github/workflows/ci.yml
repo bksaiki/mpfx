@@ -22,12 +22,20 @@ jobs:
           - os: macos-latest
             arch: arm64
             install_deps: |
-              brew install gmp mpfr cmake
+              brew install gmp mpfr cmake llvm
               ./install_softfloat.sh
+            compiler_setup: |
+              echo "$(brew --prefix llvm)/bin" >> $GITHUB_PATH
+              echo "CC=$(brew --prefix llvm)/bin/clang" >> $GITHUB_ENV
+              echo "CXX=$(brew --prefix llvm)/bin/clang++" >> $GITHUB_ENV
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Setup compiler
+        if: matrix.compiler_setup
+        run: ${{ matrix.compiler_setup }}
 
       - name: Install dependencies
         run: ${{ matrix.install_deps }}
