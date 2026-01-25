@@ -16,8 +16,14 @@ echo "Running benchmark_fma..."
 echo "Running benchmark_sqrt..."
 "$SCRIPT_DIR"/build/examples/benchmark_sqrt
 
+echo "Running benchmark_add_engines..."
+"$SCRIPT_DIR"/build/examples/benchmark_add_engines
+
 echo "Running benchmark_mul_engines..."
 "$SCRIPT_DIR"/build/examples/benchmark_mul_engines
+
+echo "Running benchmark_div_engines..."
+"$SCRIPT_DIR"/build/examples/benchmark_div_engines
 
 echo "Running mixed_dot_prod..."
 "$SCRIPT_DIR"/build/examples/mixed_dot_prod

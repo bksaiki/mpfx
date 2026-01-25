@@ -5,17 +5,21 @@
 
 set -e  # Exit on any error
 
+# get the script's directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+echo "Script directory: $SCRIPT_DIR"
+
 SOFTFLOAT_VERSION="3e"
 SOFTFLOAT_DIR="SoftFloat-${SOFTFLOAT_VERSION}"
-INSTALL_DIR="$(pwd)/third_party/softfloat"
+INSTALL_DIR="$SCRIPT_DIR/third_party/softfloat"
 
 echo "=============================================="
 echo "Installing Berkeley SoftFloat ${SOFTFLOAT_VERSION}"
 echo "=============================================="
 
 # Create third_party directory if it doesn't exist
-mkdir -p third_party
-cd third_party
+mkdir -p "$SCRIPT_DIR/third_party"
+cd "$SCRIPT_DIR/third_party"
 
 # Download SoftFloat if not already present
 if [ ! -f "${SOFTFLOAT_DIR}.zip" ]; then
@@ -58,9 +62,9 @@ echo "Using build target: $BUILD_TARGET"
 # Build SoftFloat
 cd "build/$BUILD_TARGET"
 
-echo "Building SoftFloat..."
+echo "Building SoftFloat with round-to-odd support..."
 make clean 2>/dev/null || true  # Clean if possible
-make
+make EXTRACFLAGS="-DSOFTFLOAT_ROUND_ODD"
 
 # Create installation directory structure
 echo "Installing SoftFloat to $INSTALL_DIR..."

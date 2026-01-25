@@ -18,10 +18,10 @@ using namespace std::chrono;
 static constexpr size_t N = 100'000'000; // 100 million operations
 
 // Global rounding context (target precision for multiplication)
-static const mpfx::IEEE754Context ROUND_CTX(8, 16, mpfx::RM::RNE); // BF16
+static const mpfx::IEEE754Context ROUND_CTX(8, 32, mpfx::RM::RNE); // FP32
 
 // Global input context for sampling
-static const mpfx::IEEE754Context INPUT_CTX(5, 8, mpfx::RM::RNE); // MX_E5M2
+static const mpfx::IEEE754Context INPUT_CTX(8, 32, mpfx::RM::RNE); // FP32
 
 static void generate_inputs(std::vector<double>& x_vals, std::vector<double>& y_vals) {
     std::cout << "Generating " << N << " random test pairs...\n";
@@ -66,47 +66,7 @@ static double run_rto_engine(
 
     double sum = 0.0;
     for (size_t i = 0; i < N; i++) {
-        sum += mpfx::mul<mpfx::EngineType::FP_RTO>(x_vals[i], y_vals[i], ROUND_CTX);
-    }
-
-    auto end = high_resolution_clock::now();
-    auto duration = duration_cast<microseconds>(end - start).count();
-
-    std::cout << "  Result checksum: " << sum << "\n";
-    std::cout << "  Duration: " << duration * 1e-6 << " seconds\n\n";
-    return duration;
-}
-
-static double run_exact_engine(
-    const std::vector<double>& x_vals,
-    const std::vector<double>& y_vals
-) {
-    std::cout << "Running EXACT engine...\n";
-    auto start = high_resolution_clock::now();
-
-    double sum = 0.0;
-    for (size_t i = 0; i < N; i++) {
-        sum += mpfx::mul<mpfx::EngineType::FP_EXACT>(x_vals[i], y_vals[i], ROUND_CTX);
-    }
-
-    auto end = high_resolution_clock::now();
-    auto duration = duration_cast<microseconds>(end - start).count();
-
-    std::cout << "  Result checksum: " << sum << "\n";
-    std::cout << "  Duration: " << duration * 1e-6 << " seconds\n\n";
-    return duration;
-}
-
-static double run_fixed_engine(
-    const std::vector<double>& x_vals,
-    const std::vector<double>& y_vals
-) {
-    std::cout << "Running FIXED engine...\n";
-    auto start = high_resolution_clock::now();
-
-    double sum = 0.0;
-    for (size_t i = 0; i < N; i++) {
-        sum += mpfx::mul<mpfx::EngineType::FIXED>(x_vals[i], y_vals[i], ROUND_CTX);
+        sum += mpfx::add<mpfx::EngineType::FP_RTO>(x_vals[i], y_vals[i], ROUND_CTX);
     }
 
     auto end = high_resolution_clock::now();
@@ -126,7 +86,7 @@ static double run_softfloat_engine(
 
     double sum = 0.0;
     for (size_t i = 0; i < N; i++) {
-        sum += mpfx::mul<mpfx::EngineType::SOFTFLOAT>(x_vals[i], y_vals[i], ROUND_CTX);
+        sum += mpfx::add<mpfx::EngineType::SOFTFLOAT>(x_vals[i], y_vals[i], ROUND_CTX);
     }
 
     auto end = high_resolution_clock::now();
@@ -138,10 +98,10 @@ static double run_softfloat_engine(
 }
 
 int main() {
-    std::cout << "=== Multiplication Engine Benchmark ===\n";
+    std::cout << "=== Addition Engine Benchmark ===\n";
     std::cout << "Operations: " << N << "\n";
-    std::cout << "Rounding context: BF16 (8-bit exponent, 16-bit total)\n";
-    std::cout << "Input context: MX_E5M2 (5-bit exponent, 8-bit total)\n\n";
+    std::cout << "Rounding context: FP32\n";
+    std::cout << "Input context: FP32\n\n";
 
     // Generate inputs
     std::vector<double> x_vals(N);
@@ -151,8 +111,6 @@ int main() {
     // Run benchmarks
     const double duration_ref = run_reference(x_vals, y_vals);
     const double duration_rto = run_rto_engine(x_vals, y_vals);
-    const double duration_exact = run_exact_engine(x_vals, y_vals);
-    const double duration_fixed = run_fixed_engine(x_vals, y_vals);
     const double duration_softfloat = run_softfloat_engine(x_vals, y_vals);
 
     // Print summary
@@ -161,10 +119,6 @@ int main() {
     std::cout << "Reference:     " << duration_ref * 1e-6 << "s (baseline)\n";
     std::cout << "RTO engine:    " << duration_rto * 1e-6 << "s (" 
               << duration_rto / duration_ref << "x slowdown)\n";
-    std::cout << "EXACT engine:  " << duration_exact * 1e-6 << "s (" 
-              << duration_exact / duration_ref << "x slowdown)\n";
-    std::cout << "FIXED engine:  " << duration_fixed * 1e-6 << "s (" 
-              << duration_fixed / duration_ref << "x slowdown)\n";
     std::cout << "SoftFloat:     " << duration_softfloat * 1e-6 << "s (" 
               << duration_softfloat / duration_ref << "x slowdown)\n";
 

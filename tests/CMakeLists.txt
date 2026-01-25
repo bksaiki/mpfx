@@ -16,6 +16,7 @@ target_link_libraries(run_tests
     GTest::gtest_main
     ${GMP_LIBRARY}
     ${MPFR_LIBRARY}
+    SoftFloat::softfloat
 )
 
 # Register tests with CTest
