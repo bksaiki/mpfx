@@ -116,17 +116,17 @@ double encode(bool s, exp_t e, mant_t c) {
     return s ? -r : r;
 }
 
-/// @brief Finalizes the rounding procedure.
+/// @brief Finalizes the rounding procedure with a given rounding mode.
 /// @tparam P the precision of the significand `c`
+/// @tparam rm rounding mode
 /// @param s sign
 /// @param e normalized exponent
 /// @param c integer significand
 /// @param p precision to keep
-/// @param rm rounding mode
 /// @param overshiftp are we overshifting all digits?
 /// @return the correctly rounded result as a `double`
-template <prec_t P>
-double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<exp_t>& n, RM rm) {
+template <prec_t P, RM rm>
+double round_finalize_with_rm(bool s, exp_t e, mant_t c, prec_t p, const std::optional<exp_t>& n) {
     using FP = ieee754_consts<11, 64>; // double precision
     FPY_STATIC_ASSERT(P <= 63, "mantissa cannot be 64 bits");
     FPY_DEBUG_ASSERT(p <= FP::P, "cannot keep the requested precision" << p);
@@ -179,19 +179,20 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
             // case split on rounding bits
             if (rb == 0) {
                 // exactly halfway
-                switch (rm) {
-                    case RM::RTZ: incrementp = false; break;
-                    case RM::RAZ:
-                    case RM::RNA: incrementp = true; break;
-                    case RM::RTP: incrementp = !s; break;
-                    case RM::RTN: incrementp = s; break;
-                    case RM::RNE:
-                    case RM::RTE: incrementp = (c & one) != 0; break;
-                    case RM::RTO: incrementp = (c & one) == 0; break;
-                    default:
-                        incrementp = false;
-                        FPY_DEBUG_ASSERT(false, "unreachable");
-                        break;
+                if constexpr (rm == RM::RTZ) {
+                    incrementp = false;
+                } else if constexpr (rm == RM::RAZ || rm == RM::RNA) {
+                    incrementp = true;
+                } else if constexpr (rm == RM::RTP) {
+                    incrementp = !s;
+                } else if constexpr (rm == RM::RTN) {
+                    incrementp = s;
+                } else if constexpr (rm == RM::RNE || rm == RM::RTE) {
+                    incrementp = (c & one) != 0;
+                } else if constexpr (rm == RM::RTO) {
+                    incrementp = (c & one) == 0;
+                } else {
+                    FPY_STATIC_ASSERT(false, "compiled with invalid rounding mode");
                 }
             } else {
                 // above or below halfway
@@ -200,32 +201,82 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
         } else {
             // non-nearest
             // case split on rounding mode
-            switch (rm) {
-                case RM::RTZ: incrementp = false; break;
-                case RM::RAZ: incrementp = true; break;
-                case RM::RTP: incrementp = !s; break;
-                case RM::RTN: incrementp = s; break;
-                case RM::RTE: incrementp = (c & one) != 0; break;
-                case RM::RTO: incrementp = (c & one) == 0; break;
-                default:
-                    incrementp = false;
-                    FPY_DEBUG_ASSERT(false, "unreachable");
-                    break;
+            if constexpr (rm == RM::RTZ) {
+                incrementp = false;
+            } else if constexpr (rm == RM::RAZ) {
+                incrementp = true;
+            } else if constexpr (rm == RM::RTP) {
+                incrementp = !s;
+            } else if constexpr (rm == RM::RTN) {
+                incrementp = s;
+            } else if constexpr (rm == RM::RTE) {
+                incrementp = (c & one) != 0;
+            } else if constexpr (rm == RM::RTO) {
+                incrementp = (c & one) == 0;
+            } else if constexpr (rm == RM::RNE || rm == RM::RNA) {
+                FPY_DEBUG_ASSERT(false, "invalid rounding mode for non-nearest case");
+                incrementp = false; // to silence compiler warning
+            } else {
+                FPY_STATIC_ASSERT(false, "compiled with invalid rounding mode");
             }
         }
 
         // apply increment
-        const mant_t increment = incrementp ? one : static_cast<mant_t>(0);
-        c += increment;
+        if (incrementp) {
+            static constexpr mant_t overflow_mask = 1ULL << P;
 
-        // check if we need to carry
-        static constexpr mant_t overflow_mask = 1ULL << P;
-        const bool carryp = c >= overflow_mask;
-        e += static_cast<exp_t>(carryp);
-        c >>= static_cast<uint8_t>(carryp);
+            c += one;
+            if (c >= overflow_mask) {
+                c >>= 1;
+                e += 1;
+            }
+        }
+
+        // const mant_t increment = incrementp ? one : static_cast<mant_t>(0);
+        // c += increment;
+
+        // // check if we need to carry
+        // static constexpr mant_t overflow_mask = 1ULL << P;
+        // const bool carryp = c >= overflow_mask;
+        // e += static_cast<exp_t>(carryp);
+        // c >>= static_cast<uint8_t>(carryp);
     }
 
     return encode<P>(s, e, c);
+}
+
+/// @brief Finalizes the rounding procedure.
+/// @tparam P the precision of the significand `c`
+/// @param s sign
+/// @param e normalized exponent
+/// @param c integer significand
+/// @param p precision to keep
+/// @param rm rounding mode
+/// @param overshiftp are we overshifting all digits?
+/// @return the correctly rounded result as a `double`
+template <prec_t P>
+double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<exp_t>& n, RM rm) {
+    switch (rm) {
+    case RM::RNE:
+        return round_finalize_with_rm<P, RM::RNE>(s, e, c, p, n);
+    case RM::RNA:
+        return round_finalize_with_rm<P, RM::RNA>(s, e, c, p, n);
+    case RM::RTP:
+        return round_finalize_with_rm<P, RM::RTP>(s, e, c, p, n);
+    case RM::RTN:
+        return round_finalize_with_rm<P, RM::RTN>(s, e, c, p, n);
+    case RM::RTZ:
+        return round_finalize_with_rm<P, RM::RTZ>(s, e, c, p, n);
+    case RM::RAZ:
+        return round_finalize_with_rm<P, RM::RAZ>(s, e, c, p, n);
+    case RM::RTO:
+        return round_finalize_with_rm<P, RM::RTO>(s, e, c, p, n);
+    case RM::RTE:
+        return round_finalize_with_rm<P, RM::RTE>(s, e, c, p, n);
+    default:
+        FPY_DEBUG_ASSERT(false, "invalid rounding mode");
+        return 0.0; // to silence compiler warning
+    }
 }
 
 } // anonymous namespace
@@ -237,7 +288,7 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
 /// Assumes that the argument has at least p + 2 bits of precision,
 /// where p is the target precision.
 inline double round(double x, prec_t p, const std::optional<exp_t>& n, RM rm) {
-        using FP = ieee754_consts<11, 64>; // double precision
+    using FP = ieee754_consts<11, 64>; // double precision
 
     // Fast path: special values (infinity, NaN, zero)
     if (!std::isfinite(x) || x == 0.0) {
@@ -275,7 +326,7 @@ inline double round(double x, prec_t p, const std::optional<exp_t>& n, RM rm) {
 /// Assumes that the argument has at least p + 2 bits of precision,
 /// where p is the target precision.
 inline double round(int64_t m, exp_t exp, prec_t p, const std::optional<exp_t>& n, RM rm) {
-        static constexpr int64_t MIN_VAL = std::numeric_limits<int64_t>::min();
+    static constexpr int64_t MIN_VAL = std::numeric_limits<int64_t>::min();
     static constexpr prec_t PREC = 63;
 
     // Fast path: zero
@@ -309,7 +360,7 @@ inline double round(int64_t m, exp_t exp, prec_t p, const std::optional<exp_t>& 
     const exp_t e = exp + (PREC - 1);
 
     // finalize rounding (mantissa has precision 63)
-    return round_finalize<63>(s, e, c, p, n, rm);
+    return round_finalize<PREC>(s, e, c, p, n, rm);
 }
 
 } // namespace mpfx
