@@ -60,7 +60,7 @@ inline RoundingDirection get_direction(RoundingMode mode, bool sign) {
         case RoundingMode::RTE:
             return RoundingDirection::TO_EVEN;
         default:
-            FPY_UNREACHABLE("invalid rounding mode");
+            MPFX_UNREACHABLE("invalid rounding mode");
     }
 }
 
@@ -79,7 +79,7 @@ double encode(bool s, exp_t e, mant_t c) {
         // `c` has more than 53 bits of precision
         static constexpr prec_t shift_p = P - FP::P;
         static constexpr mant_t excess_mask = __bitmask<mant_t, shift_p>::val;
-        FPY_DEBUG_ASSERT((c & excess_mask) == 0, "shifting off digits");
+        MPFX_DEBUG_ASSERT((c & excess_mask) == 0, "shifting off digits");
         c >>= shift_p;
     } else if constexpr (P < FP::P) {
         // `c` has less than 53 bits of precision
@@ -123,8 +123,8 @@ double encode(bool s, exp_t e, mant_t c) {
 template <prec_t P>
 double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<exp_t>& n, RM rm) {
     using FP = ieee754_consts<11, 64>; // double precision
-    FPY_STATIC_ASSERT(P <= 63, "mantissa cannot be 64 bits");
-    FPY_DEBUG_ASSERT(p <= FP::P, "cannot keep the requested precision" << p);
+    MPFX_STATIC_ASSERT(P <= 63, "mantissa cannot be 64 bits");
+    MPFX_DEBUG_ASSERT(p <= FP::P, "cannot keep the requested precision" << p);
 
     // our precision might be limited by subnormalization
     bool overshiftp = false;
@@ -152,7 +152,7 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
     // check if we rounded off any significant digits
     if (c_lost != 0) {
         // slow path: inexact result
-        FPY_DEBUG_ASSERT(p_lost > 0, "we must have lost precision");
+        MPFX_DEBUG_ASSERT(p_lost > 0, "we must have lost precision");
 
         // value of the LSB for precision p
         const mant_t one = 1ULL << p_lost;
@@ -217,7 +217,7 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
                 break;
             default:
                 incrementp = false;
-                FPY_DEBUG_ASSERT(false, "unreachable");
+                MPFX_DEBUG_ASSERT(false, "unreachable");
                 break;
         }
 

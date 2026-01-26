@@ -14,15 +14,15 @@ namespace engine_fpe {
 ///
 /// Ensures the result has at least `p` bits of precision.
 /// An exception is thrown if the computation is inexact
-/// when compiled with FPY_DEBUG.
+/// when compiled with MPFX_DEBUG.
 inline double add(double x, double y, prec_t p) {
     // double-precision only guarantees 53 bits of precision
-    FPY_DEBUG_ASSERT(
+    MPFX_DEBUG_ASSERT(
         p <= 53,
         "add_exact: requested precision exceeds double-precision capability"
     );
 
-#if defined(FPY_DEBUG)
+#if defined(MPFX_DEBUG)
     // prepare floating-point environment
     arch::clear_exceptions();
 #endif
@@ -30,10 +30,10 @@ inline double add(double x, double y, prec_t p) {
     // perform exact addition
     double result = x + y;
 
-#if defined(FPY_DEBUG)
+#if defined(MPFX_DEBUG)
     // check for inexactness or overflow
     const auto fexps = arch::get_exceptions();
-    FPY_DEBUG_ASSERT(
+    MPFX_DEBUG_ASSERT(
         !(fexps & (arch::EXCEPT_INEXACT | arch::EXCEPT_OVERFLOW)),
         "add_exact: addition was not exact"
     );
@@ -48,15 +48,15 @@ inline double add(double x, double y, prec_t p) {
 ///
 /// Ensures the result has at least `p` bits of precision.
 /// An exception is thrown if the computation is inexact
-/// when compiled with FPY_DEBUG.
+/// when compiled with MPFX_DEBUG.
 inline double sub(double x, double y, prec_t p) {
     // double-precision only guarantees 53 bits of precision
-    FPY_DEBUG_ASSERT(
+    MPFX_DEBUG_ASSERT(
         p <= 53,
         "sub_exact: requested precision exceeds double-precision capability"
     );
 
-#if defined(FPY_DEBUG)
+#if defined(MPFX_DEBUG)
     // prepare floating-point environment
     arch::clear_exceptions();
 #endif
@@ -64,10 +64,10 @@ inline double sub(double x, double y, prec_t p) {
     // perform exact subtraction
     double result = x - y;
 
-#if defined(FPY_DEBUG)
+#if defined(MPFX_DEBUG)
     // check for inexactness or overflow
     const auto fexps = arch::get_exceptions();
-    FPY_DEBUG_ASSERT(
+    MPFX_DEBUG_ASSERT(
         !(fexps & (arch::EXCEPT_INEXACT | arch::EXCEPT_OVERFLOW)),
         "sub_exact: subtraction was not exact"
     );
@@ -82,15 +82,15 @@ inline double sub(double x, double y, prec_t p) {
 ///
 /// Ensures the result has at least `p` bits of precision.
 /// An exception is thrown if the computation is inexact
-/// when compiled with FPY_DEBUG.
+/// when compiled with MPFX_DEBUG.
 inline double mul(double x, double y, prec_t p) {
     // double-precision only guarantees 53 bits of precision
-    FPY_DEBUG_ASSERT(
+    MPFX_DEBUG_ASSERT(
         p <= 53,
         "mul_exact: requested precision exceeds double-precision capability"
     );
 
-#if defined(FPY_DEBUG)
+#if defined(MPFX_DEBUG)
     // prepare floating-point environment
     arch::clear_exceptions();
 #endif
@@ -98,10 +98,10 @@ inline double mul(double x, double y, prec_t p) {
     // perform exact multiplication
     double result = x * y;
 
-#if defined(FPY_DEBUG)
+#if defined(MPFX_DEBUG)
     // check for inexactness or overflow
     const auto fexps = arch::get_exceptions();
-    FPY_DEBUG_ASSERT(
+    MPFX_DEBUG_ASSERT(
         !(fexps & (arch::EXCEPT_INEXACT | arch::EXCEPT_OVERFLOW)),
         "mul_exact: multiplication was not exact"
     );

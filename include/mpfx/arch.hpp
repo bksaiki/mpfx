@@ -3,18 +3,18 @@
 // Architecture-specific includes and definitions
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
     #include <xmmintrin.h>
-    #define FPY_ARCH_X86
+    #define MPFX_ARCH_X86
 #elif defined(__aarch64__) || defined(_M_ARM64)
-    #define FPY_ARCH_ARM64
+    #define MPFX_ARCH_ARM64
 #else
     #include <cfenv>
-    #define FPY_ARCH_GENERIC
+    #define MPFX_ARCH_GENERIC
 #endif
 
 namespace mpfx {
 namespace arch {
 
-#ifdef FPY_ARCH_X86
+#ifdef MPFX_ARCH_X86
     // default MXCSR value with all exceptions masked
     static constexpr unsigned int MXCSR_DEFAULT = 0x1F80;
 
@@ -91,7 +91,7 @@ namespace arch {
         return exceptions;
     }
 
-#elif defined(FPY_ARCH_ARM64)
+#elif defined(MPFX_ARCH_ARM64)
     // Rounding mode constants for ARM64
     static constexpr int RM_RNE = 0x0;  // Round to Nearest Even
     static constexpr int RM_RTP = 0x1;  // Round Toward Positive

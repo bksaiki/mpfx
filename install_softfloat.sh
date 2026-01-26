@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# SoftFloat Installation Script for FPY Benchmarks
+# SoftFloat Installation Script for MPFX Benchmarks
 # This script downloads and builds Berkeley SoftFloat 3e
 
 set -e  # Exit on any error

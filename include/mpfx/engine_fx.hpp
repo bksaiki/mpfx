@@ -15,7 +15,7 @@ namespace engine_fx {
 /// and `exp` is a base-2 exponent.
 inline std::tuple<int64_t, exp_t> mul(double x, double y, prec_t p) {
     // fixed-point only guarantees 63 bits of precision
-    FPY_DEBUG_ASSERT(
+    MPFX_DEBUG_ASSERT(
         p <= 63,
         "mul_fixed: requested precision exceeds capability"
     );

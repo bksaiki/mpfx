@@ -163,10 +163,10 @@ int main() {
     static constexpr mpfx::RM ROUNDING_MODE = mpfx::RM::RNE;
     
     std::cout << "=======================================================\n";
-    std::cout << "   FPY vs MPFR vs SoftFloat Multiplication Benchmark\n";
+    std::cout << "   MPFX vs MPFR vs SoftFloat Multiplication Benchmark\n";
     std::cout << "=======================================================\n";
     std::cout << "Operations:     " << N << "\n";
-    std::cout << "Precision:      " << PRECISION << " bits (FPY/MPFR), 32-bit (SoftFloat)\n";
+    std::cout << "Precision:      " << PRECISION << " bits (MPFX/MPFR), 32-bit (SoftFloat)\n";
     std::cout << "Rounding mode:  " << rm_to_string(ROUNDING_MODE) << "\n";
     std::cout << "Input range:    [-1.0, 1.0] (uniform)\n";
     std::cout << "-------------------------------------------------\n\n";
@@ -187,8 +187,8 @@ int main() {
     
     std::cout << "Done.\n\n";
     
-    // Benchmark FPY
-    std::cout << "Benchmarking FPY mul()...\n";
+    // Benchmark MPFX
+    std::cout << "Benchmarking MPFX mul()...\n";
     double mpfx_time = benchmark_mpfx_mul(x_vals, y_vals, PRECISION, ROUNDING_MODE);
     std::cout << "Done.\n\n";
     
@@ -207,7 +207,7 @@ int main() {
     std::cout << "                      RESULTS\n";
     std::cout << "=======================================================\n";
     std::cout << std::fixed << std::setprecision(2);
-    std::cout << "FPY mul():               " << mpfx_time << " ns/op\n";
+    std::cout << "MPFX mul():               " << mpfx_time << " ns/op\n";
     std::cout << "MPFR mpfr_mul():         " << mpfr_time << " ns/op\n";
     std::cout << "SoftFloat f32_mul():     " << softfloat_time << " ns/op\n";
     std::cout << "-------------------------------------------------------\n";
@@ -215,18 +215,18 @@ int main() {
     // Performance comparisons
     if (mpfx_time < mpfr_time) {
         double speedup = mpfr_time / mpfx_time;
-        std::cout << "FPY is " << std::setprecision(2) << speedup << "x FASTER than MPFR\n";
+        std::cout << "MPFX is " << std::setprecision(2) << speedup << "x FASTER than MPFR\n";
     } else {
         double slowdown = mpfx_time / mpfr_time;
-        std::cout << "FPY is " << std::setprecision(2) << slowdown << "x SLOWER than MPFR\n";
+        std::cout << "MPFX is " << std::setprecision(2) << slowdown << "x SLOWER than MPFR\n";
     }
     
     if (mpfx_time < softfloat_time) {
         double speedup = softfloat_time / mpfx_time;
-        std::cout << "FPY is " << std::setprecision(2) << speedup << "x FASTER than SoftFloat\n";
+        std::cout << "MPFX is " << std::setprecision(2) << speedup << "x FASTER than SoftFloat\n";
     } else {
         double slowdown = mpfx_time / softfloat_time;
-        std::cout << "FPY is " << std::setprecision(2) << slowdown << "x SLOWER than SoftFloat\n";
+        std::cout << "MPFX is " << std::setprecision(2) << slowdown << "x SLOWER than SoftFloat\n";
     }
     
     if (mpfr_time < softfloat_time) {

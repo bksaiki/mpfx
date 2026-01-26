@@ -18,7 +18,7 @@ namespace mpfx {
 /// @return a tuple `(m, exp)` representing `x` as `m * 2^exp`
 inline std::tuple<int64_t, exp_t> to_fixed(double x) {
     using FP = ieee754_consts<11, 64>; // double precision
-    FPY_ASSERT(std::isfinite(x), "to_fixed: input must be finite");
+    MPFX_ASSERT(std::isfinite(x), "to_fixed: input must be finite");
 
     // fast path: zero
     if (x == 0.0) {
@@ -84,12 +84,12 @@ inline double digits_to_double(bool s, exp_t exp, mant_t c) {
     if (shift > 0) {
         // shift left by a non-negative amount
         const prec_t p_new = std::bit_width(c) + static_cast<prec_t>(shift);
-        FPY_DEBUG_ASSERT(p_new <= 64, "normalize: precision exceeds 64 bits");
+        MPFX_DEBUG_ASSERT(p_new <= 64, "normalize: precision exceeds 64 bits");
         c <<= shift;
     } else if (shift < 0) {
         // shift right by a positive amount
         const mant_t c_lost = c & bitmask<mant_t>(-shift);
-        FPY_DEBUG_ASSERT(c_lost == 0, "normalize: losing digits");
+        MPFX_DEBUG_ASSERT(c_lost == 0, "normalize: losing digits");
         c >>= -shift;
     }
 
