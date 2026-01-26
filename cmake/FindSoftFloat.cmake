@@ -34,9 +34,9 @@ if(SOFTFLOAT_FOUND)
     set(SOFTFLOAT_LIBRARIES ${SOFTFLOAT_LIBRARY})
     
     # Create imported target
-    if(NOT TARGET SoftFloat::softfloat)
-        add_library(SoftFloat::softfloat STATIC IMPORTED)
-        set_target_properties(SoftFloat::softfloat PROPERTIES
+    if(NOT TARGET softfloat)
+        add_library(softfloat STATIC IMPORTED)
+        set_target_properties(softfloat PROPERTIES
             IMPORTED_LOCATION ${SOFTFLOAT_LIBRARY}
             INTERFACE_INCLUDE_DIRECTORIES ${SOFTFLOAT_INCLUDE_DIR}
         )

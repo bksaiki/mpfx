@@ -5,7 +5,7 @@ target_link_libraries(benchmark_add
     mpfx
     ${GMP_LIBRARY}
     ${MPFR_LIBRARY}
-    SoftFloat::softfloat
+    softfloat
 )
 
 add_executable(benchmark_mul benchmark_mul.cpp)
@@ -13,7 +13,7 @@ target_link_libraries(benchmark_mul
     mpfx
     ${GMP_LIBRARY}
     ${MPFR_LIBRARY}
-    SoftFloat::softfloat
+    softfloat
 )
 
 add_executable(benchmark_div benchmark_div.cpp)
@@ -21,7 +21,7 @@ target_link_libraries(benchmark_div
     mpfx
     ${GMP_LIBRARY}
     ${MPFR_LIBRARY}
-    SoftFloat::softfloat
+    softfloat
 )
 
 add_executable(benchmark_fma benchmark_fma.cpp)
@@ -29,7 +29,7 @@ target_link_libraries(benchmark_fma
     mpfx
     ${GMP_LIBRARY}
     ${MPFR_LIBRARY}
-    SoftFloat::softfloat
+    softfloat
 )
 
 add_executable(benchmark_sqrt benchmark_sqrt.cpp)
@@ -37,25 +37,25 @@ target_link_libraries(benchmark_sqrt
     mpfx
     ${GMP_LIBRARY}
     ${MPFR_LIBRARY}
-    SoftFloat::softfloat
+    softfloat
 )
 
 add_executable(benchmark_add_engines benchmark_add_engines.cpp)
 target_link_libraries(benchmark_add_engines
     mpfx
-    SoftFloat::softfloat
+    softfloat
     floppy_float)
 
 add_executable(benchmark_mul_engines benchmark_mul_engines.cpp)
 target_link_libraries(benchmark_mul_engines
     mpfx
-    SoftFloat::softfloat
+    softfloat
     floppy_float)
 
 add_executable(benchmark_div_engines benchmark_div_engines.cpp)
 target_link_libraries(benchmark_div_engines
     mpfx
-    SoftFloat::softfloat
+    softfloat
     floppy_float)
 
 add_executable(mixed_dot_prod mixed_dot_prod.cpp)
