@@ -1,3 +1,4 @@
+#include <bit>
 #include <chrono>
 #include <iomanip>
 #include <iostream>
@@ -5,12 +6,11 @@
 #include <vector>
 
 #include <mpfx.hpp>
+#include <floppy_float.h>
 
-#ifdef USE_SOFTFLOAT
 extern "C" {
 #include <softfloat.h>
 }
-#endif
 
 using namespace std::chrono;
 
@@ -47,6 +47,73 @@ static double run_reference(
     double sum = 0.0;
     for (size_t i = 0; i < N; i++) {
         sum += x_vals[i] * y_vals[i];
+    }
+
+    auto end = high_resolution_clock::now();
+    auto duration = duration_cast<microseconds>(end - start).count();
+
+    std::cout << "  Result checksum: " << sum << "\n";
+    std::cout << "  Duration: " << duration * 1e-6 << " seconds\n\n";
+    return duration;
+}
+
+static double run_softfloat(
+    const std::vector<double>& x_vals,
+    const std::vector<double>& y_vals
+) {
+    std::cout << "Running SoftFloat reference...\n";
+    auto start = high_resolution_clock::now();
+
+    std::vector<float> x_fl(N);
+    std::vector<float> y_fl(N);
+    for (size_t i = 0; i < N; i++) {
+        x_fl[i] = static_cast<float>(x_vals[i]);
+        y_fl[i] = static_cast<float>(y_vals[i]);
+    }
+
+    double sum = 0.0;
+    for (size_t i = 0; i < N; i++) {
+        // Convert to SoftFloat format
+        float32_t x, y;
+        x.v = std::bit_cast<uint32_t>(x_fl[i]);
+        y.v = std::bit_cast<uint32_t>(y_fl[i]);
+
+        // Perform addition
+        float32_t r = f32_add(x, y);
+
+        // Convert back to double
+        sum += std::bit_cast<float>(r.v);
+    }
+
+    auto end = high_resolution_clock::now();
+    auto duration = duration_cast<microseconds>(end - start).count();
+
+    std::cout << "  Result checksum: " << sum << "\n";
+    std::cout << "  Duration: " << duration * 1e-6 << " seconds\n\n";
+    return duration;
+}
+
+static double run_floppyfloat(
+    const std::vector<double>& x_vals,
+    const std::vector<double>& y_vals
+) {
+    std::cout << "Running FloppyFloat reference...\n";
+    auto start = high_resolution_clock::now();
+
+    FloppyFloat ff;
+    ff.rounding_mode = Vfpu::kRoundTiesToEven;
+
+    std::vector<float> x_fl(N);
+    std::vector<float> y_fl(N);
+    for (size_t i = 0; i < N; i++) {
+        x_fl[i] = static_cast<float>(x_vals[i]);
+        y_fl[i] = static_cast<float>(y_vals[i]);
+    }
+
+    double sum = 0.0;
+    for (size_t i = 0; i < N; i++) {
+        float r = ff.Add(x_fl[i], y_fl[i]);
+        sum += static_cast<double>(r);
     }
 
     auto end = high_resolution_clock::now();
@@ -128,26 +195,30 @@ int main() {
     std::vector<double> y_vals(N);
     generate_inputs(x_vals, y_vals);
 
-    // Run benchmarks
+    // Run references
     const double duration_ref = run_reference(x_vals, y_vals);
+    const double duration_softfloat_ref = run_softfloat(x_vals, y_vals);
+    const double duration_floppyfloat_ref = run_floppyfloat(x_vals, y_vals);
+
+    // Run engines
     const double duration_rto = run_rto_engine(x_vals, y_vals);
     const double duration_softfloat = run_softfloat_engine(x_vals, y_vals);
-#ifdef USE_FLOPPYFLOAT
     const double duration_floppyfloat = run_floppyfloat_engine(x_vals, y_vals);
-#endif
 
     // Print summary
     std::cout << "=== Performance Summary ===\n";
     std::cout << std::fixed << std::setprecision(3);
     std::cout << "Reference:     " << duration_ref * 1e-6 << "s (baseline)\n";
+    std::cout << "SoftFloat:     " << duration_softfloat_ref * 1e-6 << "s (" 
+              << duration_softfloat_ref / duration_ref << "x slowdown)\n";
+    std::cout << "FloppyFloat:   " << duration_floppyfloat_ref * 1e-6 << "s (" 
+              << duration_floppyfloat_ref / duration_ref << "x slowdown)\n";
     std::cout << "RTO engine:    " << duration_rto * 1e-6 << "s (" 
               << duration_rto / duration_ref << "x slowdown)\n";
     std::cout << "SoftFloat:     " << duration_softfloat * 1e-6 << "s (" 
               << duration_softfloat / duration_ref << "x slowdown)\n";
-#ifdef USE_FLOPPYFLOAT
     std::cout << "FloppyFloat:   " << duration_floppyfloat * 1e-6 << "s (" 
               << duration_floppyfloat / duration_ref << "x slowdown)\n";
-#endif
 
     return 0;
 }
