@@ -8,7 +8,7 @@ floating-point and fixed-point arithmetic.
 ### Prerequisites
 
 - CMake 3.15 or higher
-- C++23 compatible compiler
+- C++20 compatible compiler
 - (Optional) GMP/MPFR for arbitrary precision support
 
 ### Build Instructions
