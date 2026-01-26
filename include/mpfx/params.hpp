@@ -7,9 +7,9 @@ namespace mpfx {
 // compile-time bitmask generator
 template <typename T, uint64_t k>
 struct __bitmask {
-    FPY_STATIC_ASSERT(std::is_integral_v<T> && std::is_unsigned_v<T>, "T must be an unsigned integer");
-    FPY_STATIC_ASSERT(k < 64, "exceeded maximum bitmask size");
-    FPY_STATIC_ASSERT(k <= 8 * sizeof(T), "exceeded maximum bitmask size for T");
+    MPFX_STATIC_ASSERT(std::is_integral_v<T> && std::is_unsigned_v<T>, "T must be an unsigned integer");
+    MPFX_STATIC_ASSERT(k < 64, "exceeded maximum bitmask size");
+    MPFX_STATIC_ASSERT(k <= 8 * sizeof(T), "exceeded maximum bitmask size for T");
     static constexpr T val = static_cast<T>((1ULL << k) - 1);
 };
 
@@ -21,9 +21,9 @@ struct ieee754_consts {
     static constexpr uint64_t E = E_;
     static constexpr uint64_t N = N_;
 
-    FPY_STATIC_ASSERT(E >= 2, "Invalid IEEE 754 format");
-    FPY_STATIC_ASSERT(N >= E + 2, "Invalid IEEE 754 format");
-    FPY_STATIC_ASSERT(N <= 64, "Exceeded maximum supported IEEE 754 format");
+    MPFX_STATIC_ASSERT(E >= 2, "Invalid IEEE 754 format");
+    MPFX_STATIC_ASSERT(N >= E + 2, "Invalid IEEE 754 format");
+    MPFX_STATIC_ASSERT(N <= 64, "Exceeded maximum supported IEEE 754 format");
 
     static constexpr prec_t P = static_cast<prec_t>(N - E);
     static constexpr prec_t M = P - 1;

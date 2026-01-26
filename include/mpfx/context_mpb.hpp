@@ -28,8 +28,8 @@ public:
         using FP = ieee754_consts<11, 64>; // IEEE 754 double precision
 
         // check that the maximum value is valid
-        FPY_ASSERT(std::isfinite(maxval_), "maxval must be finite");
-        FPY_ASSERT(maxval_ == mps_ctx_.round(maxval_), "maxval must be exactly representable in this context");
+        MPFX_ASSERT(std::isfinite(maxval_), "maxval must be finite");
+        MPFX_ASSERT(maxval_ == mps_ctx_.round(maxval_), "maxval must be exactly representable in this context");
 
         // check if the maximum value is odd
         const uint64_t bits = std::bit_cast<uint64_t>(maxval_);
@@ -98,7 +98,7 @@ public:
             // round to infinity if maxval is even
             return !maxval_odd;
         default:
-            FPY_UNREACHABLE("invalid rounding direction");
+            MPFX_UNREACHABLE("invalid rounding direction");
         }
     }
 

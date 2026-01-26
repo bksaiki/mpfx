@@ -14,7 +14,7 @@ namespace {
 
 inline double finalize(double result, unsigned int fexps) {
     // check if overflow or underflow occurred
-    FPY_DEBUG_ASSERT(
+    MPFX_DEBUG_ASSERT(
         !(fexps & (arch::EXCEPT_OVERFLOW | arch::EXCEPT_UNDERFLOW)),
         "overflow or underflow occurred"
     );
@@ -37,7 +37,7 @@ inline double finalize(double result, unsigned int fexps) {
 /// Otherwise, an exception is thrown.
 inline double add(double x, double y, prec_t p) {
     // double-precision only guarantees 53 bits of precision
-    FPY_DEBUG_ASSERT(
+    MPFX_DEBUG_ASSERT(
         p <= 53,
         "add: requested precision exceeds double-precision capability"
     );
@@ -61,7 +61,7 @@ inline double add(double x, double y, prec_t p) {
 /// Otherwise, an exception is thrown.
 inline double sub(double x, double y, prec_t p) {
     // double-precision only guarantees 53 bits of precision
-    FPY_DEBUG_ASSERT(
+    MPFX_DEBUG_ASSERT(
         p <= 53,
         "sub: requested precision exceeds double-precision capability"
     );
@@ -85,7 +85,7 @@ inline double sub(double x, double y, prec_t p) {
 /// Otherwise, an exception is thrown.
 inline double mul(double x, double y, prec_t p) {
     // double-precision only guarantees 53 bits of precision
-    FPY_DEBUG_ASSERT(
+    MPFX_DEBUG_ASSERT(
         p <= 53,
         "mul: requested precision exceeds double-precision capability"
     );
@@ -109,7 +109,7 @@ inline double mul(double x, double y, prec_t p) {
 /// Otherwise, an exception is thrown.
 inline double div(double x, double y, prec_t p) {
     // double-precision only guarantees 53 bits of precision
-    FPY_DEBUG_ASSERT(
+    MPFX_DEBUG_ASSERT(
         p <= 53,
         "div: requested precision exceeds double-precision capability"
     );
@@ -133,7 +133,7 @@ inline double div(double x, double y, prec_t p) {
 /// Otherwise, an exception is thrown.
 inline double sqrt(double x, prec_t p) {
     // double-precision only guarantees 53 bits of precision
-    FPY_DEBUG_ASSERT(
+    MPFX_DEBUG_ASSERT(
         p <= 53,
         "sqrt: requested precision exceeds double-precision capability"
     );
@@ -157,7 +157,7 @@ inline double sqrt(double x, prec_t p) {
 /// Otherwise, an exception is thrown.
 inline double fma(double x, double y, double z, prec_t p) {
     // double-precision only guarantees 53 bits of precision
-    FPY_DEBUG_ASSERT(
+    MPFX_DEBUG_ASSERT(
         p <= 53,
         "fma: requested precision exceeds double-precision capability"
     );
