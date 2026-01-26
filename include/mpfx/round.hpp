@@ -39,11 +39,6 @@ enum class RoundingDirection : uint8_t {
     TO_ODD,
 };
 
-//// @brief Returns whether the rounding mode is a nearest rounding mode.
-inline bool is_nearest(RoundingMode mode) noexcept {
-    return mode == RoundingMode::RNE || mode == RoundingMode::RNA;
-}
-
 /// @brief Returns the rounding direction for a given rounding mode and sign.
 /// For nearest rounding modes, the direction is for tie-breaking.
 inline RoundingDirection get_direction(RoundingMode mode, bool sign) {
@@ -165,64 +160,77 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
         // should we increment?
         // case split on nearest
         bool incrementp;
-        if (is_nearest(rm)) {
-            // nearest rounding
+        switch (rm) {
+            case RM::RNE: {
+                // nearest rounding, ties to even
 
-            // clever way to extract rounding information
-            // -1: below halfway
-            //  0: exactly halfway
-            //  1: above halfway
-            const mant_t halfway = one >> 1;
-            const int8_t cmp = static_cast<int8_t>(c_lost > halfway) - static_cast<int8_t>(c_lost < halfway);
-            const int8_t rb = overshiftp ? -1 : cmp; // overshift implies below halfway
+                // clever way to extract rounding information
+                // -1: below halfway
+                //  0: exactly halfway
+                //  1: above halfway
+                const mant_t halfway = one >> 1;
+                const int8_t cmp = static_cast<int8_t>(c_lost > halfway) - static_cast<int8_t>(c_lost < halfway);
+                const int8_t rb = overshiftp ? -1 : cmp; // overshift implies below halfway
 
-            // case split on rounding bits
-            if (rb == 0) {
-                // exactly halfway
-                switch (rm) {
-                    case RM::RTZ: incrementp = false; break;
-                    case RM::RAZ:
-                    case RM::RNA: incrementp = true; break;
-                    case RM::RTP: incrementp = !s; break;
-                    case RM::RTN: incrementp = s; break;
-                    case RM::RNE:
-                    case RM::RTE: incrementp = (c & one) != 0; break;
-                    case RM::RTO: incrementp = (c & one) == 0; break;
-                    default:
-                        incrementp = false;
-                        FPY_DEBUG_ASSERT(false, "unreachable");
-                        break;
-                }
-            } else {
-                // above or below halfway
-                incrementp = rb > 0;
+                // increment if above halfway or exactly halfway and LSB is odd
+                incrementp = rb > 0 || (rb == 0 && (c & one) != 0);
+                break;
             }
-        } else {
-            // non-nearest
-            // case split on rounding mode
-            switch (rm) {
-                case RM::RTZ: incrementp = false; break;
-                case RM::RAZ: incrementp = true; break;
-                case RM::RTP: incrementp = !s; break;
-                case RM::RTN: incrementp = s; break;
-                case RM::RTE: incrementp = (c & one) != 0; break;
-                case RM::RTO: incrementp = (c & one) == 0; break;
-                default:
-                    incrementp = false;
-                    FPY_DEBUG_ASSERT(false, "unreachable");
-                    break;
+            case RM::RNA: {
+                // nearest rounding, ties away from zero
+
+                // clever way to extract rounding information
+                // -1: below halfway
+                //  0: exactly halfway
+                //  1: above halfway
+                const mant_t halfway = one >> 1;
+                const int8_t cmp = static_cast<int8_t>(c_lost > halfway) - static_cast<int8_t>(c_lost < halfway);
+                const int8_t rb = overshiftp ? -1 : cmp; // overshift implies below halfway
+
+                // increment if above halfway or exactly halfway
+                incrementp = rb >= 0;
+                break;
             }
+            case RM::RTP:
+                // round toward +infinity
+                incrementp = !s;
+                break;
+            case RM::RTN:
+                // round toward -infinity
+                incrementp = s;
+                break;
+            case RM::RTZ:
+                // round toward zero
+                incrementp = false;
+                break;
+            case RM::RAZ:
+                // round away from zero
+                incrementp = true;
+                break;
+            case RM::RTO:
+                // round to odd
+                incrementp = (c & one) == 0;
+                break;
+            case RM::RTE:
+                // round to even
+                incrementp = (c & one) != 0;
+                break;
+            default:
+                incrementp = false;
+                FPY_DEBUG_ASSERT(false, "unreachable");
+                break;
         }
 
-        // apply increment
-        const mant_t increment = incrementp ? one : static_cast<mant_t>(0);
-        c += increment;
+        if (incrementp) {
+            // apply increment
+            c += one;
 
-        // check if we need to carry
-        static constexpr mant_t overflow_mask = 1ULL << P;
-        const bool carryp = c >= overflow_mask;
-        e += static_cast<exp_t>(carryp);
-        c >>= static_cast<uint8_t>(carryp);
+            // check if we need to carry
+            static constexpr mant_t overflow_mask = 1ULL << P;
+            const bool carryp = c >= overflow_mask;
+            e += static_cast<exp_t>(carryp);
+            c >>= static_cast<uint8_t>(carryp);
+        }
     }
 
     return encode<P>(s, e, c);
@@ -237,7 +245,7 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
 /// Assumes that the argument has at least p + 2 bits of precision,
 /// where p is the target precision.
 inline double round(double x, prec_t p, const std::optional<exp_t>& n, RM rm) {
-        using FP = ieee754_consts<11, 64>; // double precision
+    using FP = ieee754_consts<11, 64>; // double precision
 
     // Fast path: special values (infinity, NaN, zero)
     if (!std::isfinite(x) || x == 0.0) {
@@ -275,7 +283,7 @@ inline double round(double x, prec_t p, const std::optional<exp_t>& n, RM rm) {
 /// Assumes that the argument has at least p + 2 bits of precision,
 /// where p is the target precision.
 inline double round(int64_t m, exp_t exp, prec_t p, const std::optional<exp_t>& n, RM rm) {
-        static constexpr int64_t MIN_VAL = std::numeric_limits<int64_t>::min();
+    static constexpr int64_t MIN_VAL = std::numeric_limits<int64_t>::min();
     static constexpr prec_t PREC = 63;
 
     // Fast path: zero
@@ -309,7 +317,7 @@ inline double round(int64_t m, exp_t exp, prec_t p, const std::optional<exp_t>& 
     const exp_t e = exp + (PREC - 1);
 
     // finalize rounding (mantissa has precision 63)
-    return round_finalize<63>(s, e, c, p, n, rm);
+    return round_finalize<PREC>(s, e, c, p, n, rm);
 }
 
 } // namespace mpfx
