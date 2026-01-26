@@ -160,7 +160,7 @@ int main() {
     // Configuration
     static constexpr size_t N = 100'000'000; // 10 million operations
     static constexpr int PRECISION = 24;
-    static constexpr mpfx::RM ROUNDING_MODE = mpfx::RM::RTZ;
+    static constexpr mpfx::RM ROUNDING_MODE = mpfx::RM::RNE;
     
     std::cout << "=======================================================\n";
     std::cout << "   FPY vs MPFR vs SoftFloat Addition Benchmark\n";

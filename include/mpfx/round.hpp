@@ -165,60 +165,52 @@ double round_finalize_with_rm(bool s, exp_t e, mant_t c, prec_t p, const std::op
         // should we increment?
         // case split on nearest
         bool incrementp;
-        if (is_nearest(rm)) {
-            // nearest rounding
+        if constexpr (rm == RM::RNE) {
+            // nearest rounding, ties to even
 
             // clever way to extract rounding information
             // -1: below halfway
             //  0: exactly halfway
             //  1: above halfway
-            const mant_t halfway = one >> 1;
+            const mant_t halfway = 1ULL << (p_lost - 1);
             const int8_t cmp = static_cast<int8_t>(c_lost > halfway) - static_cast<int8_t>(c_lost < halfway);
             const int8_t rb = overshiftp ? -1 : cmp; // overshift implies below halfway
 
-            // case split on rounding bits
-            if (rb == 0) {
-                // exactly halfway
-                if constexpr (rm == RM::RTZ) {
-                    incrementp = false;
-                } else if constexpr (rm == RM::RAZ || rm == RM::RNA) {
-                    incrementp = true;
-                } else if constexpr (rm == RM::RTP) {
-                    incrementp = !s;
-                } else if constexpr (rm == RM::RTN) {
-                    incrementp = s;
-                } else if constexpr (rm == RM::RNE || rm == RM::RTE) {
-                    incrementp = (c & one) != 0;
-                } else if constexpr (rm == RM::RTO) {
-                    incrementp = (c & one) == 0;
-                } else {
-                    FPY_STATIC_ASSERT(false, "compiled with invalid rounding mode");
-                }
-            } else {
-                // above or below halfway
-                incrementp = rb > 0;
-            }
+            // increment if above halfway, or exactly halfway and LSB is 1
+            incrementp = (rb == 0) ? ((c & one) != 0) : (rb > 0);
+        } else if constexpr (rm == RM::RNA) {
+            // nearest rounding, ties away from zero
+
+            // clever way to extract rounding information
+            // -1: below halfway
+            //  0: exactly halfway
+            //  1: above halfway
+            const mant_t halfway = 1ULL << (p_lost - 1);
+            const int8_t cmp = static_cast<int8_t>(c_lost > halfway) - static_cast<int8_t>(c_lost < halfway);
+            const int8_t rb = overshiftp ? -1 : cmp; // overshift implies below halfway
+
+            // increment if exactly halfway or above
+            incrementp = rb >= 0;
+        } else if constexpr (rm == RM::RTP) {
+            // round toward +infinity
+            incrementp = !s;
+        } else if constexpr (rm == RM::RTN) {
+            // round toward -infinity
+            incrementp = s;
+        } else if constexpr (rm == RM::RTZ) {
+            // round toward zero
+            incrementp = false;
+        } else if constexpr (rm == RM::RAZ) {
+            // round away from zero
+            incrementp = true;
+        } else if constexpr (rm == RM::RTO) {
+            // round to odd
+            incrementp = (c & one) == 0;
+        } else if constexpr (rm == RM::RTE) {
+            // round to even
+            incrementp = (c & one) != 0;
         } else {
-            // non-nearest
-            // case split on rounding mode
-            if constexpr (rm == RM::RTZ) {
-                incrementp = false;
-            } else if constexpr (rm == RM::RAZ) {
-                incrementp = true;
-            } else if constexpr (rm == RM::RTP) {
-                incrementp = !s;
-            } else if constexpr (rm == RM::RTN) {
-                incrementp = s;
-            } else if constexpr (rm == RM::RTE) {
-                incrementp = (c & one) != 0;
-            } else if constexpr (rm == RM::RTO) {
-                incrementp = (c & one) == 0;
-            } else if constexpr (rm == RM::RNE || rm == RM::RNA) {
-                FPY_DEBUG_ASSERT(false, "invalid rounding mode for non-nearest case");
-                incrementp = false; // to silence compiler warning
-            } else {
-                FPY_STATIC_ASSERT(false, "compiled with invalid rounding mode");
-            }
+            FPY_STATIC_ASSERT(false, "compiled with invalid rounding mode");
         }
 
         // apply increment
@@ -231,15 +223,6 @@ double round_finalize_with_rm(bool s, exp_t e, mant_t c, prec_t p, const std::op
                 e += 1;
             }
         }
-
-        // const mant_t increment = incrementp ? one : static_cast<mant_t>(0);
-        // c += increment;
-
-        // // check if we need to carry
-        // static constexpr mant_t overflow_mask = 1ULL << P;
-        // const bool carryp = c >= overflow_mask;
-        // e += static_cast<exp_t>(carryp);
-        // c >>= static_cast<uint8_t>(carryp);
     }
 
     return encode<P>(s, e, c);
