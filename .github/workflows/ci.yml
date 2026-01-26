@@ -29,6 +29,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Setup compiler
+        if: matrix.compiler_setup
+        run: ${{ matrix.compiler_setup }}
+
       - name: Install dependencies
         run: ${{ matrix.install_deps }}
 

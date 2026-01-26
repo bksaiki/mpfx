@@ -8,7 +8,7 @@ floating-point and fixed-point arithmetic.
 ### Prerequisites
 
 - CMake 3.15 or higher
-- C++20 compatible compiler
+- C++23 compatible compiler
 - (Optional) GMP/MPFR for arbitrary precision support
 
 ### Build Instructions
@@ -25,7 +25,6 @@ cmake --build .
 - `BUILD_SHARED_LIBS`: Build shared libraries (default: ON)
 - `BUILD_TESTS`: Build test executables (default: ON)
 - `BUILD_EXAMPLES`: Build example programs (default: OFF)
-- `USE_SOFTFLOAT`: Use softfloat library (default: OFF)
 
 ### Build Types
 

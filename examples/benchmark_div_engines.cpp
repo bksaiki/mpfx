@@ -102,6 +102,26 @@ static double run_softfloat_engine(
     return duration;
 }
 
+static double run_floppyfloat_engine(
+    const std::vector<double>& x_vals,
+    const std::vector<double>& y_vals
+) {
+    std::cout << "Running FloppyFloat engine...\n";
+    auto start = high_resolution_clock::now();
+
+    double sum = 0.0;
+    for (size_t i = 0; i < N; i++) {
+        sum += mpfx::div<mpfx::EngineType::FFLOAT>(x_vals[i], y_vals[i], ROUND_CTX);
+    }
+
+    auto end = high_resolution_clock::now();
+    auto duration = duration_cast<microseconds>(end - start).count();
+
+    std::cout << "  Result checksum: " << sum << "\n";
+    std::cout << "  Duration: " << duration * 1e-6 << " seconds\n\n";
+    return duration;
+}
+
 int main() {
     std::cout << "=== Division Engine Benchmark ===\n";
     std::cout << "Operations: " << N << "\n";
@@ -117,6 +137,7 @@ int main() {
     const double duration_ref = run_reference(x_vals, y_vals);
     const double duration_rto = run_rto_engine(x_vals, y_vals);
     const double duration_softfloat = run_softfloat_engine(x_vals, y_vals);
+    const double duration_floppyfloat = run_floppyfloat_engine(x_vals, y_vals);
 
     // Print summary
     std::cout << "=== Performance Summary ===\n";
@@ -126,6 +147,8 @@ int main() {
               << duration_rto / duration_ref << "x slowdown)\n";
     std::cout << "SoftFloat:     " << duration_softfloat * 1e-6 << "s (" 
               << duration_softfloat / duration_ref << "x slowdown)\n";
+    std::cout << "FloppyFloat:   " << duration_floppyfloat * 1e-6 << "s (" 
+              << duration_floppyfloat / duration_ref << "x slowdown)\n";
 
     return 0;
 }

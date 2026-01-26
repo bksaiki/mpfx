@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "context.hpp"
+#include "engine_ff.hpp"
 #include "engine_fp.hpp"
 #include "engine_fpe.hpp"
 #include "engine_fx.hpp"
@@ -13,10 +14,11 @@ namespace mpfx {
 
 /// @brief Engine types for arithmetic operations
 enum class EngineType {
-    FP_RTO,   // Native floating-point using RTO emulation
-    FP_EXACT, // Exact computation engine
-    FIXED,    // Fixed-point arithmetic engine
-    SOFTFLOAT // SoftFloat engine
+    FP_RTO,    // Native floating-point using RTO emulation
+    FP_EXACT,  // Exact computation engine
+    FIXED,     // Fixed-point arithmetic engine
+    SOFTFLOAT, // SoftFloat engine
+    FFLOAT     // FloppyFloat engine
 };
 
 /// @brief Rounds `x` according to the given context.
@@ -57,6 +59,11 @@ double add(double x, double y, const Context& ctx) {
         const double r = engine_sf::add(x, y, ctx.round_prec());
         // use context to round
         return ctx.round(r);
+    } else if constexpr (E == EngineType::FFLOAT) {
+        // compute result using FloppyFloat engine
+        const double r = engine_ff::add(x, y, ctx.round_prec());
+        // use context to round
+        return ctx.round(r);
     }
 }
 
@@ -72,6 +79,11 @@ double sub(double x, double y, const Context& ctx) {
     } else if constexpr (E == EngineType::SOFTFLOAT) {
         // compute result using SoftFloat engine
         const double r = engine_sf::sub(x, y, ctx.round_prec());
+        // use context to round
+        return ctx.round(r);
+    } else if constexpr (E == EngineType::FFLOAT) {
+        // compute result using FloppyFloat engine
+        const double r = engine_ff::sub(x, y, ctx.round_prec());
         // use context to round
         return ctx.round(r);
     }
@@ -110,6 +122,11 @@ double mul(double x, double y, const Context& ctx) {
         const double r = engine_sf::mul(x, y, p);
         // use context to round
         return ctx.round(r);
+    } else if constexpr (E == EngineType::FFLOAT) {
+        // compute result using FloppyFloat engine
+        const double r = engine_ff::mul(x, y, p);
+        // use context to round
+        return ctx.round(r);
     }
 }
 
@@ -125,6 +142,11 @@ double div(double x, double y, const Context& ctx) {
     } else if constexpr (E == EngineType::SOFTFLOAT) {
         // compute result using SoftFloat engine
         const double r = engine_sf::div(x, y, ctx.round_prec());
+        // use context to round
+        return ctx.round(r);
+    } else if constexpr (E == EngineType::FFLOAT) {
+        // compute result using FloppyFloat engine
+        const double r = engine_ff::div(x, y, ctx.round_prec());
         // use context to round
         return ctx.round(r);
     }
@@ -144,6 +166,11 @@ double sqrt(double x, const Context& ctx) {
         const double r = engine_sf::sqrt(x, ctx.round_prec());
         // use context to round
         return ctx.round(r);
+    } else if constexpr (E == EngineType::FFLOAT) {
+        // compute result using FloppyFloat engine
+        const double r = engine_ff::sqrt(x, ctx.round_prec());
+        // use context to round
+        return ctx.round(r);
     }
 }
 
@@ -159,6 +186,11 @@ double fma(double x, double y, double z, const Context& ctx) {
     } else if constexpr (E == EngineType::SOFTFLOAT) {
         // compute result using SoftFloat engine
         const double r = engine_sf::fma(x, y, z, ctx.round_prec());
+        // use context to round
+        return ctx.round(r);
+    } else if constexpr (E == EngineType::FFLOAT) {
+        // compute result using FloppyFloat engine
+        const double r = engine_ff::fma(x, y, z, ctx.round_prec());
         // use context to round
         return ctx.round(r);
     }
