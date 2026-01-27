@@ -47,17 +47,18 @@ static double run_reference(
     const std::vector<double>& y_vals
 ) {
     std::cout << "Running reference (native double division)...\n";
-    auto start = high_resolution_clock::now();
 
-    double sum = 0.0;
+    auto start = steady_clock::now();
+
+    volatile double result;
     for (size_t i = 0; i < N; i++) {
-        sum += x_vals[i] / y_vals[i];
+        result = x_vals[i] / y_vals[i];
     }
 
-    auto end = high_resolution_clock::now();
+    auto end = steady_clock::now();
     auto duration = duration_cast<microseconds>(end - start).count();
+    (void) result; // prevent unused variable warning
 
-    std::cout << "  Result checksum: " << sum << "\n";
     std::cout << "  Duration: " << duration * 1e-6 << " seconds\n\n";
     return duration;
 }
@@ -67,7 +68,6 @@ static double run_softfloat(
     const std::vector<double>& y_vals
 ) {
     std::cout << "Running SoftFloat reference...\n";
-    auto start = high_resolution_clock::now();
 
     std::vector<float> x_fl(N);
     std::vector<float> y_fl(N);
@@ -76,7 +76,9 @@ static double run_softfloat(
         y_fl[i] = static_cast<float>(y_vals[i]);
     }
 
-    double sum = 0.0;
+    auto start = steady_clock::now();
+
+    volatile float result;
     for (size_t i = 0; i < N; i++) {
         // Convert to SoftFloat format
         float32_t x, y;
@@ -86,14 +88,14 @@ static double run_softfloat(
         // Perform division
         float32_t r = f32_div(x, y);
 
-        // Convert back to double
-        sum += std::bit_cast<float>(r.v);
+        // Store result
+        result = std::bit_cast<float>(r.v);
     }
 
-    auto end = high_resolution_clock::now();
+    auto end = steady_clock::now();
     auto duration = duration_cast<microseconds>(end - start).count();
+    (void) result; // prevent unused variable warning
 
-    std::cout << "  Result checksum: " << sum << "\n";
     std::cout << "  Duration: " << duration * 1e-6 << " seconds\n\n";
     return duration;
 }
@@ -103,7 +105,6 @@ static double run_floppyfloat(
     const std::vector<double>& y_vals
 ) {
     std::cout << "Running FloppyFloat reference...\n";
-    auto start = high_resolution_clock::now();
 
     FloppyFloat ff;
     ff.rounding_mode = Vfpu::kRoundTiesToEven;
@@ -115,16 +116,17 @@ static double run_floppyfloat(
         y_fl[i] = static_cast<float>(y_vals[i]);
     }
 
-    double sum = 0.0;
+    auto start = steady_clock::now();
+
+    volatile float result;
     for (size_t i = 0; i < N; i++) {
-        float r = ff.Div(x_fl[i], y_fl[i]);
-        sum += static_cast<double>(r);
+        result = ff.Div(x_fl[i], y_fl[i]);
     }
 
-    auto end = high_resolution_clock::now();
+    auto end = steady_clock::now();
     auto duration = duration_cast<microseconds>(end - start).count();
+    (void) result; // prevent unused variable warning
 
-    std::cout << "  Result checksum: " << sum << "\n";
     std::cout << "  Duration: " << duration * 1e-6 << " seconds\n\n";
     return duration;
 }
@@ -134,17 +136,18 @@ static double run_rto_engine(
     const std::vector<double>& y_vals
 ) {
     std::cout << "Running RTO engine...\n";
-    auto start = high_resolution_clock::now();
 
-    double sum = 0.0;
+    auto start = steady_clock::now();
+
+    volatile double result;
     for (size_t i = 0; i < N; i++) {
-        sum += mpfx::div<mpfx::EngineType::FP_RTO>(x_vals[i], y_vals[i], ROUND_CTX);
+        result = mpfx::div<mpfx::EngineType::FP_RTO>(x_vals[i], y_vals[i], ROUND_CTX);
     }
 
-    auto end = high_resolution_clock::now();
+    auto end = steady_clock::now();
     auto duration = duration_cast<microseconds>(end - start).count();
+    (void) result; // prevent unused variable warning
 
-    std::cout << "  Result checksum: " << sum << "\n";
     std::cout << "  Duration: " << duration * 1e-6 << " seconds\n\n";
     return duration;
 }
@@ -154,17 +157,18 @@ static double run_softfloat_engine(
     const std::vector<double>& y_vals
 ) {
     std::cout << "Running SoftFloat engine...\n";
-    auto start = high_resolution_clock::now();
 
-    double sum = 0.0;
+    auto start = steady_clock::now();
+
+    volatile double result;
     for (size_t i = 0; i < N; i++) {
-        sum += mpfx::div<mpfx::EngineType::SOFTFLOAT>(x_vals[i], y_vals[i], ROUND_CTX);
+        result = mpfx::div<mpfx::EngineType::SOFTFLOAT>(x_vals[i], y_vals[i], ROUND_CTX);
     }
 
-    auto end = high_resolution_clock::now();
+    auto end = steady_clock::now();
     auto duration = duration_cast<microseconds>(end - start).count();
+    (void) result; // prevent unused variable warning
 
-    std::cout << "  Result checksum: " << sum << "\n";
     std::cout << "  Duration: " << duration * 1e-6 << " seconds\n\n";
     return duration;
 }
@@ -174,20 +178,43 @@ static double run_floppyfloat_engine(
     const std::vector<double>& y_vals
 ) {
     std::cout << "Running FloppyFloat engine...\n";
-    auto start = high_resolution_clock::now();
 
-    double sum = 0.0;
+    auto start = steady_clock::now();
+
+    volatile double result;
     for (size_t i = 0; i < N; i++) {
-        sum += mpfx::div<mpfx::EngineType::FFLOAT>(x_vals[i], y_vals[i], ROUND_CTX);
+        result = mpfx::div<mpfx::EngineType::FFLOAT>(x_vals[i], y_vals[i], ROUND_CTX);
     }
 
-    auto end = high_resolution_clock::now();
+    auto end = steady_clock::now();
     auto duration = duration_cast<microseconds>(end - start).count();
+    (void) result; // prevent unused variable warning
 
-    std::cout << "  Result checksum: " << sum << "\n";
     std::cout << "  Duration: " << duration * 1e-6 << " seconds\n\n";
     return duration;
 }
+
+static double run_eft_engine(
+    const std::vector<double>& x_vals,
+    const std::vector<double>& y_vals
+) {
+    std::cout << "Running EFT engine...\n";
+
+    auto start = steady_clock::now();
+
+    volatile double result;
+    for (size_t i = 0; i < N; i++) {
+        result = mpfx::div<mpfx::EngineType::EFT>(x_vals[i], y_vals[i], ROUND_CTX);
+    }
+
+    auto end = steady_clock::now();
+    auto duration = duration_cast<microseconds>(end - start).count();
+    (void) result; // prevent unused variable warning
+
+    std::cout << "  Duration: " << duration * 1e-6 << " seconds\n\n";
+    return duration;
+}
+
 
 int main() {
     std::cout << "=== Division Engine Benchmark ===\n";
@@ -209,6 +236,7 @@ int main() {
     const double duration_rto = run_rto_engine(x_vals, y_vals);
     const double duration_softfloat = run_softfloat_engine(x_vals, y_vals);
     const double duration_floppyfloat = run_floppyfloat_engine(x_vals, y_vals);
+    const double duration_eft = run_eft_engine(x_vals, y_vals);
 
     // Print summary
     std::cout << "=== Performance Summary ===\n";
@@ -224,6 +252,8 @@ int main() {
               << duration_softfloat / duration_ref << "x slowdown)\n";
     std::cout << "FloppyFloat:   " << duration_floppyfloat * 1e-6 << "s (" 
               << duration_floppyfloat / duration_ref << "x slowdown)\n";
+    std::cout << "EFT engine:    " << duration_eft * 1e-6 << "s (" 
+              << duration_eft / duration_ref << "x slowdown)\n";
 
     return 0;
 }
