@@ -174,7 +174,7 @@ inline double sub(double x, double y, prec_t p) {
     MPFX_DEBUG_ASSERT(
         p <= 53,
         "sub: requested precision exceeds double-precision capability"
-    ); 
+    );
 
     if (!std::isfinite(x) || !std::isfinite(y)) {
         // handle special values using standard subtraction
@@ -245,7 +245,7 @@ inline double sqrt(double x, prec_t p) {
         "sqrt: requested precision exceeds double-precision capability"
     );
 
-    if (!std::isfinite(x) || x < 0.0) {
+    if (!std::isfinite(x) || x <= 0.0) {
         // handle special values using standard square root
         return std::sqrt(x);
     }

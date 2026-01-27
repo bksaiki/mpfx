@@ -254,7 +254,6 @@ static double run_eft_engine(
     auto end = steady_clock::now();
     auto duration = duration_cast<microseconds>(end - start).count();
     (void) result; // prevent unused variable warning
-    (void) result; // prevent unused variable warning
 
     std::cout << "  Duration: " << duration * 1e-6 << " seconds\n\n";
     return duration;
