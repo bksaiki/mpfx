@@ -70,7 +70,6 @@ static double run_softfloat(
     const std::vector<double>& y_vals
 ) {
     std::cout << "Running SoftFloat reference...\n";
-    auto start = high_resolution_clock::now();
 
     std::vector<float> x_fl(N);
     std::vector<float> y_fl(N);
@@ -78,6 +77,8 @@ static double run_softfloat(
         x_fl[i] = static_cast<float>(x_vals[i]);
         y_fl[i] = static_cast<float>(y_vals[i]);
     }
+
+    auto start = high_resolution_clock::now();
 
     double sum = 0.0;
     for (size_t i = 0; i < N; i++) {
@@ -106,7 +107,6 @@ static double run_floppyfloat(
     const std::vector<double>& y_vals
 ) {
     std::cout << "Running FloppyFloat reference...\n";
-    auto start = high_resolution_clock::now();
 
     FloppyFloat ff;
     ff.rounding_mode = Vfpu::kRoundTiesToEven;
@@ -117,6 +117,8 @@ static double run_floppyfloat(
         x_fl[i] = static_cast<float>(x_vals[i]);
         y_fl[i] = static_cast<float>(y_vals[i]);
     }
+
+    auto start = high_resolution_clock::now();
 
     double sum = 0.0;
     for (size_t i = 0; i < N; i++) {
