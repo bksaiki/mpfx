@@ -95,6 +95,21 @@ inline std::tuple<T, T> two_prod(const T& x, const T& y) {
     return { p, e };
 }
 
+/// @brief Error-free transformation of division.
+///
+/// The result is `q = x / y` and the signum of the remainder.
+template <std::floating_point T>
+inline std::tuple<T, T> div_with_ternary(const T& x, const T& y) {
+    // quotient: correctly-rounded division under RNE
+    const T q = x / y;
+    // scaled remainder: r * y = x - q * y [from x/y = q + r]
+    const T ry = -std::fma(q, y, -x) / y;
+    // produce a ternary to indicate if we have a positive, negative, or zero remainder
+    const T t = (ry == 0.0) ? 0.0 : (std::copysign(1.0, ry));
+    // the quotient with a ternary value representing sgn(r)
+    return { q, t };
+}
+
 /// @brief Error-free transformation of FMA.
 ///
 /// Computes `x * y + z = r1 + r2 + r3` such that `r1` is the
@@ -171,7 +186,7 @@ inline double mul(double x, double y, prec_t p) {
         "mul: requested precision exceeds double-precision capability"
     );
 
-    if (!std::isfinite(x) || !std::isfinite(y)) {
+    if (!std::isfinite(x) || !std::isfinite(y) || y == 0.0) {
         // handle special values using standard multiplication
         return x * y;
     }
@@ -181,6 +196,30 @@ inline double mul(double x, double y, prec_t p) {
 
     // finalize rounding to round-to-odd
     return round_finalize(s, t);
+}
+
+/// @brief Computes `x / y` using an error-free transformation.
+///
+/// Ensures the result has at least `p` bits of precision.
+/// Otherwise, an exception is thrown.
+inline double div(double x, double y, prec_t p) {
+    // double-precision only guarantees 53 bits of precision
+    MPFX_DEBUG_ASSERT(
+        p <= 53,
+        "div: requested precision exceeds double-precision capability"
+    );
+
+    if (!std::isfinite(x) || !std::isfinite(y)) {
+        // handle special values using standard division
+        return x / y;
+    }
+
+    // perform EFT division
+    // the remainder is -1, 0, 1 which is sufficient for round-to-odd finalization
+    const auto [q, t] = div_with_ternary(x, y);
+
+    // finalize rounding to round-to-odd
+    return round_finalize(q, t);
 }
 
 /// @brief Computes `x * y + z` using an error-free transformation.

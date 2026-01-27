@@ -166,6 +166,11 @@ double div(double x, double y, const Context& ctx) {
         const double r = engine_ff::div(x, y, ctx.round_prec());
         // use context to round
         return ctx.round(r);
+    } else if constexpr (E == EngineType::EFT) {
+        // compute result using error-free transformations
+        const double r = engine_eft::div(x, y, ctx.round_prec());
+        // use context to round
+        return ctx.round(r);
     }
 }
 
