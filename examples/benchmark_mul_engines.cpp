@@ -42,7 +42,6 @@ static double run_reference(
     const std::vector<double>& y_vals
 ) {
     std::cout << "Running reference (native double multiplication)...\n";
-    auto start = high_resolution_clock::now();
 
     std::vector<float> x_fl(N);
     std::vector<float> y_fl(N);
@@ -50,6 +49,8 @@ static double run_reference(
         x_fl[i] = static_cast<float>(x_vals[i]);
         y_fl[i] = static_cast<float>(y_vals[i]);
     }
+
+    auto start = high_resolution_clock::now();
 
     float sum = 0.0;
     for (size_t i = 0; i < N; i++) {
