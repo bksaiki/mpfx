@@ -106,6 +106,7 @@ set(HEADERS
     include/mpfx/context_mps.hpp
     include/mpfx/context_mpb.hpp
     include/mpfx/convert.hpp
+    include/mpfx/engine_eft.hpp
     include/mpfx/engine_ff.hpp
     include/mpfx/engine_fp.hpp
     include/mpfx/engine_fpe.hpp

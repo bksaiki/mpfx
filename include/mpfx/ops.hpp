@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "context.hpp"
+#include "engine_eft.hpp"
 #include "engine_ff.hpp"
 #include "engine_fp.hpp"
 #include "engine_fpe.hpp"
@@ -18,7 +19,8 @@ enum class EngineType {
     FP_EXACT,  // Exact computation engine
     FIXED,     // Fixed-point arithmetic engine
     SOFTFLOAT, // SoftFloat engine
-    FFLOAT     // FloppyFloat engine
+    FFLOAT,    // FloppyFloat engine
+    EFT        // Error-free transformation engine
 };
 
 /// @brief Rounds `x` according to the given context.
@@ -62,6 +64,11 @@ double add(double x, double y, const Context& ctx) {
     } else if constexpr (E == EngineType::FFLOAT) {
         // compute result using FloppyFloat engine
         const double r = engine_ff::add(x, y, ctx.round_prec());
+        // use context to round
+        return ctx.round(r);
+    } else if constexpr (E == EngineType::EFT) {
+        // compute result using Error-Free Transformation engine
+        const double r = engine_eft::add(x, y, ctx.round_prec());
         // use context to round
         return ctx.round(r);
     }
