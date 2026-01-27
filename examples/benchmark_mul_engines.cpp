@@ -18,10 +18,10 @@ using namespace std::chrono;
 static constexpr size_t N = 100'000'000; // 100 million operations
 
 // Global rounding context (target precision for multiplication)
-static const mpfx::IEEE754Context ROUND_CTX(8, 16, mpfx::RM::RNE); // BF16
+static const mpfx::IEEE754Context ROUND_CTX(8, 24, mpfx::RM::RNE); // FP32
 
 // Global input context for sampling
-static const mpfx::IEEE754Context INPUT_CTX(5, 8, mpfx::RM::RNE); // MX_E5M2
+static const mpfx::IEEE754Context INPUT_CTX(8, 24, mpfx::RM::RNE); // FP32
 
 static void generate_inputs(std::vector<double>& x_vals, std::vector<double>& y_vals) {
     std::cout << "Generating " << N << " random test pairs...\n";
@@ -224,11 +224,32 @@ static double run_floppyfloat_engine(
     return duration;
 }
 
+static double run_eft_engine(
+    const std::vector<double>& x_vals,
+    const std::vector<double>& y_vals
+) {
+    std::cout << "Running EFT engine...\n";
+    auto start = high_resolution_clock::now();
+
+    double sum = 0.0;
+    for (size_t i = 0; i < N; i++) {
+        sum += mpfx::mul<mpfx::EngineType::EFT>(x_vals[i], y_vals[i], ROUND_CTX);
+    }
+
+    auto end = high_resolution_clock::now();
+    auto duration = duration_cast<microseconds>(end - start).count();
+
+    std::cout << "  Result checksum: " << sum << "\n";
+    std::cout << "  Duration: " << duration * 1e-6 << " seconds\n\n";
+    return duration;
+}
+
+
 int main() {
     std::cout << "=== Multiplication Engine Benchmark ===\n";
     std::cout << "Operations: " << N << "\n";
-    std::cout << "Rounding context: BF16 (8-bit exponent, 16-bit total)\n";
-    std::cout << "Input context: MX_E5M2 (5-bit exponent, 8-bit total)\n\n";
+    std::cout << "Rounding context: FP32\n";
+    std::cout << "Input context: FP32\n\n";
 
     // Generate inputs
     std::vector<double> x_vals(N);
@@ -246,6 +267,7 @@ int main() {
     const double duration_fixed = run_fixed_engine(x_vals, y_vals);
     const double duration_softfloat = run_softfloat_engine(x_vals, y_vals);
     const double duration_floppyfloat = run_floppyfloat_engine(x_vals, y_vals);
+    const double duration_eft = run_eft_engine(x_vals, y_vals);
 
     // Print summary
     std::cout << "=== Performance Summary ===\n";
@@ -265,6 +287,8 @@ int main() {
               << duration_softfloat / duration_ref << "x slowdown)\n";
     std::cout << "FloppyFloat:   " << duration_floppyfloat * 1e-6 << "s (" 
               << duration_floppyfloat / duration_ref << "x slowdown)\n";
+    std::cout << "EFT engine:    " << duration_eft * 1e-6 << "s (" 
+              << duration_eft / duration_ref << "x slowdown)\n";
 
     return 0;
 }
