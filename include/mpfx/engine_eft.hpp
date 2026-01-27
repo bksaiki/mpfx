@@ -95,6 +95,22 @@ inline std::tuple<T, T> two_prod(const T& x, const T& y) {
     return { p, e };
 }
 
+/// @brief Error-free transformation of FMA.
+///
+/// Computes `x * y + z = r1 + r2 + r3` such that `r1` is the
+/// round-to-nearest of `x * y + z`, and `r2` and `r3` are the
+/// error terms.
+template <std::floating_point T>
+inline std::tuple<T, T, T> eft_fma(const T& x, const T& y, const T& z) {
+    const auto r1 = std::fma(x, y, z);
+    const auto [u1, u2] = two_prod(x, y);
+    const auto [a1, a2] = two_sum(z, u2);
+    const auto [b1, b2] = two_sum(u1, a1);
+    const auto g = (b1 - r1) + b2;
+    const auto [r2, r3] = two_sum(g, a2);
+    return { r1, r2, r3 };
+}
+
 } // end anonymous namespace
 
 
@@ -165,6 +181,30 @@ inline double mul(double x, double y, prec_t p) {
 
     // finalize rounding to round-to-odd
     return round_finalize(s, t);
+}
+
+/// @brief Computes `x * y + z` using an error-free transformation.
+///
+/// Ensures the result has at least `p` bits of precision.
+/// Otherwise, an exception is thrown.
+inline double fma(double x, double y, double z, prec_t p) {
+    // double-precision only guarantees 53 bits of precision
+    MPFX_DEBUG_ASSERT(
+        p <= 53,
+        "fma: requested precision exceeds double-precision capability"
+    );
+
+    if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) {
+        // handle special values using standard FMA
+        return std::fma(x, y, z);
+    }
+
+    // perform EFT of FMA
+    const auto [r1, r2, r3] = eft_fma(x, y, z);
+
+    // finalize the rounding to round-to-odd
+    // we can ignore `r3` since `r2 + r3` still has the same sign
+    return round_finalize(r1, r2);
 }
 
 } // end namespace engine_eft

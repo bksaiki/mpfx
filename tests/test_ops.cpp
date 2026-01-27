@@ -440,3 +440,41 @@ TEST(OpsFloat, TestFmaUniform) {
         }
     }
 }
+
+TEST(OpsFloat, TestFmaEFTUniform) {
+    static constexpr size_t N = 1000000;
+
+    // rounding modes to test
+    const std::vector<mpfx::RM> rounding_modes = {
+        mpfx::RM::RNE,
+        mpfx::RM::RTP,
+        mpfx::RM::RTN,
+        mpfx::RM::RTZ,
+        mpfx::RM::RAZ,
+    };
+
+    // random number generator
+    std::random_device r;
+    std::mt19937_64 rng(r());
+
+    // sweep over precisions from 2 to 8
+    for (int p = 2; p <= 8; p++) {
+        // sweep over rounding modes
+        for (const auto rm : rounding_modes) {
+            // rounding context
+            const mpfx::MPContext ctx(p, rm);
+
+            // randomly generate N floating-point values on [-1, 1]
+            std::uniform_real_distribution<double> dist(-1.0, 1.0);
+            for (size_t i = 0; i < N; i++) {
+                const double x = dist(rng);
+                const double y = dist(rng);
+                const double z = dist(rng);
+
+                const double w_ref = ref_fma(x, y, z, p, rm);
+                const double w = mpfx::fma<mpfx::EngineType::EFT>(x, y, z, ctx);
+                EXPECT_EQ(w_ref, w);
+            }
+        }
+    }
+}

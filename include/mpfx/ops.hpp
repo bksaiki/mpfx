@@ -94,7 +94,7 @@ double sub(double x, double y, const Context& ctx) {
         // use context to round
         return ctx.round(r);
     } else if constexpr (E == EngineType::EFT) {
-        // compute result using Error-Free Transformation engine
+        // compute result using error-free transformations
         const double r = engine_eft::sub(x, y, ctx.round_prec());
         // use context to round
         return ctx.round(r);
@@ -140,7 +140,7 @@ double mul(double x, double y, const Context& ctx) {
         // use context to round
         return ctx.round(r);
     } else if constexpr (E == EngineType::EFT) {
-        // compute result using Error-Free Transformation engine
+        // compute result using error-free transformations
         const double r = engine_eft::mul(x, y, p);
         // use context to round
         return ctx.round(r);
@@ -208,6 +208,11 @@ double fma(double x, double y, double z, const Context& ctx) {
     } else if constexpr (E == EngineType::FFLOAT) {
         // compute result using FloppyFloat engine
         const double r = engine_ff::fma(x, y, z, ctx.round_prec());
+        // use context to round
+        return ctx.round(r);
+    } else if constexpr (E == EngineType::EFT) {
+        // compute result using error-free transformations
+        const double r = engine_eft::fma(x, y, z, ctx.round_prec());
         // use context to round
         return ctx.round(r);
     }
