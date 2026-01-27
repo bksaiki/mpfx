@@ -5,6 +5,7 @@
 
 #include <bit>
 #include <chrono>
+#include <iomanip>
 #include <iostream>
 #include <concepts>
 #include <random>
@@ -14,11 +15,6 @@
 #include <mpfx.hpp>
 #include <softfloat.h>
 #include <floppy_float.h>
-
-
-static const auto INPUT_CTX = mpfx::IEEE754Context(8, 32, mpfx::RM::RNE);
-static const auto OUTPUT_CTX = mpfx::IEEE754Context(8, 32, mpfx::RM::RNE);
-static constexpr size_t N = 10'000'000;
 
 
 enum class OP1 {
@@ -107,14 +103,14 @@ static void report_result(
     double duration_mpfx_eft
 ) {
     std::cout << op_name
-        << ", " << duration_ref
-        << ", " << duration_mpfr
-        << ", " << duration_softfloat
-        << ", " << duration_floppyfloat
-        << ", " << duration_mpfx_rto
-        << ", " << duration_mpfx_softfloat
-        << ", " << duration_mpfx_ffloat
-        << ", " << duration_mpfx_eft
+        << ", " << static_cast<size_t>(duration_ref)
+        << ", " << static_cast<size_t>(duration_mpfr)
+        << ", " << static_cast<size_t>(duration_softfloat)
+        << ", " << static_cast<size_t>(duration_floppyfloat)
+        << ", " << static_cast<size_t>(duration_mpfx_rto)
+        << ", " << static_cast<size_t>(duration_mpfx_softfloat)
+        << ", " << static_cast<size_t>(duration_mpfx_ffloat)
+        << ", " << static_cast<size_t>(duration_mpfx_eft)
         << "\n";
 }
 
@@ -229,45 +225,16 @@ static mpfr_rnd_t cvt_rm(mpfx::RM rm) {
     }
 }
 
-static uint8_t cvt_rm_softfloat(mpfx::RM rm) {
-    switch (rm) {
-        case mpfx::RM::RNE:
-            return softfloat_round_near_even;
-        case mpfx::RM::RTP:
-            return softfloat_round_max;
-        case mpfx::RM::RTN:
-            return softfloat_round_min;
-        case mpfx::RM::RTZ:
-            return softfloat_round_minMag;
-        case mpfx::RM::RAZ:
-            return softfloat_round_near_maxMag;
-        default:
-            throw std::runtime_error("invalid rounding mode");
-    }
-}
-
-static Vfpu::RoundingMode cvt_rm_floppyfloat(mpfx::RM rm) {
-    switch (rm) {
-        case mpfx::RM::RNE:
-            return Vfpu::kRoundTiesToEven;
-        case mpfx::RM::RTP:
-            return Vfpu::kRoundTowardPositive;
-        case mpfx::RM::RTN:
-            return Vfpu::kRoundTowardNegative;
-        case mpfx::RM::RTZ:
-            return Vfpu::kRoundTowardZero;
-        case mpfx::RM::RAZ:
-            return Vfpu::kRoundTiesToAway;
-        default:
-            throw std::runtime_error("invalid rounding mode");
-    }
-}
-
 template <OP1 O>
 double mpfr_op1(const std::vector<double>& x_vals, const mpfx::MPBContext& ctx, size_t N) {
+    // Quantize to FP32
+    std::vector<float> x_fl(N);
+    for (size_t i = 0; i < N; i++) {
+        x_fl[i] = static_cast<float>(x_vals[i]);
+    }
+
     mpfr_t mx, mr;
-    
-    mpfr_init2(mx, 53);
+    mpfr_init2(mx, 24);
     mpfr_init2(mr, ctx.prec());
     
     volatile double result = 0.0;
@@ -275,7 +242,7 @@ double mpfr_op1(const std::vector<double>& x_vals, const mpfx::MPBContext& ctx, 
     auto start = std::chrono::steady_clock::now();
     
     for (size_t i = 0; i < N; i++) {
-        mpfr_set_d(mx, x_vals[i], MPFR_RNDN);
+        mpfr_set_flt(mx, x_fl[i], MPFR_RNDN);
         if constexpr (O == OP1::SQRT) {
             mpfr_sqrt(mr, mx, cvt_rm(ctx.rm()));
         } else {
@@ -296,10 +263,17 @@ double mpfr_op1(const std::vector<double>& x_vals, const mpfx::MPBContext& ctx, 
 
 template <OP2 O>
 double mpfr_op2(const std::vector<double>& x_vals, const std::vector<double>& y_vals, const mpfx::MPBContext& ctx, size_t N) {
+    // Quantize to FP32
+    std::vector<float> x_fl(N);
+    std::vector<float> y_fl(N);
+    for (size_t i = 0; i < N; i++) {
+        x_fl[i] = static_cast<float>(x_vals[i]);
+        y_fl[i] = static_cast<float>(y_vals[i]);
+    }
+
     mpfr_t mx, my, mr;
-    
-    mpfr_init2(mx, 53);
-    mpfr_init2(my, 53);
+    mpfr_init2(mx, 24);
+    mpfr_init2(my, 24);
     mpfr_init2(mr, ctx.prec());
     
     volatile double result = 0.0;
@@ -307,8 +281,8 @@ double mpfr_op2(const std::vector<double>& x_vals, const std::vector<double>& y_
     auto start = std::chrono::steady_clock::now();
     
     for (size_t i = 0; i < N; i++) {
-        mpfr_set_d(mx, x_vals[i], MPFR_RNDN);
-        mpfr_set_d(my, y_vals[i], MPFR_RNDN);
+        mpfr_set_flt(mx, x_fl[i], MPFR_RNDN);
+        mpfr_set_flt(my, y_fl[i], MPFR_RNDN);
         if constexpr (O == OP2::ADD) {
             mpfr_add(mr, mx, my, cvt_rm(ctx.rm()));
         } else if constexpr (O == OP2::SUB) {
@@ -336,21 +310,30 @@ double mpfr_op2(const std::vector<double>& x_vals, const std::vector<double>& y_
 
 template <OP3 O>
 double mpfr_op3(const std::vector<double>& x_vals, const std::vector<double>& y_vals, const std::vector<double>& z_vals, const mpfx::MPBContext& ctx, size_t N) {
-    mpfr_t mx, my, mz, mr;
-    
-    mpfr_init2(mx, 53);
-    mpfr_init2(my, 53);
-    mpfr_init2(mz, 53);
-    mpfr_init2(mr, ctx.prec());
-    
-    volatile double result = 0.0;
-    
-    auto start = std::chrono::steady_clock::now();
-    
+    // Quantize to FP32
+    std::vector<float> x_fl(N);
+    std::vector<float> y_fl(N);
+    std::vector<float> z_fl(N);
     for (size_t i = 0; i < N; i++) {
-        mpfr_set_d(mx, x_vals[i], MPFR_RNDN);
-        mpfr_set_d(my, y_vals[i], MPFR_RNDN);
-        mpfr_set_d(mz, z_vals[i], MPFR_RNDN);
+        x_fl[i] = static_cast<float>(x_vals[i]);
+        y_fl[i] = static_cast<float>(y_vals[i]);
+        z_fl[i] = static_cast<float>(z_vals[i]);
+    }
+
+    mpfr_t mx, my, mz, mr;
+    mpfr_init2(mx, 24);
+    mpfr_init2(my, 24);
+    mpfr_init2(mz, 24);
+    mpfr_init2(mr, ctx.prec());
+
+    volatile double result = 0.0;
+
+    auto start = std::chrono::steady_clock::now();
+
+    for (size_t i = 0; i < N; i++) {
+        mpfr_set_flt(mx, x_fl[i], MPFR_RNDN);
+        mpfr_set_flt(my, y_fl[i], MPFR_RNDN);
+        mpfr_set_flt(mz, z_fl[i], MPFR_RNDN);
         if constexpr (O == OP3::FMA) {
             mpfr_fma(mr, mx, my, mz, cvt_rm(ctx.rm()));
         } else {
@@ -358,21 +341,38 @@ double mpfr_op3(const std::vector<double>& x_vals, const std::vector<double>& y_
         }
         result = mpfr_get_d(mr, MPFR_RNDN);
     }
-    
+
     auto end = std::chrono::steady_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
     (void) result;
-    
+
     mpfr_clear(mx);
     mpfr_clear(my);
     mpfr_clear(mz);
     mpfr_clear(mr);
-    
+
     return duration;
 }
 
 ////////////////////////////////////////////////////////////
 // SoftFloat implementations
+
+static uint8_t cvt_rm_softfloat(mpfx::RM rm) {
+    switch (rm) {
+        case mpfx::RM::RNE:
+            return softfloat_round_near_even;
+        case mpfx::RM::RTP:
+            return softfloat_round_max;
+        case mpfx::RM::RTN:
+            return softfloat_round_min;
+        case mpfx::RM::RTZ:
+            return softfloat_round_minMag;
+        case mpfx::RM::RAZ:
+            return softfloat_round_near_maxMag;
+        default:
+            throw std::runtime_error("invalid rounding mode");
+    }
+}
 
 template <OP1 O>
 double softfloat_op1(const std::vector<double>& x_vals, const mpfx::MPBContext& ctx, size_t N) {
@@ -487,6 +487,23 @@ double softfloat_op3(const std::vector<double>& x_vals, const std::vector<double
 
 ////////////////////////////////////////////////////////////
 // FloppyFloat implementations
+
+static Vfpu::RoundingMode cvt_rm_floppyfloat(mpfx::RM rm) {
+    switch (rm) {
+        case mpfx::RM::RNE:
+            return Vfpu::kRoundTiesToEven;
+        case mpfx::RM::RTP:
+            return Vfpu::kRoundTowardPositive;
+        case mpfx::RM::RTN:
+            return Vfpu::kRoundTowardNegative;
+        case mpfx::RM::RTZ:
+            return Vfpu::kRoundTowardZero;
+        case mpfx::RM::RAZ:
+            return Vfpu::kRoundTiesToAway;
+        default:
+            throw std::runtime_error("invalid rounding mode");
+    }
+}
 
 template <OP1 O>
 double floppyfloat_op1(const std::vector<double>& x_vals, const mpfx::MPBContext& ctx, size_t N) {
@@ -773,6 +790,10 @@ void benchmark_op3(
 
 
 int main() {
+    const auto INPUT_CTX = mpfx::IEEE754Context(8, 32, mpfx::RM::RNE);
+    const auto OUTPUT_CTX = mpfx::IEEE754Context(8, 16, mpfx::RM::RNE);
+    constexpr size_t N = 10'000'000;
+
     report_header();
     benchmark_op2<OP2::ADD>(INPUT_CTX, OUTPUT_CTX, N);
     benchmark_op2<OP2::SUB>(INPUT_CTX, OUTPUT_CTX, N);
