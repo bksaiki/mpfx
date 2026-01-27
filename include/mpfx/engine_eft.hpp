@@ -123,9 +123,9 @@ inline std::tuple<T, T> two_sqrt(const T& x) {
 
 /// @brief Error-free transformation of FMA.
 ///
-/// Computes `x * y + z = r1 + r2 + r3` such that `r1` is the
-/// round-to-nearest result of `x * y + z`, and `r2` and `r3` are
-/// the error terms.
+/// Computes `x * y + z = r1 + r2` such that `r1` is the
+/// round-to-nearest result of `x * y + z`, and `r2` is
+/// the error term.
 template <std::floating_point T>
 inline std::tuple<T, T> eft_fma(const T& x, const T& y, const T& z) {
     const auto r1 = std::fma(x, y, z);
