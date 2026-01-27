@@ -57,7 +57,7 @@ inline T round_finalize(T high, T low) {
     MPFX_DEBUG_ASSERT(std::isfinite(low), "round_finalize: low part is not finite");
     using U = typename float_to_uint<T>::type;
 
-    if (low == 0.0) {
+    if (low == static_cast<T>(0.0)) {
         // result is exact
         return high;
     } else {
@@ -81,9 +81,9 @@ inline T round_finalize(T high, T low) {
 template <std::floating_point T>
 inline std::tuple<T, T> two_sum(const T& x, const T& y) {
     const bool no_swap = std::fabs(x) > std::fabs(y);
-    const T s = x + y;
     const T a = no_swap ? x : y;
     const T b = no_swap ? y : x;
+    const T s = a + b;
     const T t = (s - a) - b;
     return { s, t };
 }
@@ -98,16 +98,14 @@ inline std::tuple<T, T> two_prod(const T& x, const T& y) {
 /// @brief Error-free transformation of division.
 ///
 /// The result is `q = x / y` and the signum of the remainder.
+/// Assumes `x` and `y` are finite and non-zero.
 template <std::floating_point T>
 inline std::tuple<T, T> div_with_ternary(const T& x, const T& y) {
     // quotient: correctly-rounded division under RNE
+    // remainder: r = (x - q * y) / y [from x/y = q + r]
     const T q = x / y;
-    // scaled remainder: r * y = x - q * y [from x/y = q + r]
-    const T ry = -std::fma(q, y, -x) / y;
-    // produce a ternary to indicate if we have a positive, negative, or zero remainder
-    const T t = (ry == 0.0) ? 0.0 : (std::copysign(1.0, ry));
-    // the quotient with a ternary value representing sgn(r)
-    return { q, t };
+    const T r = -std::fma(q, y, -x) / y;
+    return { q, r };
 }
 
 /// @brief Error-free transformation of FMA.
@@ -116,14 +114,16 @@ inline std::tuple<T, T> div_with_ternary(const T& x, const T& y) {
 /// round-to-nearest of `x * y + z`, and `r2` and `r3` are the
 /// error terms.
 template <std::floating_point T>
-inline std::tuple<T, T, T> eft_fma(const T& x, const T& y, const T& z) {
+inline std::tuple<T, T> eft_fma(const T& x, const T& y, const T& z) {
     const auto r1 = std::fma(x, y, z);
     const auto [u1, u2] = two_prod(x, y);
     const auto [a1, a2] = two_sum(z, u2);
     const auto [b1, b2] = two_sum(u1, a1);
     const auto g = (b1 - r1) + b2;
-    const auto [r2, r3] = two_sum(g, a2);
-    return { r1, r2, r3 };
+    // const auto [r2, r3] = two_sum(g, a2);
+    // return { r1, r2, r3 };
+    const auto r2 = g + a2;
+    return { r1, r2 };
 }
 
 } // end anonymous namespace
@@ -186,7 +186,7 @@ inline double mul(double x, double y, prec_t p) {
         "mul: requested precision exceeds double-precision capability"
     );
 
-    if (!std::isfinite(x) || !std::isfinite(y) || y == 0.0) {
+    if (!std::isfinite(x) || !std::isfinite(y)) {
         // handle special values using standard multiplication
         return x * y;
     }
@@ -209,13 +209,14 @@ inline double div(double x, double y, prec_t p) {
         "div: requested precision exceeds double-precision capability"
     );
 
-    if (!std::isfinite(x) || !std::isfinite(y)) {
+    if (!std::isfinite(x) || !std::isfinite(y) || y == 0.0) {
         // handle special values using standard division
         return x / y;
     }
 
     // perform EFT division
-    // the remainder is -1, 0, 1 which is sufficient for round-to-odd finalization
+    // the remainder is x<0, x=0, x>0 which is sufficient for
+    // round-to-odd finalization
     const auto [q, t] = div_with_ternary(x, y);
 
     // finalize rounding to round-to-odd
@@ -239,10 +240,9 @@ inline double fma(double x, double y, double z, prec_t p) {
     }
 
     // perform EFT of FMA
-    const auto [r1, r2, r3] = eft_fma(x, y, z);
+    const auto [r1, r2] = eft_fma(x, y, z);
 
     // finalize the rounding to round-to-odd
-    // we can ignore `r3` since `r2 + r3` still has the same sign
     return round_finalize(r1, r2);
 }
 
