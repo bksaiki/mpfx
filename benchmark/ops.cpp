@@ -15,6 +15,12 @@
 #include <softfloat.h>
 #include <floppy_float.h>
 
+
+static const auto INPUT_CTX = mpfx::IEEE754Context(8, 32, mpfx::RM::RNE);
+static const auto OUTPUT_CTX = mpfx::IEEE754Context(8, 32, mpfx::RM::RNE);
+static constexpr size_t N = 10'000'000;
+
+
 enum class OP1 {
     SQRT
 };
@@ -66,14 +72,27 @@ inline std::string to_string(OP3 op) {
 
 
 template <std::floating_point T>
-static void generate_inputs(std::vector<T>& vals, const mpfx::MPBContext& ctx) {
+static void generate_inputs(std::vector<T>& vals, const mpfx::MPBContext& ctx, double lower = -1.0, double upper = 1.0) {
     std::random_device rd;
     std::mt19937_64 rng(rd());
-    std::uniform_real_distribution<double> dist(-1.0, 1.0);
+    std::uniform_real_distribution<double> dist(lower, upper);
 
     for (size_t i = 0; i < vals.size(); i++) {
         vals[i] = static_cast<T>(mpfx::round(dist(rng), ctx));
     }
+}
+
+static void report_header() {
+    std::cout << "op"
+        << ", native"
+        << ", mpfr"
+        << ", softfloat"
+        << ", floppyfloat"
+        << ", mpfx_rto"
+        << ", mpfx_sfloat"
+        << ", mpfx_ffloat"
+        << ", mpfx_eft"
+        << "\n";
 }
 
 static void report_result(
@@ -81,13 +100,21 @@ static void report_result(
     double duration_ref,
     double duration_mpfr,
     double duration_softfloat,
-    double duration_floppyfloat
+    double duration_floppyfloat,
+    double duration_mpfx_rto,
+    double duration_mpfx_softfloat,
+    double duration_mpfx_ffloat,
+    double duration_mpfx_eft
 ) {
     std::cout << op_name
         << ", " << duration_ref
         << ", " << duration_mpfr
         << ", " << duration_softfloat
         << ", " << duration_floppyfloat
+        << ", " << duration_mpfx_rto
+        << ", " << duration_mpfx_softfloat
+        << ", " << duration_mpfx_ffloat
+        << ", " << duration_mpfx_eft
         << "\n";
 }
 
@@ -558,6 +585,72 @@ double floppyfloat_op3(const std::vector<double>& x_vals, const std::vector<doub
 }
 
 ////////////////////////////////////////////////////////////
+// MPFX engine implementations
+
+template <mpfx::EngineType E, OP1 O>
+double mpfx_op1(const std::vector<double>& x_vals, const mpfx::MPBContext& ctx, size_t N) {
+    volatile double result = 0.0;
+    auto start = std::chrono::steady_clock::now();
+    
+    for (size_t i = 0; i < N; i++) {
+        if constexpr (O == OP1::SQRT) {
+            result = mpfx::sqrt<E>(x_vals[i], ctx);
+        } else {
+            MPFX_STATIC_ASSERT(false, "unsupported OP1");
+        }
+    }
+    
+    auto end = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+    (void) result;
+    return duration;
+}
+
+template <mpfx::EngineType E, OP2 O>
+double mpfx_op2(const std::vector<double>& x_vals, const std::vector<double>& y_vals, const mpfx::MPBContext& ctx, size_t N) {
+    volatile double result = 0.0;
+    auto start = std::chrono::steady_clock::now();
+    
+    for (size_t i = 0; i < N; i++) {
+        if constexpr (O == OP2::ADD) {
+            result = mpfx::add<E>(x_vals[i], y_vals[i], ctx);
+        } else if constexpr (O == OP2::SUB) {
+            result = mpfx::sub<E>(x_vals[i], y_vals[i], ctx);
+        } else if constexpr (O == OP2::MUL) {
+            result = mpfx::mul<E>(x_vals[i], y_vals[i], ctx);
+        } else if constexpr (O == OP2::DIV) {
+            result = mpfx::div<E>(x_vals[i], y_vals[i], ctx);
+        } else {
+            MPFX_STATIC_ASSERT(false, "unsupported OP2");
+        }
+    }
+    
+    auto end = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+    (void) result;
+    return duration;
+}
+
+template <mpfx::EngineType E, OP3 O>
+double mpfx_op3(const std::vector<double>& x_vals, const std::vector<double>& y_vals, const std::vector<double>& z_vals, const mpfx::MPBContext& ctx, size_t N) {
+    volatile double result = 0.0;
+    auto start = std::chrono::steady_clock::now();
+    
+    for (size_t i = 0; i < N; i++) {
+        if constexpr (O == OP3::FMA) {
+            result = mpfx::fma<E>(x_vals[i], y_vals[i], z_vals[i], ctx);
+        } else {
+            MPFX_STATIC_ASSERT(false, "unsupported OP3");
+        }
+    }
+    
+    auto end = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+    (void) result;
+    return duration;
+}
+
+////////////////////////////////////////////////////////////
 // Benchmarking functions
 
 template <OP1 O>
@@ -568,7 +661,11 @@ void benchmark_op1(
 ) {
     // Generate inputs
     std::vector<double> x_vals(num_inputs);
-    generate_inputs(x_vals, input_ctx);
+    if constexpr (O == OP1::SQRT) {
+        generate_inputs(x_vals, input_ctx, 0.0, 1.0); // sqrt requires non-negative inputs
+    } else {
+        generate_inputs(x_vals, input_ctx);
+    }
 
     // Run reference
     const double duration_ref = reference_op1<O>(x_vals, num_inputs);
@@ -582,8 +679,18 @@ void benchmark_op1(
     // Run FloppyFloat
     const double duration_floppyfloat = floppyfloat_op1<O>(x_vals, output_ctx, num_inputs);
 
+    // Run MPFX engines
+    const double duration_mpfx_rto = mpfx_op1<mpfx::EngineType::FP_RTO, O>(x_vals, output_ctx, num_inputs);
+    const double duration_mpfx_softfloat = mpfx_op1<mpfx::EngineType::SOFTFLOAT, O>(x_vals, output_ctx, num_inputs);
+    const double duration_mpfx_ffloat = mpfx_op1<mpfx::EngineType::FFLOAT, O>(x_vals, output_ctx, num_inputs);
+    const double duration_mpfx_eft = mpfx_op1<mpfx::EngineType::EFT, O>(x_vals, output_ctx, num_inputs);
+
     // Report result
-    report_result(to_string(O), duration_ref, duration_mpfr, duration_softfloat, duration_floppyfloat);
+    report_result(
+        to_string(O),
+        duration_ref, duration_mpfr, duration_softfloat, duration_floppyfloat,
+        duration_mpfx_rto, duration_mpfx_softfloat, duration_mpfx_ffloat, duration_mpfx_eft
+    );
 }
 
 template <OP2 O>
@@ -610,8 +717,18 @@ void benchmark_op2(
     // Run FloppyFloat
     const double duration_floppyfloat = floppyfloat_op2<O>(x_vals, y_vals, output_ctx, num_inputs);
 
+    // Run MPFX engines
+    const double duration_mpfx_rto = mpfx_op2<mpfx::EngineType::FP_RTO, O>(x_vals, y_vals, output_ctx, num_inputs);
+    const double duration_mpfx_softfloat = mpfx_op2<mpfx::EngineType::SOFTFLOAT, O>(x_vals, y_vals, output_ctx, num_inputs);
+    const double duration_mpfx_ffloat = mpfx_op2<mpfx::EngineType::FFLOAT, O>(x_vals, y_vals, output_ctx, num_inputs);
+    const double duration_mpfx_eft = mpfx_op2<mpfx::EngineType::EFT, O>(x_vals, y_vals, output_ctx, num_inputs);
+
     // Report result
-    report_result(to_string(O), duration_ref, duration_mpfr, duration_softfloat, duration_floppyfloat);
+    report_result(
+        to_string(O),
+        duration_ref, duration_mpfr, duration_softfloat, duration_floppyfloat,
+        duration_mpfx_rto, duration_mpfx_softfloat, duration_mpfx_ffloat, duration_mpfx_eft
+    );
 }
 
 template <OP3 O>
@@ -640,22 +757,28 @@ void benchmark_op3(
     // Run FloppyFloat
     const double duration_floppyfloat = floppyfloat_op3<O>(x_vals, y_vals, z_vals, output_ctx, num_inputs);
 
+    // Run MPFX engines
+    const double duration_mpfx_rto = mpfx_op3<mpfx::EngineType::FP_RTO, O>(x_vals, y_vals, z_vals, output_ctx, num_inputs);
+    const double duration_mpfx_softfloat = mpfx_op3<mpfx::EngineType::SOFTFLOAT, O>(x_vals, y_vals, z_vals, output_ctx, num_inputs);
+    const double duration_mpfx_ffloat = mpfx_op3<mpfx::EngineType::FFLOAT, O>(x_vals, y_vals, z_vals, output_ctx, num_inputs);
+    const double duration_mpfx_eft = mpfx_op3<mpfx::EngineType::EFT, O>(x_vals, y_vals, z_vals, output_ctx, num_inputs);
+
     // Report result
-    report_result(to_string(O), duration_ref, duration_mpfr, duration_softfloat, duration_floppyfloat);
+    report_result(
+        to_string(O),
+        duration_ref, duration_mpfr, duration_softfloat, duration_floppyfloat,
+        duration_mpfx_rto, duration_mpfx_softfloat, duration_mpfx_ffloat, duration_mpfx_eft
+    );
 }
 
 
 int main() {
-    const auto INPUT_CTX = mpfx::IEEE754Context(8, 32, mpfx::RM::RNE);
-    const auto OUTPUT_CTX = mpfx::IEEE754Context(8, 32, mpfx::RM::RNE);
-    static constexpr size_t N = 1'000'000;
-
+    report_header();
     benchmark_op2<OP2::ADD>(INPUT_CTX, OUTPUT_CTX, N);
     benchmark_op2<OP2::SUB>(INPUT_CTX, OUTPUT_CTX, N);
     benchmark_op2<OP2::MUL>(INPUT_CTX, OUTPUT_CTX, N);
     benchmark_op2<OP2::DIV>(INPUT_CTX, OUTPUT_CTX, N);
     benchmark_op1<OP1::SQRT>(INPUT_CTX, OUTPUT_CTX, N);
     benchmark_op3<OP3::FMA>(INPUT_CTX, OUTPUT_CTX, N);
-
     return 0;
 }
