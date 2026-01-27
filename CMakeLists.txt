@@ -15,6 +15,7 @@ endif()
 # Options
 option(BUILD_TESTS "Build test executables" ON)
 option(BUILD_EXAMPLES "Build example programs" OFF)
+option(BUILD_BENCHMARKS "Build benchmark programs" OFF)
 option(ENABLE_PROFILING "Enable profiling support" OFF)
 
 # C++ standard
@@ -145,4 +146,9 @@ endif()
 # Examples
 if(BUILD_EXAMPLES)
     add_subdirectory(examples)
+endif()
+
+# Benchmarks
+if(BUILD_BENCHMARKS)
+    add_subdirectory(benchmark)
 endif()

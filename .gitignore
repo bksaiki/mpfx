@@ -86,3 +86,7 @@ CMakeUserPresets.json
 
 ### Build folders ###
 third_party/
+
+### Python ###
+__pycache__/
+.env/
