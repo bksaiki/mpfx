@@ -50,17 +50,17 @@ static double run_reference(
         y_fl[i] = static_cast<float>(y_vals[i]);
     }
 
-    auto start = high_resolution_clock::now();
+    auto start = steady_clock::now();
     
-    float sum = 0.0;
+    volatile float result;
     for (size_t i = 0; i < N; i++) {
-        sum += x_fl[i] + y_fl[i];
+        result = x_fl[i] + y_fl[i];
     }
 
-    auto end = high_resolution_clock::now();
+    auto end = steady_clock::now();
     auto duration = duration_cast<microseconds>(end - start).count();
+    (void) result; // prevent unused variable warning
 
-    std::cout << "  Result checksum: " << sum << "\n";
     std::cout << "  Duration: " << duration * 1e-6 << " seconds\n\n";
     return duration;
 }
@@ -78,9 +78,9 @@ static double run_softfloat(
         y_fl[i] = static_cast<float>(y_vals[i]);
     }
 
-    auto start = high_resolution_clock::now();
+    auto start = steady_clock::now();
 
-    double sum = 0.0;
+    volatile float result;
     for (size_t i = 0; i < N; i++) {
         // Convert to SoftFloat format
         float32_t x, y;
@@ -90,14 +90,14 @@ static double run_softfloat(
         // Perform addition
         float32_t r = f32_add(x, y);
 
-        // Convert back to double
-        sum += std::bit_cast<float>(r.v);
+        // Store result
+        result = std::bit_cast<float>(r.v);
     }
 
-    auto end = high_resolution_clock::now();
+    auto end = steady_clock::now();
     auto duration = duration_cast<microseconds>(end - start).count();
+    (void) result; // prevent unused variable warning
 
-    std::cout << "  Result checksum: " << sum << "\n";
     std::cout << "  Duration: " << duration * 1e-6 << " seconds\n\n";
     return duration;
 }
@@ -118,18 +118,17 @@ static double run_floppyfloat(
         y_fl[i] = static_cast<float>(y_vals[i]);
     }
 
-    auto start = high_resolution_clock::now();
+    auto start = steady_clock::now();
 
-    double sum = 0.0;
+    volatile float result;
     for (size_t i = 0; i < N; i++) {
-        float r = ff.Add(x_fl[i], y_fl[i]);
-        sum += static_cast<double>(r);
+        result = ff.Add(x_fl[i], y_fl[i]);
     }
 
-    auto end = high_resolution_clock::now();
+    auto end = steady_clock::now();
     auto duration = duration_cast<microseconds>(end - start).count();
+    (void) result; // prevent unused variable warning
 
-    std::cout << "  Result checksum: " << sum << "\n";
     std::cout << "  Duration: " << duration * 1e-6 << " seconds\n\n";
     return duration;
 }
@@ -139,17 +138,18 @@ static double run_rto_engine(
     const std::vector<double>& y_vals
 ) {
     std::cout << "Running RTO engine...\n";
-    auto start = high_resolution_clock::now();
 
-    double sum = 0.0;
+    auto start = steady_clock::now();
+
+    volatile double result;
     for (size_t i = 0; i < N; i++) {
-        sum += mpfx::add<mpfx::EngineType::FP_RTO>(x_vals[i], y_vals[i], ROUND_CTX);
+        result = mpfx::add<mpfx::EngineType::FP_RTO>(x_vals[i], y_vals[i], ROUND_CTX);
     }
 
-    auto end = high_resolution_clock::now();
+    auto end = steady_clock::now();
     auto duration = duration_cast<microseconds>(end - start).count();
+    (void) result; // prevent unused variable warning
 
-    std::cout << "  Result checksum: " << sum << "\n";
     std::cout << "  Duration: " << duration * 1e-6 << " seconds\n\n";
     return duration;
 }
@@ -159,17 +159,18 @@ static double run_softfloat_engine(
     const std::vector<double>& y_vals
 ) {
     std::cout << "Running SoftFloat engine...\n";
-    auto start = high_resolution_clock::now();
 
-    double sum = 0.0;
+    auto start = steady_clock::now();
+
+    volatile double result;
     for (size_t i = 0; i < N; i++) {
-        sum += mpfx::add<mpfx::EngineType::SOFTFLOAT>(x_vals[i], y_vals[i], ROUND_CTX);
+        result = mpfx::add<mpfx::EngineType::SOFTFLOAT>(x_vals[i], y_vals[i], ROUND_CTX);
     }
 
-    auto end = high_resolution_clock::now();
+    auto end = steady_clock::now();
     auto duration = duration_cast<microseconds>(end - start).count();
+    (void) result; // prevent unused variable warning
 
-    std::cout << "  Result checksum: " << sum << "\n";
     std::cout << "  Duration: " << duration * 1e-6 << " seconds\n\n";
     return duration;
 }
@@ -179,17 +180,18 @@ static double run_floppyfloat_engine(
     const std::vector<double>& y_vals
 ) {
     std::cout << "Running FloppyFloat engine...\n";
-    auto start = high_resolution_clock::now();
 
-    double sum = 0.0;
+    auto start = steady_clock::now();
+
+    volatile double result;
     for (size_t i = 0; i < N; i++) {
-        sum += mpfx::add<mpfx::EngineType::FFLOAT>(x_vals[i], y_vals[i], ROUND_CTX);
+        result = mpfx::add<mpfx::EngineType::FFLOAT>(x_vals[i], y_vals[i], ROUND_CTX);
     }
 
-    auto end = high_resolution_clock::now();
+    auto end = steady_clock::now();
     auto duration = duration_cast<microseconds>(end - start).count();
+    (void) result; // prevent unused variable warning
 
-    std::cout << "  Result checksum: " << sum << "\n";
     std::cout << "  Duration: " << duration * 1e-6 << " seconds\n\n";
     return duration;
 }
@@ -199,17 +201,18 @@ static double run_eft_engine(
     const std::vector<double>& y_vals
 ) {
     std::cout << "Running EFT engine...\n";
-    auto start = high_resolution_clock::now();
 
-    double sum = 0.0;
+    auto start = steady_clock::now();
+
+    volatile double result;
     for (size_t i = 0; i < N; i++) {
-        sum += mpfx::add<mpfx::EngineType::EFT>(x_vals[i], y_vals[i], ROUND_CTX);
+        result = mpfx::add<mpfx::EngineType::EFT>(x_vals[i], y_vals[i], ROUND_CTX);
     }
 
-    auto end = high_resolution_clock::now();
+    auto end = steady_clock::now();
     auto duration = duration_cast<microseconds>(end - start).count();
+    (void) result; // prevent unused variable warning
 
-    std::cout << "  Result checksum: " << sum << "\n";
     std::cout << "  Duration: " << duration * 1e-6 << " seconds\n\n";
     return duration;
 }
