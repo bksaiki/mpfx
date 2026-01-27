@@ -44,9 +44,16 @@ static double run_reference(
     std::cout << "Running reference (native double addition)...\n";
     auto start = high_resolution_clock::now();
 
-    double sum = 0.0;
+    std::vector<float> x_fl(N);
+    std::vector<float> y_fl(N);
     for (size_t i = 0; i < N; i++) {
-        sum += x_vals[i] * y_vals[i];
+        x_fl[i] = static_cast<float>(x_vals[i]);
+        y_fl[i] = static_cast<float>(y_vals[i]);
+    }
+
+    float sum = 0.0;
+    for (size_t i = 0; i < N; i++) {
+        sum += x_fl[i] + y_fl[i];
     }
 
     auto end = high_resolution_clock::now();
