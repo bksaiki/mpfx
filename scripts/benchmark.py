@@ -7,6 +7,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor
 
+import matplotlib.pyplot as plt
+import numpy as np
+
 REPO_ROOT = Path(__file__).parent.parent.resolve()
 BUILD_DIR = REPO_ROOT / "build"
 
@@ -29,6 +32,16 @@ COLUMNS = [
     'mpfx_ffloat',
     'mpfx_eft'
 ]
+
+NAMES = {
+    'mpfr': 'MPFR',
+    'softfloat': 'SoftFloat',
+    'floppyfloat': 'FloppyFloat',
+    'mpfx_rto': 'MPFX (RTO)',
+    'mpfx_sfloat': 'MPFX (SoftFloat)',
+    'mpfx_ffloat': 'MPFX (FloppyFloat)',
+    'mpfx_eft': 'MPFX (EFT)',
+}
 
 
 @dataclass
@@ -148,6 +161,67 @@ def report_overhead(output_dir: Path):
             print(f'{overhead:>12.2f}', end="")
         print()
 
+def plot_overhead(output_dir: Path):
+    # load average overheads from pickle
+    avg_overhead_file = output_dir / "cache" / "average_overheads.pkl"
+    with avg_overhead_file.open('rb') as f:
+        average_overheads: dict[tuple[str, str], float] = pickle.load(f)
+
+    plot_dir = output_dir / "plots"
+    plot_dir.mkdir(exist_ok=True)
+
+    # Create a color gradient from light to dark blue
+    n_colors = len(COLUMNS[1:])
+    colors = plt.cm.Blues(np.linspace(0.4, 0.9, n_colors))
+    
+    # Create a single figure with subplots for all operations
+    fig, axes = plt.subplots(2, 3, figsize=(18, 10))
+    axes = axes.flatten()
+    
+    # Create a bar chart for each operation
+    for idx, op in enumerate(ROWS):
+        ax: plt.Axes = axes[idx]
+        
+        # Get overheads for this operation
+        overheads = [average_overheads[(op, col)] for col in COLUMNS[1:]]
+        
+        # Create bar chart with gradient colors
+        x = np.arange(len(COLUMNS[1:]))
+        bars = ax.bar(x, overheads, color=colors, edgecolor='black', linewidth=0.5)
+        
+        # Customize plot
+        ax.set_title(f'{op.upper()}', fontsize=12)
+        ax.set_xticks([])  # Remove x-axis ticks and labels
+        ax.grid(axis='y', alpha=0.3, linestyle='--')
+        
+        # Add value labels on top of bars
+        for bar in bars:
+            height = bar.get_height()
+            ax.text(bar.get_x() + bar.get_width()/2., height,
+                   f'{height:.1f}x',
+                   ha='center', va='bottom', fontsize=10)
+    
+    # Add common y-label for all subplots
+    fig.supylabel('Overhead (relative to native)', fontsize=12)
+    
+    # Create legend with implementation names
+    legend_patches = [plt.Rectangle((0, 0), 1, 1, fc=colors[i], edgecolor='black', linewidth=0.5) 
+                     for i in range(len(COLUMNS[1:]))]
+    legend_labels = [NAMES[col] for col in COLUMNS[1:]]
+    fig.legend(legend_patches, legend_labels, loc='center', 
+              bbox_to_anchor=(0.5, -0.02), ncol=len(COLUMNS[1:]), frameon=True,
+              fontsize=12, edgecolor='black')
+    
+    plt.suptitle('Performance Overhead by Operation', fontsize=16)
+    plt.tight_layout(rect=[0.015, 0.03, 1, 0.96])
+    
+    # Save combined plot
+    plot_file = plot_dir / "overhead.png"
+    plt.savefig(plot_file, dpi=150, bbox_inches='tight')
+    plt.close()
+    
+    print(f"Saved plot: {plot_file}")
+
 
 
 def build_benchmarks():
@@ -158,7 +232,7 @@ def build_benchmarks():
 if __name__ == "__main__":
     parser = ArgumentParser(description="Benchmarking script for MPFX")
     parser.add_argument('output_dir', type=Path, help='Directory to save benchmark results.')
-    parser.add_argument('iterations', type=int, help='Number of iterations for each benchmark test.')
+    parser.add_argument('--iterations', type=int, default=1, help='Number of iterations for each benchmark test.')
     parser.add_argument('--threads', type=int, default=1, help='Number of parallel processes to use for benchmarking.')
     parser.add_argument('--replot', action='store_true', help='Re-generate plots from existing benchmark data.')
     args = parser.parse_args()
@@ -174,14 +248,17 @@ if __name__ == "__main__":
     print(f"Iterations: {iterations}")
     print(f"Threads: {threads}")
 
-    # build benchmarks
-    print('Building benchmark binaries...')
-    build_benchmarks()
-    print('Benchmark binaries built successfully.')
-
-    # Run benchmarks
     if not replot:
+        # build benchmarks
+        print('Building benchmark binaries...')
+        build_benchmarks()
+        print('Benchmark binaries built successfully.')
+
+        # Run benchmarks
         run_benchmarks(output_dir, iterations, threads)
 
     # Report overheads
     report_overhead(output_dir)
+
+    # Plot overhead
+    plot_overhead(output_dir)
