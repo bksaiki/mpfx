@@ -3,6 +3,7 @@
  * @brief Benchmarking against other number libraries.
  */
 
+#include <bit>
 #include <chrono>
 #include <iostream>
 #include <concepts>
@@ -78,11 +79,15 @@ static void generate_inputs(std::vector<T>& vals, const mpfx::MPBContext& ctx) {
 static void report_result(
     const std::string& op_name,
     double duration_ref,
-    double duration_mpfr
+    double duration_mpfr,
+    double duration_softfloat,
+    double duration_floppyfloat
 ) {
     std::cout << op_name
         << ", " << duration_ref
         << ", " << duration_mpfr
+        << ", " << duration_softfloat
+        << ", " << duration_floppyfloat
         << "\n";
 }
 
@@ -197,6 +202,40 @@ static mpfr_rnd_t cvt_rm(mpfx::RM rm) {
     }
 }
 
+static uint8_t cvt_rm_softfloat(mpfx::RM rm) {
+    switch (rm) {
+        case mpfx::RM::RNE:
+            return softfloat_round_near_even;
+        case mpfx::RM::RTP:
+            return softfloat_round_max;
+        case mpfx::RM::RTN:
+            return softfloat_round_min;
+        case mpfx::RM::RTZ:
+            return softfloat_round_minMag;
+        case mpfx::RM::RAZ:
+            return softfloat_round_near_maxMag;
+        default:
+            throw std::runtime_error("invalid rounding mode");
+    }
+}
+
+static Vfpu::RoundingMode cvt_rm_floppyfloat(mpfx::RM rm) {
+    switch (rm) {
+        case mpfx::RM::RNE:
+            return Vfpu::kRoundTiesToEven;
+        case mpfx::RM::RTP:
+            return Vfpu::kRoundTowardPositive;
+        case mpfx::RM::RTN:
+            return Vfpu::kRoundTowardNegative;
+        case mpfx::RM::RTZ:
+            return Vfpu::kRoundTowardZero;
+        case mpfx::RM::RAZ:
+            return Vfpu::kRoundTiesToAway;
+        default:
+            throw std::runtime_error("invalid rounding mode");
+    }
+}
+
 template <OP1 O>
 double mpfr_op1(const std::vector<double>& x_vals, const mpfx::MPBContext& ctx, size_t N) {
     mpfr_t mx, mr;
@@ -306,6 +345,219 @@ double mpfr_op3(const std::vector<double>& x_vals, const std::vector<double>& y_
 }
 
 ////////////////////////////////////////////////////////////
+// SoftFloat implementations
+
+template <OP1 O>
+double softfloat_op1(const std::vector<double>& x_vals, const mpfx::MPBContext& ctx, size_t N) {
+    softfloat_roundingMode = cvt_rm_softfloat(ctx.rm());
+
+    // Quantize to FP32
+    std::vector<float> x_fl(N);
+    for (size_t i = 0; i < N; i++) {
+        x_fl[i] = static_cast<float>(x_vals[i]);
+    }
+
+    volatile float result = 0.0f;
+    auto start = std::chrono::steady_clock::now();
+    
+    for (size_t i = 0; i < N; i++) {
+        float32_t x;
+        x.v = std::bit_cast<uint32_t>(x_fl[i]);
+        
+        if constexpr (O == OP1::SQRT) {
+            float32_t r = f32_sqrt(x);
+            result = std::bit_cast<float>(r.v);
+        } else {
+            MPFX_STATIC_ASSERT(false, "unsupported OP1");
+        }
+    }
+    
+    auto end = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+    (void) result;
+    return duration;
+}
+
+template <OP2 O>
+double softfloat_op2(const std::vector<double>& x_vals, const std::vector<double>& y_vals, const mpfx::MPBContext& ctx, size_t N) {
+    softfloat_roundingMode = cvt_rm_softfloat(ctx.rm());
+
+    // Quantize to FP32
+    std::vector<float> x_fl(N);
+    std::vector<float> y_fl(N);
+    for (size_t i = 0; i < N; i++) {
+        x_fl[i] = static_cast<float>(x_vals[i]);
+        y_fl[i] = static_cast<float>(y_vals[i]);
+    }
+
+    volatile float result = 0.0f;
+    auto start = std::chrono::steady_clock::now();
+    
+    for (size_t i = 0; i < N; i++) {
+        float32_t x, y;
+        x.v = std::bit_cast<uint32_t>(x_fl[i]);
+        y.v = std::bit_cast<uint32_t>(y_fl[i]);
+        
+        if constexpr (O == OP2::ADD) {
+            float32_t r = f32_add(x, y);
+            result = std::bit_cast<float>(r.v);
+        } else if constexpr (O == OP2::SUB) {
+            float32_t r = f32_sub(x, y);
+            result = std::bit_cast<float>(r.v);
+        } else if constexpr (O == OP2::MUL) {
+            float32_t r = f32_mul(x, y);
+            result = std::bit_cast<float>(r.v);
+        } else if constexpr (O == OP2::DIV) {
+            float32_t r = f32_div(x, y);
+            result = std::bit_cast<float>(r.v);
+        } else {
+            MPFX_STATIC_ASSERT(false, "unsupported OP2");
+        }
+    }
+    
+    auto end = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+    (void) result;
+    return duration;
+}
+
+template <OP3 O>
+double softfloat_op3(const std::vector<double>& x_vals, const std::vector<double>& y_vals, const std::vector<double>& z_vals, const mpfx::MPBContext& ctx, size_t N) {
+    softfloat_roundingMode = cvt_rm_softfloat(ctx.rm());
+
+    // Quantize to FP32
+    std::vector<float> x_fl(N);
+    std::vector<float> y_fl(N);
+    std::vector<float> z_fl(N);
+    for (size_t i = 0; i < N; i++) {
+        x_fl[i] = static_cast<float>(x_vals[i]);
+        y_fl[i] = static_cast<float>(y_vals[i]);
+        z_fl[i] = static_cast<float>(z_vals[i]);
+    }
+
+    volatile float result = 0.0f;
+    auto start = std::chrono::steady_clock::now();
+    
+    for (size_t i = 0; i < N; i++) {
+        float32_t x, y, z;
+        x.v = std::bit_cast<uint32_t>(x_fl[i]);
+        y.v = std::bit_cast<uint32_t>(y_fl[i]);
+        z.v = std::bit_cast<uint32_t>(z_fl[i]);
+        
+        if constexpr (O == OP3::FMA) {
+            float32_t r = f32_mulAdd(x, y, z);
+            result = std::bit_cast<float>(r.v);
+        } else {
+            MPFX_STATIC_ASSERT(false, "unsupported OP3");
+        }
+    }
+    
+    auto end = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+    (void) result;
+    return duration;
+}
+
+////////////////////////////////////////////////////////////
+// FloppyFloat implementations
+
+template <OP1 O>
+double floppyfloat_op1(const std::vector<double>& x_vals, const mpfx::MPBContext& ctx, size_t N) {
+    FloppyFloat ff;
+    ff.rounding_mode = cvt_rm_floppyfloat(ctx.rm());
+
+    // Quantize to FP32
+    std::vector<float> x_fl(N);
+    for (size_t i = 0; i < N; i++) {
+        x_fl[i] = static_cast<float>(x_vals[i]);
+    }
+
+    volatile float result = 0.0f;
+    auto start = std::chrono::steady_clock::now();
+    
+    for (size_t i = 0; i < N; i++) {
+        if constexpr (O == OP1::SQRT) {
+            result = ff.Sqrt(x_fl[i]);
+        } else {
+            MPFX_STATIC_ASSERT(false, "unsupported OP1");
+        }
+    }
+    
+    auto end = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+    (void) result;
+    return duration;
+}
+
+template <OP2 O>
+double floppyfloat_op2(const std::vector<double>& x_vals, const std::vector<double>& y_vals, const mpfx::MPBContext& ctx, size_t N) {
+    FloppyFloat ff;
+    ff.rounding_mode = cvt_rm_floppyfloat(ctx.rm());
+
+    // Quantize to FP32
+    std::vector<float> x_fl(N);
+    std::vector<float> y_fl(N);
+    for (size_t i = 0; i < N; i++) {
+        x_fl[i] = static_cast<float>(x_vals[i]);
+        y_fl[i] = static_cast<float>(y_vals[i]);
+    }
+
+    volatile float result = 0.0f;
+    auto start = std::chrono::steady_clock::now();
+    
+    for (size_t i = 0; i < N; i++) {
+        if constexpr (O == OP2::ADD) {
+            result = ff.Add(x_fl[i], y_fl[i]);
+        } else if constexpr (O == OP2::SUB) {
+            result = ff.Sub(x_fl[i], y_fl[i]);
+        } else if constexpr (O == OP2::MUL) {
+            result = ff.Mul(x_fl[i], y_fl[i]);
+        } else if constexpr (O == OP2::DIV) {
+            result = ff.Div(x_fl[i], y_fl[i]);
+        } else {
+            MPFX_STATIC_ASSERT(false, "unsupported OP2");
+        }
+    }
+    
+    auto end = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+    (void) result;
+    return duration;
+}
+
+template <OP3 O>
+double floppyfloat_op3(const std::vector<double>& x_vals, const std::vector<double>& y_vals, const std::vector<double>& z_vals, const mpfx::MPBContext& ctx, size_t N) {
+    FloppyFloat ff;
+    ff.rounding_mode = cvt_rm_floppyfloat(ctx.rm());
+
+    // Quantize to FP32
+    std::vector<float> x_fl(N);
+    std::vector<float> y_fl(N);
+    std::vector<float> z_fl(N);
+    for (size_t i = 0; i < N; i++) {
+        x_fl[i] = static_cast<float>(x_vals[i]);
+        y_fl[i] = static_cast<float>(y_vals[i]);
+        z_fl[i] = static_cast<float>(z_vals[i]);
+    }
+
+    volatile float result = 0.0f;
+    auto start = std::chrono::steady_clock::now();
+    
+    for (size_t i = 0; i < N; i++) {
+        if constexpr (O == OP3::FMA) {
+            result = ff.Fma(x_fl[i], y_fl[i], z_fl[i]);
+        } else {
+            MPFX_STATIC_ASSERT(false, "unsupported OP3");
+        }
+    }
+    
+    auto end = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+    (void) result;
+    return duration;
+}
+
+////////////////////////////////////////////////////////////
 // Benchmarking functions
 
 template <OP1 O>
@@ -324,8 +576,14 @@ void benchmark_op1(
     // Run MPFR
     const double duration_mpfr = mpfr_op1<O>(x_vals, output_ctx, num_inputs);
 
+    // Run SoftFloat
+    const double duration_softfloat = softfloat_op1<O>(x_vals, output_ctx, num_inputs);
+
+    // Run FloppyFloat
+    const double duration_floppyfloat = floppyfloat_op1<O>(x_vals, output_ctx, num_inputs);
+
     // Report result
-    report_result(to_string(O), duration_ref, duration_mpfr);
+    report_result(to_string(O), duration_ref, duration_mpfr, duration_softfloat, duration_floppyfloat);
 }
 
 template <OP2 O>
@@ -346,8 +604,14 @@ void benchmark_op2(
     // Run MPFR
     const double duration_mpfr = mpfr_op2<O>(x_vals, y_vals, output_ctx, num_inputs);
 
+    // Run SoftFloat
+    const double duration_softfloat = softfloat_op2<O>(x_vals, y_vals, output_ctx, num_inputs);
+
+    // Run FloppyFloat
+    const double duration_floppyfloat = floppyfloat_op2<O>(x_vals, y_vals, output_ctx, num_inputs);
+
     // Report result
-    report_result(to_string(O), duration_ref, duration_mpfr);
+    report_result(to_string(O), duration_ref, duration_mpfr, duration_softfloat, duration_floppyfloat);
 }
 
 template <OP3 O>
@@ -370,8 +634,14 @@ void benchmark_op3(
     // Run MPFR
     const double duration_mpfr = mpfr_op3<O>(x_vals, y_vals, z_vals, output_ctx, num_inputs);
 
+    // Run SoftFloat
+    const double duration_softfloat = softfloat_op3<O>(x_vals, y_vals, z_vals, output_ctx, num_inputs);
+
+    // Run FloppyFloat
+    const double duration_floppyfloat = floppyfloat_op3<O>(x_vals, y_vals, z_vals, output_ctx, num_inputs);
+
     // Report result
-    report_result(to_string(O), duration_ref, duration_mpfr);
+    report_result(to_string(O), duration_ref, duration_mpfr, duration_softfloat, duration_floppyfloat);
 }
 
 

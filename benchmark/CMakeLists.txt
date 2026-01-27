@@ -4,4 +4,5 @@ target_link_libraries(ops
     ${GMP_LIBRARY}
     ${MPFR_LIBRARY}
     softfloat
+    floppy_float
 )
