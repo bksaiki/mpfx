@@ -193,6 +193,11 @@ double sqrt(double x, const Context& ctx) {
         const double r = engine_ff::sqrt(x, ctx.round_prec());
         // use context to round
         return ctx.round(r);
+    } else if constexpr (E == EngineType::EFT) {
+        // compute result using error-free transformations
+        const double r = engine_eft::sqrt(x, ctx.round_prec());
+        // use context to round
+        return ctx.round(r);
     }
 }
 

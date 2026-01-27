@@ -97,22 +97,35 @@ inline std::tuple<T, T> two_prod(const T& x, const T& y) {
 
 /// @brief Error-free transformation of division.
 ///
-/// The result is `q = x / y` and the signum of the remainder.
-/// Assumes `x` and `y` are finite and non-zero.
+/// Computes `x / y = q + r` such that `q` is the
+/// round-to-nearest result of `x / y`, and `r` is
+/// the error term.
 template <std::floating_point T>
-inline std::tuple<T, T> div_with_ternary(const T& x, const T& y) {
-    // quotient: correctly-rounded division under RNE
-    // remainder: r = (x - q * y) / y [from x/y = q + r]
+inline std::tuple<T, T> two_div(const T& x, const T& y) {
     const T q = x / y;
     const T r = -std::fma(q, y, -x) / y;
     return { q, r };
 }
 
+/// @brief Error-free transformation of square root
+///
+/// Computes `sqrt(x) = q + r` such that `q` is the
+/// round-to-nearest result of `sqrt(x)`, and `r` is
+/// the error term.
+template <std::floating_point T>
+inline std::tuple<T, T> two_sqrt(const T& x) {
+    const T r1 = std::sqrt(x);
+    const T n = fma(-r1, r1, x);
+    const T d = r1 + r1;
+    const T r2 = n / d;
+    return { r1, r2 };
+}
+
 /// @brief Error-free transformation of FMA.
 ///
 /// Computes `x * y + z = r1 + r2 + r3` such that `r1` is the
-/// round-to-nearest of `x * y + z`, and `r2` and `r3` are the
-/// error terms.
+/// round-to-nearest result of `x * y + z`, and `r2` and `r3` are
+/// the error terms.
 template <std::floating_point T>
 inline std::tuple<T, T> eft_fma(const T& x, const T& y, const T& z) {
     const auto r1 = std::fma(x, y, z);
@@ -215,12 +228,33 @@ inline double div(double x, double y, prec_t p) {
     }
 
     // perform EFT division
-    // the remainder is x<0, x=0, x>0 which is sufficient for
-    // round-to-odd finalization
-    const auto [q, t] = div_with_ternary(x, y);
+    const auto [q, t] = two_div(x, y);
 
     // finalize rounding to round-to-odd
     return round_finalize(q, t);
+}
+
+/// @brief Computes `sqrt(x)` using an error-free transformation.
+///
+/// Ensures the result has at least `p` bits of precision.
+/// Otherwise, an exception is thrown.
+inline double sqrt(double x, prec_t p) {
+    // double-precision only guarantees 53 bits of precision
+    MPFX_DEBUG_ASSERT(
+        p <= 53,
+        "sqrt: requested precision exceeds double-precision capability"
+    );
+
+    if (!std::isfinite(x) || x < 0.0) {
+        // handle special values using standard square root
+        return std::sqrt(x);
+    }
+
+    // perform EFT square root
+    const auto [r1, r2] = two_sqrt(x);
+
+    // finalize the rounding to round-to-odd
+    return round_finalize(r1, r2);
 }
 
 /// @brief Computes `x * y + z` using an error-free transformation.
