@@ -294,14 +294,16 @@ inline double round(int64_t m, exp_t exp, prec_t p, const std::optional<exp_t>& 
     // Decode `m` into sign-magnitude
     bool s;
     mant_t c;
-    if (m == MIN_VAL) {
-        // special decode to ensure 63 bits of precision
+    if (m < 0) {
         s = true;
-        c = 1ULL << (PREC - 1);
-        exp += 1;
-    } else if (m < 0) {
-        s = true;
-        c = static_cast<mant_t>(std::abs(m));
+        if (m == MIN_VAL) {
+            // special decode to ensure 63 bits of precision
+            c = 1ULL << (PREC - 1);
+            exp += 1;
+        } else {
+            // normal decode
+            c = static_cast<mant_t>(std::abs(m));
+        }
     } else {
         s = false;
         c = static_cast<mant_t>(m);
