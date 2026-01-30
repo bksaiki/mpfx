@@ -64,10 +64,10 @@ inline T round_finalize(T high, T low) {
         // result is inexact
         // `high` and `low` are both non-zero
 
-        // make sure `high` is the RTZ result
-        if (std::signbit(high) == std::signbit(low)) {
-            // `high` is not the RTZ result, so adjust it by
-            // "borrowing" from the low part
+        // might need to do a fixup to ensure `high` is the RTZ result
+        if (std::signbit(high) != std::signbit(low)) {
+            // `high` is not the RTZ result, so adjust it by "borrowing"
+            // from the low part: h - l = (h - u) + (u - l)
             high = next_toward_zero(high);
         }
 
@@ -80,11 +80,13 @@ inline T round_finalize(T high, T low) {
 
 template <std::floating_point T>
 inline std::tuple<T, T> two_sum(const T& x, const T& y) {
-    const bool no_swap = std::fabs(x) > std::fabs(y);
-    const T a = no_swap ? x : y;
-    const T b = no_swap ? y : x;
+    const bool swap = std::fabs(x) < std::fabs(y);
+    const T a = swap ? y : x;
+    const T b = swap ? x : y;
+
     const T s = a + b;
-    const T t = (s - a) - b;
+    const T yy = s - a;
+    const T t = b - yy;
     return { s, t };
 }
 
