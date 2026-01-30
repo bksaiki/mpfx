@@ -19,7 +19,7 @@ namespace mpfx {
  * 
  * Flag meanings:
  * 
- * - `invalid` - An operation had no usefully defineable result.
+ * - `invalid` - An operation had no usefully definable result.
  * 
  * - `div_by_zero` - An operation produced an exact infinite result for finite operands.
  * 
