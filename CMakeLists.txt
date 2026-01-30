@@ -76,21 +76,18 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(floppyfloat)
 
 # Include FloppyFloat headers
-if(floppyfloat_POPULATED)
-    include_directories(${floppyfloat_SOURCE_DIR}/src)
-    add_definitions(-DUSE_FLOPPYFLOAT)
-endif()
+include_directories(${floppyfloat_SOURCE_DIR}/src)
+add_definitions(-DUSE_FLOPPYFLOAT)
 
 # SoftFloat
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
 find_package(SoftFloat)
-if(SOFTFLOAT_FOUND)
-    message(STATUS "SoftFloat found: ${SOFTFLOAT_LIBRARIES}")
-    include_directories(${SOFTFLOAT_INCLUDE_DIRS})
-    add_definitions(-DUSE_SOFTFLOAT)
-else()
-    message(STATUS "SoftFloat not found. SoftFloat benchmarks will be disabled.")
+if(NOT SOFTFLOAT_FOUND)
+    message(FATAL_ERROR "SoftFloat not found")
 endif()
+
+include_directories(${SOFTFLOAT_INCLUDE_DIRS})
+add_definitions(-DUSE_SOFTFLOAT)
 
 # Include directories
 include_directories(
