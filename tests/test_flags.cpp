@@ -5,11 +5,279 @@
 
 
 TEST(TestFlags, TestInvalidFlag) {
+    // Test values
+    const double nan = std::nan("");
+    const double pos_inf = std::numeric_limits<double>::infinity();
+    const double neg_inf = -std::numeric_limits<double>::infinity();
+    const double zero = 0.0;
+    const double pos_val = 1.5;
+    const double neg_val = -2.5;
 
+    // Simple context for testing
+    const mpfx::IEEE754Context ctx(8, 32, mpfx::RM::RNE);
+
+    // Test add: inf + (-inf) should set invalid flag
+    mpfx::reset_flags();
+    mpfx::add(pos_inf, neg_inf, ctx);
+    EXPECT_TRUE(mpfx::invalid_flag);
+
+    mpfx::reset_flags();
+    mpfx::add(neg_inf, pos_inf, ctx);
+    EXPECT_TRUE(mpfx::invalid_flag);
+
+    // Test add: NaN propagation should NOT set invalid flag
+    mpfx::reset_flags();
+    mpfx::add(nan, pos_val, ctx);
+    EXPECT_FALSE(mpfx::invalid_flag);
+
+    mpfx::reset_flags();
+    mpfx::add(pos_val, nan, ctx);
+    EXPECT_FALSE(mpfx::invalid_flag);
+
+    // Test add: valid operations should not set flag
+    mpfx::reset_flags();
+    mpfx::add(pos_inf, pos_inf, ctx);
+    EXPECT_FALSE(mpfx::invalid_flag);
+
+    mpfx::reset_flags();
+    mpfx::add(pos_val, neg_val, ctx);
+    EXPECT_FALSE(mpfx::invalid_flag);
+
+    // Test sub: inf - inf should set invalid flag
+    mpfx::reset_flags();
+    mpfx::sub(pos_inf, pos_inf, ctx);
+    EXPECT_TRUE(mpfx::invalid_flag);
+
+    mpfx::reset_flags();
+    mpfx::sub(neg_inf, neg_inf, ctx);
+    EXPECT_TRUE(mpfx::invalid_flag);
+
+    // Test sub: NaN propagation should NOT set invalid flag
+    mpfx::reset_flags();
+    mpfx::sub(nan, pos_val, ctx);
+    EXPECT_FALSE(mpfx::invalid_flag);
+
+    // Test sub: valid operations should not set flag
+    mpfx::reset_flags();
+    mpfx::sub(pos_inf, neg_inf, ctx);
+    EXPECT_FALSE(mpfx::invalid_flag);
+
+    mpfx::reset_flags();
+    mpfx::sub(pos_val, neg_val, ctx);
+    EXPECT_FALSE(mpfx::invalid_flag);
+
+    // Test mul: 0 * inf should set invalid flag
+    mpfx::reset_flags();
+    mpfx::mul(zero, pos_inf, ctx);
+    EXPECT_TRUE(mpfx::invalid_flag);
+
+    mpfx::reset_flags();
+    mpfx::mul(pos_inf, zero, ctx);
+    EXPECT_TRUE(mpfx::invalid_flag);
+
+    mpfx::reset_flags();
+    mpfx::mul(zero, neg_inf, ctx);
+    EXPECT_TRUE(mpfx::invalid_flag);
+
+    mpfx::reset_flags();
+    mpfx::mul(neg_inf, zero, ctx);
+    EXPECT_TRUE(mpfx::invalid_flag);
+
+    // Test mul: NaN propagation should NOT set invalid flag
+    mpfx::reset_flags();
+    mpfx::mul(nan, pos_val, ctx);
+    EXPECT_FALSE(mpfx::invalid_flag);
+
+    // Test mul: valid operations should not set flag
+    mpfx::reset_flags();
+    mpfx::mul(pos_inf, pos_val, ctx);
+    EXPECT_FALSE(mpfx::invalid_flag);
+
+    mpfx::reset_flags();
+    mpfx::mul(pos_val, neg_val, ctx);
+    EXPECT_FALSE(mpfx::invalid_flag);
+
+    // Test div: 0/0 should set invalid flag
+    mpfx::reset_flags();
+    mpfx::div(zero, zero, ctx);
+    EXPECT_TRUE(mpfx::invalid_flag);
+
+    // Test div: inf/inf should set invalid flag
+    mpfx::reset_flags();
+    mpfx::div(pos_inf, pos_inf, ctx);
+    EXPECT_TRUE(mpfx::invalid_flag);
+
+    mpfx::reset_flags();
+    mpfx::div(pos_inf, neg_inf, ctx);
+    EXPECT_TRUE(mpfx::invalid_flag);
+
+    mpfx::reset_flags();
+    mpfx::div(neg_inf, pos_inf, ctx);
+    EXPECT_TRUE(mpfx::invalid_flag);
+
+    mpfx::reset_flags();
+    mpfx::div(neg_inf, neg_inf, ctx);
+    EXPECT_TRUE(mpfx::invalid_flag);
+
+    // Test div: NaN propagation should NOT set invalid flag
+    mpfx::reset_flags();
+    mpfx::div(nan, pos_val, ctx);
+    EXPECT_FALSE(mpfx::invalid_flag);
+
+    mpfx::reset_flags();
+    mpfx::div(pos_val, nan, ctx);
+    EXPECT_FALSE(mpfx::invalid_flag);
+
+    // Test div: valid operations should not set flag
+    mpfx::reset_flags();
+    mpfx::div(pos_val, neg_val, ctx);
+    EXPECT_FALSE(mpfx::invalid_flag);
+
+    mpfx::reset_flags();
+    mpfx::div(pos_inf, pos_val, ctx);
+    EXPECT_FALSE(mpfx::invalid_flag);
+
+    // Test sqrt: negative finite number should set invalid flag
+    mpfx::reset_flags();
+    mpfx::sqrt(neg_val, ctx);
+    EXPECT_TRUE(mpfx::invalid_flag);
+
+    mpfx::reset_flags();
+    mpfx::sqrt(-0.5, ctx);
+    EXPECT_TRUE(mpfx::invalid_flag);
+
+    // Test sqrt: NaN propagation should NOT set invalid flag
+    mpfx::reset_flags();
+    mpfx::sqrt(nan, ctx);
+    EXPECT_FALSE(mpfx::invalid_flag);
+
+    // Test sqrt: valid operations should not set flag
+    mpfx::reset_flags();
+    mpfx::sqrt(pos_val, ctx);
+    EXPECT_FALSE(mpfx::invalid_flag);
+
+    mpfx::reset_flags();
+    mpfx::sqrt(zero, ctx);
+    EXPECT_FALSE(mpfx::invalid_flag);
+
+    mpfx::reset_flags();
+    mpfx::sqrt(pos_inf, ctx);
+    EXPECT_FALSE(mpfx::invalid_flag);
+
+    mpfx::reset_flags();
+    mpfx::sqrt(-0.0, ctx);
+    EXPECT_FALSE(mpfx::invalid_flag);
+
+    // Test fma: 0 * inf + z should set invalid flag
+    mpfx::reset_flags();
+    mpfx::fma(zero, pos_inf, pos_val, ctx);
+    EXPECT_TRUE(mpfx::invalid_flag);
+
+    mpfx::reset_flags();
+    mpfx::fma(pos_inf, zero, pos_val, ctx);
+    EXPECT_TRUE(mpfx::invalid_flag);
+
+    // Test fma: x * y + z where x*y = inf and z = -inf should set invalid flag
+    mpfx::reset_flags();
+    mpfx::fma(pos_inf, pos_val, neg_inf, ctx);
+    EXPECT_TRUE(mpfx::invalid_flag);
+
+    mpfx::reset_flags();
+    mpfx::fma(neg_inf, pos_val, pos_inf, ctx);
+    EXPECT_TRUE(mpfx::invalid_flag);
+
+    // Test fma: NaN propagation should NOT set invalid flag
+    mpfx::reset_flags();
+    mpfx::fma(nan, pos_val, pos_val, ctx);
+    EXPECT_FALSE(mpfx::invalid_flag);
+
+    mpfx::reset_flags();
+    mpfx::fma(pos_val, nan, pos_val, ctx);
+    EXPECT_FALSE(mpfx::invalid_flag);
+
+    mpfx::reset_flags();
+    mpfx::fma(pos_val, pos_val, nan, ctx);
+    EXPECT_FALSE(mpfx::invalid_flag);
+
+    // Test fma: valid operations should not set flag
+    mpfx::reset_flags();
+    mpfx::fma(pos_val, neg_val, zero, ctx);
+    EXPECT_FALSE(mpfx::invalid_flag);
+
+    mpfx::reset_flags();
+    mpfx::fma(pos_inf, pos_val, pos_inf, ctx);
+    EXPECT_FALSE(mpfx::invalid_flag);
 }
 
 TEST(TestFlags, TestDivByZeroFlag) {
+    // Test values
+    const double nan = std::nan("");
+    const double pos_inf = std::numeric_limits<double>::infinity();
+    const double neg_inf = -std::numeric_limits<double>::infinity();
+    const double zero = 0.0;
+    const double neg_zero = -0.0;
+    const double pos_val = 1.5;
+    const double neg_val = -2.5;
 
+    // Simple context for testing
+    const mpfx::IEEE754Context ctx(8, 32, mpfx::RM::RNE);
+
+    // Test div: finite non-zero / 0 should set div_by_zero flag
+    mpfx::reset_flags();
+    mpfx::div(pos_val, zero, ctx);
+    EXPECT_TRUE(mpfx::div_by_zero_flag);
+
+    mpfx::reset_flags();
+    mpfx::div(neg_val, zero, ctx);
+    EXPECT_TRUE(mpfx::div_by_zero_flag);
+
+    mpfx::reset_flags();
+    mpfx::div(pos_val, neg_zero, ctx);
+    EXPECT_TRUE(mpfx::div_by_zero_flag);
+
+    mpfx::reset_flags();
+    mpfx::div(neg_val, neg_zero, ctx);
+    EXPECT_TRUE(mpfx::div_by_zero_flag);
+
+    // Test div: 0/0 should NOT set div_by_zero flag (it sets invalid instead)
+    mpfx::reset_flags();
+    mpfx::div(zero, zero, ctx);
+    EXPECT_FALSE(mpfx::div_by_zero_flag);
+
+    mpfx::reset_flags();
+    mpfx::div(neg_zero, zero, ctx);
+    EXPECT_FALSE(mpfx::div_by_zero_flag);
+
+    // Test div: inf/0 should NOT set div_by_zero flag (inf/0 = inf, not a special case)
+    mpfx::reset_flags();
+    mpfx::div(pos_inf, zero, ctx);
+    EXPECT_FALSE(mpfx::div_by_zero_flag);
+
+    mpfx::reset_flags();
+    mpfx::div(neg_inf, zero, ctx);
+    EXPECT_FALSE(mpfx::div_by_zero_flag);
+
+    // Test div: NaN/0 should NOT set div_by_zero flag
+    mpfx::reset_flags();
+    mpfx::div(nan, zero, ctx);
+    EXPECT_FALSE(mpfx::div_by_zero_flag);
+
+    // Test div: x/y where y != 0 should NOT set div_by_zero flag
+    mpfx::reset_flags();
+    mpfx::div(pos_val, neg_val, ctx);
+    EXPECT_FALSE(mpfx::div_by_zero_flag);
+
+    mpfx::reset_flags();
+    mpfx::div(zero, pos_val, ctx);
+    EXPECT_FALSE(mpfx::div_by_zero_flag);
+
+    mpfx::reset_flags();
+    mpfx::div(pos_inf, pos_val, ctx);
+    EXPECT_FALSE(mpfx::div_by_zero_flag);
+
+    mpfx::reset_flags();
+    mpfx::div(pos_val, pos_inf, ctx);
+    EXPECT_FALSE(mpfx::div_by_zero_flag);
 }
 
 TEST(TestFlags, TestOverflowFlag) {

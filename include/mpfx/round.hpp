@@ -262,7 +262,7 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
         if (tiny_before) {
             // tininess before => we should raise underflow before rounding flag
             // and check for tiny after rounding
-            MPFX_ASSERT(n.has_value(), "n must be set");
+            MPFX_DEBUG_ASSERT(n.has_value(), "n must be set");
 
             // set the underflow before rounding flag
             underflow_before_rounding_flag = true;
@@ -275,10 +275,10 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
                 tiny_after = true;
             } else {
                 // possibly not tiny: we are in the largest binade below 2^emin
-                MPFX_ASSERT(p_kept < P, "must have kept at least one digit");
-                MPFX_ASSERT(p_lost > 1, "must have lost at least 2 digits");
-                MPFX_ASSERT(e == emin - 1, "must be in the largest binade below 2^emin");
-                MPFX_ASSERT(!overshiftp, "must not have overshifted all digits");
+                MPFX_DEBUG_ASSERT(p_kept < P, "must have kept at least one digit");
+                MPFX_DEBUG_ASSERT(p_lost > 1, "must have lost at least 2 digits");
+                MPFX_DEBUG_ASSERT(e == emin - 1, "must be in the largest binade below 2^emin");
+                MPFX_DEBUG_ASSERT(!overshiftp, "must not have overshifted all digits");
 
                 // significand of the largest representable value below 2^emin
                 // the cutoff value is always odd: 1.111...111 x 2^(emin-1)
