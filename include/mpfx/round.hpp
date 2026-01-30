@@ -89,25 +89,25 @@ double encode(bool s, exp_t e, mant_t c) {
     }
 
     // encode exponent and mantissa
-    uint64_t ebits2, mbits2;
+    uint64_t ebits, mbits;
     if (UNLIKELY(c == 0)) {
         // edge case: subnormalization underflowed to 0
         // `e` might be an unexpected value here
-        ebits2 = 0;
-        mbits2 = 0;
+        ebits = 0;
+        mbits = 0;
     } else if (UNLIKELY(e < FP::EMIN)) {
         // subnormal result
         const exp_t shift = FP::EMIN - e;
-        ebits2 = 0;
-        mbits2 = c >> shift;
+        ebits = 0;
+        mbits = c >> shift;
     } else {
         // normal result
-        ebits2 = e + FP::BIAS;
-        mbits2 = c & FP::MMASK;
+        ebits = e + FP::BIAS;
+        mbits = c & FP::MMASK;
     }
 
     // repack the result
-    const uint64_t b = (ebits2 << FP::M) | mbits2;
+    const uint64_t b = (ebits << FP::M) | mbits;
     const double r = std::bit_cast<double>(b);
     return s ? -r : r;
 }
@@ -129,6 +129,8 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
 
     // our precision might be limited by subnormalization
     bool overshiftp = false; // are all digits insignificant and non-adjacent to n?
+    bool tiny_before_rounding = false; // was the value tiny before rounding?
+    exp_t emin = 0; // emin for tininess check (unused if n has no value)
     if (n.has_value()) {
         const exp_t nx = e - p;
         const exp_t offset = *n - nx;
@@ -140,11 +142,12 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
             p = overshiftp ? 0 : p - offset_pos; // precision cannot be negative
             e = overshiftp ? *n : e; // overshift implies e < n, set for correct increment to MIN_VAL
 
-            // exponent of the minimum normal value
-            const exp_t emin = *n + p;
+            // check for tininess before rounding
+            emin = *n + p;
+            tiny_before_rounding = e < emin;
 
-            // check for tiny before rounding
-            if (e < emin) {
+            // set tiny before rounding flag
+            if (tiny_before_rounding) {
                 tiny_before_rounding_flag = true;
             }
         }

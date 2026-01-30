@@ -60,7 +60,8 @@ inline std::tuple<int64_t, exp_t> to_fixed(double x) {
 /// from a digit representation `(-1)^s * c * 2^exp`, where
 /// `s` is the sign bit, `c` is the integer significand,
 /// and `exp` is the base-2 exponent.
-inline double digits_to_double(bool s, exp_t exp, mant_t c) {
+template <bool normalize = true>
+double make_double(bool s, exp_t exp, mant_t c) {
     using FP = ieee754_consts<11, 64>;
 
     // special case: zero
@@ -68,35 +69,47 @@ inline double digits_to_double(bool s, exp_t exp, mant_t c) {
         return s ? -0.0 : 0.0;
     }
 
-    // requesting maximum precision
-    exp_t shift = static_cast<exp_t>(FP::P) - static_cast<exp_t>(std::bit_width(c));
-    exp -= shift;
-    if (exp < FP::EXPMIN) {
-        // requesting lower bound on digits
-        // exponent is too small, adjust if necessary
-        const exp_t expmin = FP::EXPMIN;
-        const exp_t adjust = expmin - exp;
-        shift -= adjust;
-        exp += adjust;
+    // compute the normalized exponent
+    const prec_t p = static_cast<prec_t>(std::bit_width(c));
+    exp_t e = exp + (static_cast<exp_t>(p) - 1);
+
+    if constexpr (normalize) {
+        // normalize `c` to have `FP::P` bits of precision
+        exp_t shift = static_cast<exp_t>(FP::P) - static_cast<exp_t>(p);
+        if (shift > 0) {
+            // not enough precision, shift left
+            c <<= shift;
+        } else if (shift < 0) {
+            // too much precision, shift right
+            const mant_t c_lost = c & bitmask<mant_t>(-shift);
+            MPFX_ASSERT(c_lost == 0, "make_double: losing digits due to normalization");
+            c >>= -shift;
+        }
     }
 
-    // compute new significand `c`
-    if (shift > 0) {
-        // shift left by a non-negative amount
-        const prec_t p_new = std::bit_width(c) + static_cast<prec_t>(shift);
-        MPFX_DEBUG_ASSERT(p_new <= 64, "normalize: precision exceeds 64 bits");
-        c <<= shift;
-    } else if (shift < 0) {
-        // shift right by a positive amount
-        const mant_t c_lost = c & bitmask<mant_t>(-shift);
-        MPFX_DEBUG_ASSERT(c_lost == 0, "normalize: losing digits");
-        c >>= -shift;
+    // we might be limited by subnormalization
+    if (e < FP::EMIN) {
+        // exponent needs to be larger, shift right
+        const exp_t adjust = FP::EMIN - e;
+        e = FP::EMIN;
+
+        // check if we shifted off any digits
+        const mant_t c_lost = c & bitmask<mant_t>(adjust);
+        MPFX_ASSERT(c_lost == 0, "make_double: losing digits due to subnormalization");
+        c >>= adjust;
     }
 
-    // case split on normalization
-    const prec_t p = std::bit_width(c);
-    const uint64_t ebits = p == FP::P ? (exp - FP::EXPMIN + 1) : 0;
-    const uint64_t mbits = c & bitmask<mant_t>(FP::M); 
+    // encode exponent and mantissa
+    uint64_t ebits, mbits;
+    if (e == FP::EMIN) {
+        // subnormal result
+        ebits = 0;
+        mbits = c;
+    } else {
+        // normal result
+        ebits = e + FP::BIAS;
+        mbits = c & FP::MMASK;
+    }
 
     // cast to double
     const uint64_t b = (ebits << FP::M) | mbits;
