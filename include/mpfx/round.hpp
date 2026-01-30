@@ -127,6 +127,17 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
     MPFX_STATIC_ASSERT(P <= 63, "mantissa cannot be 64 bits");
     MPFX_DEBUG_ASSERT(p <= FP::P, "cannot keep the requested precision" << p);
 
+    if (c == 0) {
+        // fast path: zero value
+
+        // raise tiny flags
+        tiny_before_rounding_flag = true;
+        tiny_after_rounding_flag = true;
+
+        // return +/-0
+        return s ? -0.0 : 0.0;
+    }
+
     // our precision might be limited by subnormalization
     bool overshiftp = false; // are all digits insignificant and non-adjacent to n?
     bool tiny_before_rounding = false; // was the value tiny before rounding?
@@ -136,13 +147,8 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
         const exp_t offset = *n - nx;
         if (offset > 0) {
             // precision reduced due to subnormalization
-            // "overshift" is set if we shift more than p bits
-            const prec_t offset_pos = static_cast<prec_t>(offset);
-            overshiftp = offset_pos > p; // set overshift flag
-            p = overshiftp ? 0 : p - offset_pos; // precision cannot be negative
-            e = overshiftp ? *n : e; // overshift implies e < n, set for correct increment to MIN_VAL
 
-            // check for tininess before rounding
+            // compute the minimum normalized exponent
             emin = *n + p;
             tiny_before_rounding = e < emin;
 
@@ -150,6 +156,12 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
             if (tiny_before_rounding) {
                 tiny_before_rounding_flag = true;
             }
+
+            // "overshift" is set if we shift more than p bits
+            const prec_t offset_pos = static_cast<prec_t>(offset);
+            overshiftp = offset_pos > p; // set overshift flag
+            p = overshiftp ? 0 : p - offset_pos; // precision cannot be negative
+            e = overshiftp ? *n : e; // overshift implies e < n, set for correct increment to MIN_VAL
         }
     }
 
@@ -271,7 +283,7 @@ inline double round(double x, prec_t p, const std::optional<exp_t>& n, RM rm) {
     using FP = ieee754_consts<11, 64>; // double precision
 
     // Fast path: special values (infinity, NaN, zero)
-    if (!std::isfinite(x) || x == 0.0) {
+    if (!std::isfinite(x)) {
         return x;
     }
 
@@ -286,9 +298,14 @@ inline double round(double x, prec_t p, const std::optional<exp_t>& n, RM rm) {
     mant_t c;
     if (UNLIKELY(ebits == 0)) {
         // subnormal
-        const auto lz = FP::P - std::bit_width(mbits);
-        e = FP::EMIN - lz;
-        c = mbits << lz;
+        e = FP::EMIN;
+        c = mbits;
+        if (c != 0) {
+            // non-zero => fully normalize the significand
+            const auto lz = FP::P - std::bit_width(mbits);
+            e -= static_cast<exp_t>(lz);
+            c <<= lz;
+        }
     } else {
         // normal (assuming no infinity or NaN)
         e = static_cast<exp_t>(ebits) - FP::BIAS;
@@ -308,11 +325,6 @@ inline double round(double x, prec_t p, const std::optional<exp_t>& n, RM rm) {
 inline double round(int64_t m, exp_t exp, prec_t p, const std::optional<exp_t>& n, RM rm) {
     static constexpr int64_t MIN_VAL = std::numeric_limits<int64_t>::min();
     static constexpr prec_t PREC = 63;
-
-    // Fast path: zero
-    if (m == 0) {
-        return 0.0;
-    }
 
     // Decode `m` into sign-magnitude
     bool s;
