@@ -64,7 +64,7 @@ cd "build/$BUILD_TARGET"
 
 # Add -fPIC to COMPILE_C flags for position-independent code
 echo "Patching Makefile to add -fPIC flag..."
-sed -i 's/-O2 -o \$@/-fPIC -O2 -o $@/' Makefile
+sed -i.bak 's/-O2 -o \$@/-fPIC -O2 -o $@/' Makefile
 
 echo "Building SoftFloat with -fPIC"
 make clean 2>/dev/null || true  # Clean if possible
