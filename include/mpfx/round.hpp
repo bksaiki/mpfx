@@ -196,6 +196,57 @@ inline bool round_increment(
     return incrementp;
 }
 
+/// @brief Determines if a value is tiny after rounding.
+/// @tparam P the precision of the significand
+/// @param s sign
+/// @param e normalized exponent
+/// @param c integer significand
+/// @param c_lost lost significand bits
+/// @param p precision target
+/// @param p_kept actual precision kept
+/// @param p_lost precision lost
+/// @param emin minimum normalized exponent
+/// @param overshiftp are all digits insignificant?
+/// @param rm rounding mode
+/// @return is the value tiny after rounding?
+template <prec_t P>
+inline bool round_tininess_after(
+    bool s,
+    exp_t e,
+    mant_t c,
+    mant_t c_lost,
+    prec_t p,
+    prec_t p_lost,
+    exp_t emin,
+    RM rm
+) {
+    if (e < emin - 1) {
+        // definitely tiny after rounding, since we are at least
+        // one binade below the smallest normal number
+        return true;
+    }
+
+    // possibly not tiny: we are in the largest binade below 2^emin
+    // compute the largest representable value below 2^emin
+    const mant_t cutoff = bitmask<mant_t>(p) << (P - p);
+
+    if (c <= cutoff) {
+        // definitely tiny after rounding: we are smaller than or equal
+        // to the largest representable value below 2^emin without
+        // an exponent bound
+        return true;
+    }
+
+    // hard case: we are larger than the cutoff value
+    // need to check if we round without exponent bound to 2^emin or not
+    const mant_t c_half_mask = bitmask<mant_t>(p_lost - 1);
+    const mant_t c_lost_half = c_lost & c_half_mask;
+
+    // we are tiny if we do not increment
+    // the cutoff is always odd and we cannot overshift
+    return !round_increment(s, true, c_lost_half, p_lost - 1, false, rm);
+}
+
 
 /// @brief Finalizes the rounding procedure.
 /// @tparam P the precision of the significand `c`
@@ -214,7 +265,6 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
 
     if (c == 0) {
         // fast path: zero value
-
         // raise both tiny flags
         tiny_before_rounding_flag = true;
         tiny_after_rounding_flag = true;
@@ -261,41 +311,15 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
 
         // if subnormal before rounding, multiple things to check
         if (tiny_before) {
+            // tininess before => we should raise underflow before rounding flag
+            // and check for tiny after rounding
+            MPFX_ASSERT(n.has_value(), "n must be set");
+
             // set the underflow before rounding flag
             underflow_before_rounding_flag = true;
 
-            bool tiny_after;
-            if (e < emin - 1) {
-                // definitely tiny after rounding, since we are at least
-                // one binade below the smallest normal number
-                tiny_after = true;
-            } else {
-                // possibly not tiny: we are in the largest binade below 2^emin
-                MPFX_ASSERT(n.has_value(), "n must be set");
-                MPFX_ASSERT(p_kept < P, "must have kept at least one digit");
-                MPFX_ASSERT(p_lost > 1, "must have lost at least 2 digits");
-                MPFX_ASSERT(e == emin - 1, "must be in the largest binade below 2^emin");
-                MPFX_ASSERT(!overshiftp, "must not have overshifted all digits");
-
-                // the largest representable value below 2^emin
-                const mant_t cutoff = bitmask<mant_t>(p) << (P - p);
-
-                if (c <= cutoff) {
-                    // definitely tiny after rounding: we are smaller than or equal
-                    // to the largest representable value below 2^emin without
-                    // an exponent bound
-                    tiny_after = true;
-                } else {
-                    // hard case: we are larger than the cutoff value
-                    // need to check if we round without exponent bound to 2^emin or not
-                    const mant_t c_half_mask = bitmask<mant_t>(p_lost - 1);
-                    const mant_t c_lost_half = c_lost & c_half_mask;
-
-                    // we are tiny if we do not increment
-                    // the cutoff is always odd and we cannot overshift
-                    tiny_after = !round_increment(s, true, c_lost_half, p_lost - 1, false, rm);
-                }
-            }
+            // check if we are tiny after rounding
+            const bool tiny_after = round_tininess_after<P>(s, e, c, c_lost, p, p_lost, emin, rm);
 
             // set tiny after rounding flag
             if (tiny_after) {
