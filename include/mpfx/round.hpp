@@ -211,6 +211,7 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
     using FP = ieee754_consts<11, 64>; // double precision
     MPFX_STATIC_ASSERT(P <= 63, "mantissa cannot be 64 bits");
     MPFX_DEBUG_ASSERT(p <= FP::P, "cannot keep the requested precision" << p);
+    static constexpr exp_t MAX_E = FP::EMAX + 1;
 
     if (c == 0) {
         // fast path: zero value
@@ -222,8 +223,9 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
         return s ? -0.0 : 0.0;
     }
 
+    exp_t e_before = e;       // exponent before rounding
     prec_t p_kept = p;        // actual precision kept
-    exp_t emin = 0;           // minimum normalized exponent (if n is set)
+    exp_t emin = MAX_E;       // minimum normalized exponent (if n is set)
     bool overshiftp = false;  // are all digits insignificant and non-adjacent to n?
     bool tiny_before = false; // was the value tiny before rounding?
 
@@ -241,6 +243,7 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
             const prec_t shift = static_cast<prec_t>(emin - e);
             overshiftp = shift > p; // set overshift flag
             p_kept = overshiftp ? 0 : p - shift; // precision cannot be non-positive
+            e = overshiftp ? *n : e; // set exponent for subnormalization
         }
     }
 
@@ -269,7 +272,7 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
 
             // check if we are tiny after rounding
             bool tiny_after;
-            if (e < emin - 1) {
+            if (e_before < emin - 1) {
                 // definitely tiny after rounding, since we are at least
                 // one binade below the smallest normal number
                 tiny_after = true;
@@ -322,7 +325,9 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
                 // increment caused carry
                 e += 1;
                 c_kept >>= 1;
-                flags.set_carry();
+                if (e > emin) {
+                    flags.set_carry();
+                }
             }
         }
     } else {

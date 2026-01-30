@@ -6,7 +6,7 @@ set(TEST_SOURCES
     test_engine.cpp
     test_flags.cpp
     test_ops.cpp
-    test_round_opt.cpp
+    test_round.cpp
 )
 
 # Create test executable

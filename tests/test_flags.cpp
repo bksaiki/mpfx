@@ -624,11 +624,12 @@ TEST(TestFlags, TestCarry) {
         const auto y = mpfx::round(x, p, n, rm);
 
         // compute exponents
+        const mpfx::exp_t emin = n + static_cast<mpfx::exp_t>(p);
         const auto xe = (x == 0.0) ? 0 : std::ilogb(x);
         const auto ye = (y == 0.0) ? 0 : std::ilogb(y);
 
         // check for carry
-        EXPECT_EQ(mpfx::flags.carry(), x != 0 && y != 0 && ye > xe);
+        EXPECT_EQ(mpfx::flags.carry(), x != 0 && y != 0 && ye > xe && xe >= emin);
 
         // reset flags
         mpfx::flags.reset();

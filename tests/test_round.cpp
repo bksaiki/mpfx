@@ -9,7 +9,7 @@ using namespace mpfx;
 
 using round_test_t = std::tuple<exp_t, mant_t, exp_t, mant_t, mpfx::RM>;
 
-TEST(RoundOpt, TestRoundExamples) {
+TEST(TestRound, TestRoundExamples) {
     EXPECT_EQ(round(0.0, 1, std::nullopt, RM::RNE), 0.0);
     EXPECT_EQ(round(std::bit_cast<double>(1ULL), 1, std::nullopt, RM::RNE), std::bit_cast<double>(1ULL));
     EXPECT_EQ(round(std::bit_cast<double>(3ULL), 1, std::nullopt, RM::RTZ), std::bit_cast<double>(2ULL));
@@ -27,7 +27,7 @@ TEST(RoundOpt, TestRoundExamples) {
     EXPECT_EQ(round(0.25, 8, -1, RM::RTZ), 0.0);
 }
 
-TEST(RoundOpt, TestRoundFixedExamples) {
+TEST(TestRound, TestRoundFixedExamples) {
     EXPECT_EQ(round(0, 50, 1, std::nullopt, RM::RNE), 0.0);
     EXPECT_EQ(round(1, 0, 1, std::nullopt, RM::RNE), 1.0);
     EXPECT_EQ(round(3, 0, 1, std::nullopt, RM::RTZ), 2.0);
@@ -48,7 +48,7 @@ TEST(RoundOpt, TestRoundFixedExamples) {
 }
 
 
-TEST(RoundOpt, TestRoundWithPrec) {
+TEST(TestRound, TestRoundWithPrec) {
     std::vector<round_test_t> inputs = {
         // 8 * 2 ** -3 (representable)
         {-3, 8, -1, 2, RM::RNE}, // 8 * 2 ** -3 => 1 * 2 ** -1
@@ -95,7 +95,7 @@ TEST(RoundOpt, TestRoundWithPrec) {
     }
 }
 
-TEST(RoundOpt, TestRoundWithPrecFixed) {
+TEST(TestRound, TestRoundWithPrecFixed) {
     std::vector<round_test_t> inputs = {
         // 8 * 2 ** -3 (representable)
         {-3, 8, -1, 2, RM::RNE}, // 8 * 2 ** -3 => 1 * 2 ** -1
@@ -141,7 +141,7 @@ TEST(RoundOpt, TestRoundWithPrecFixed) {
     }
 }
 
-TEST(RoundOpt, TestRoundWithN) {
+TEST(TestRound, TestRoundWithN) {
     std::vector<round_test_t> inputs = {
         // 8 * 2 ** -3 (representable)
         {-3, 8, -1, 2, RM::RNE}, // 8 * 2 ** -3 => 1 * 2 ** -1
@@ -188,7 +188,7 @@ TEST(RoundOpt, TestRoundWithN) {
     }
 }
 
-TEST(RoundOpt, TestRoundWithNFixed) {
+TEST(TestRound, TestRoundWithNFixed) {
     std::vector<round_test_t> inputs = {
         // 8 * 2 ** -3 (representable)
         {-3, 8, -1, 2, RM::RNE}, // 8 * 2 ** -3 => 1 * 2 ** -1
