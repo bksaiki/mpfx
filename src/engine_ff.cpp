@@ -7,6 +7,14 @@ namespace mpfx {
 
 namespace engine_ff {
 
+// Shared FloppyFloat instance for all operations
+static FloppyFloat ff = []() {
+    FloppyFloat f;
+    f.rounding_mode = Vfpu::kRoundTowardZero;
+    return f;
+}();
+
+
 /// @brief Computes `x + y` using FloppyFloat.
 ///
 /// Ensures the result has at least `p` bits of precision.
@@ -17,10 +25,6 @@ double add(double x, double y, prec_t p) {
         p <= 53,
         "add: requested precision exceeds double-precision capability"
     );
-
-    // initialize FloppyFloat instance
-    static FloppyFloat ff;
-    ff.rounding_mode = Vfpu::kRoundTowardZero;
 
     // Perform round-to-zero addition with round-to-odd fix-up
     double z = ff.Add(x, y);
@@ -45,10 +49,6 @@ double sub(double x, double y, prec_t p) {
         "sub: requested precision exceeds double-precision capability"
     );
 
-    // initialize FloppyFloat instance
-    static FloppyFloat ff;
-    ff.rounding_mode = Vfpu::kRoundTowardZero;
-
     // Perform round-to-zero subtraction with round-to-odd fix-up
     double z = ff.Sub(x, y);
     if (ff.inexact) {
@@ -71,10 +71,6 @@ double mul(double x, double y, prec_t p) {
         p <= 53,
         "mul: requested precision exceeds double-precision capability"
     );
-
-    // initialize FloppyFloat instance
-    static FloppyFloat ff;
-    ff.rounding_mode = Vfpu::kRoundTowardZero;
 
     // Perform round-to-zero multiplication with round-to-odd fix-up
     double z = ff.Mul(x, y);
@@ -99,10 +95,6 @@ double div(double x, double y, prec_t p) {
         "div: requested precision exceeds double-precision capability"
     );
 
-    // initialize FloppyFloat instance
-    static FloppyFloat ff;
-    ff.rounding_mode = Vfpu::kRoundTowardZero;
-
     // Perform round-to-zero division with round-to-odd fix-up
     double z = ff.Div(x, y);
     if (ff.inexact) {
@@ -126,10 +118,6 @@ double sqrt(double x, prec_t p) {
         "sqrt: requested precision exceeds double-precision capability"
     );
 
-    // initialize FloppyFloat instance
-    static FloppyFloat ff;
-    ff.rounding_mode = Vfpu::kRoundTowardZero;
-
     // Perform round-to-zero square root with round-to-odd fix-up
     double z = ff.Sqrt(x);
     if (ff.inexact) {
@@ -152,10 +140,6 @@ double fma(double x, double y, double z, prec_t p) {
         p <= 53,
         "fma: requested precision exceeds double-precision capability"
     );
-
-    // initialize FloppyFloat instance
-    FloppyFloat ff;
-    ff.rounding_mode = Vfpu::kRoundTowardZero;
 
     // Perform round-to-zero FMA with round-to-odd fix-up
     double result = ff.Fma(x, y, z);
