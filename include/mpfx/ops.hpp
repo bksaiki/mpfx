@@ -80,12 +80,12 @@ double add(double x, double y, const Context& ctx) {
     if (std::isnan(result)) {
         if (std::isinf(x) && std::isinf(y) && (std::signbit(x) != std::signbit(y))) {
             // invalid operation: inf + -inf
-            invalid_flag = true;
+            flags.set_invalid();
         } else if (std::isnan(x) || std::isnan(y)) {
             // propagate NaN (this is valid, no flag)
         } else {
             // any other NaN result is invalid
-            invalid_flag = true;
+            flags.set_invalid();
         }
     }
 
@@ -124,12 +124,12 @@ double sub(double x, double y, const Context& ctx) {
     if (std::isnan(result)) {
         if (std::isinf(x) && std::isinf(y) && (std::signbit(x) == std::signbit(y))) {
             // invalid operation: inf - inf
-            invalid_flag = true;
+            flags.set_invalid();
         } else if (std::isnan(x) || std::isnan(y)) {
             // propagate NaN (this is valid, no flag)
         } else {
             // any other NaN result is invalid
-            invalid_flag = true;
+            flags.set_invalid();
         }
     }
 
@@ -187,7 +187,7 @@ double mul(double x, double y, const Context& ctx) {
     if (std::isnan(result)) {
         if ((x == 0.0 && std::isinf(y)) || (std::isinf(x) && y == 0.0)) {
             // invalid operation: 0 * inf
-            invalid_flag = true;
+            flags.set_invalid();
         }
     }
 
@@ -226,12 +226,12 @@ double div(double x, double y, const Context& ctx) {
     if (std::isnan(result)) {
         if ((x == 0.0 && y == 0.0) || (std::isinf(x) && std::isinf(y))) {
             // invalid operation: 0/0 or inf/inf
-            invalid_flag = true;
+            flags.set_invalid();
         }
     } else if (std::isinf(result)) {
         if (std::isfinite(x) && x != 0.0 && y == 0.0) {
             // division by zero: finite non-zero / 0
-            div_by_zero_flag = true;
+            flags.set_div_by_zero();
         }
     }
 
@@ -270,7 +270,7 @@ double sqrt(double x, const Context& ctx) {
     if (std::isnan(result)) {
         if (x < 0.0 && std::isfinite(x)) {
             // invalid operation: sqrt of negative number
-            invalid_flag = true;
+            flags.set_invalid();
         }
     }
 
@@ -314,14 +314,14 @@ double fma(double x, double y, double z, const Context& ctx) {
 
         // Check for invalid multiplication (0 * inf)
         if ((x == 0.0 && y_inf) || (x_inf && y == 0.0)) {
-            invalid_flag = true;
+            flags.set_invalid();
         } else if ((x_inf && !y_nan) || (y_inf && !x_nan)) {
             // product is infinite
             const double p = x * y;
 
             // Check for invalid addition (inf + -inf)
             if (std::isinf(z) && (std::signbit(p) != std::signbit(z))) {
-                invalid_flag = true;
+                flags.set_invalid();
             }
         }
     }

@@ -215,8 +215,8 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
     if (c == 0) {
         // fast path: zero value
         // raise both tiny flags
-        tiny_before_rounding_flag = true;
-        tiny_after_rounding_flag = true;
+        flags.set_tiny_before_rounding();
+        flags.set_tiny_after_rounding();
 
         // return +/-0
         return s ? -0.0 : 0.0;
@@ -235,7 +235,7 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
 
         if (tiny_before) {
             // set tiny before rounding flag
-            tiny_before_rounding_flag = true;
+            flags.set_tiny_before_rounding();
 
             // "overshift" is set if we shift more than p bits
             const prec_t shift = static_cast<prec_t>(emin - e);
@@ -256,7 +256,7 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
         MPFX_DEBUG_ASSERT(p_lost > 0, "we must have lost precision");
 
         // set inexact flag
-        inexact_flag = true;
+        flags.set_inexact();
 
         // if subnormal before rounding, multiple things to check
         if (tiny_before) {
@@ -265,7 +265,7 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
             MPFX_DEBUG_ASSERT(n.has_value(), "n must be set");
 
             // set the underflow before rounding flag
-            underflow_before_rounding_flag = true;
+            flags.set_underflow_before_rounding();
 
             // check if we are tiny after rounding
             bool tiny_after;
@@ -300,8 +300,8 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
 
             // set tiny after rounding flag
             if (tiny_after) {
-                tiny_after_rounding_flag = true;
-                underflow_after_rounding_flag = true;
+                flags.set_tiny_after_rounding();
+                flags.set_underflow_after_rounding();
             }
         }
 
@@ -322,13 +322,15 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
                 // increment caused carry
                 e += 1;
                 c_kept >>= 1;
-                carry_flag = true;
+                flags.set_carry();
             }
         }
     } else {
         // exact result
         // set tiny after rounding flag if tiny before
-        tiny_after_rounding_flag = tiny_before;
+        if (tiny_before) {
+            flags.set_tiny_after_rounding();
+        }
     }
 
     return encode<P>(s, e, c_kept);

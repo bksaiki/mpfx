@@ -39,8 +39,8 @@ inline double round_overflow(double x, RM rm, double maxval, bool maxval_odd) {
     // Check for overflow
     if (std::abs(x) > maxval) {
         // set the overflow flag and inexact flag
-        overflow_flag = true;
-        inexact_flag = true;
+        flags.set_overflow();
+        flags.set_inexact();
 
         // should we round to infinity?
         const bool s = std::signbit(x);
