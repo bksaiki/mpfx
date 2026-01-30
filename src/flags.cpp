@@ -10,14 +10,26 @@
 
 namespace mpfx {
 
-bool invalid = false;
-bool div_by_zero = false;
-bool overflow = false;
-bool tiny_before_rounding = false;
-bool tiny_after_rounding = false;
-bool underflow_before_rounding = false;
-bool underflow_after_rounding = false;
-bool inexact = false;
-bool carry = false;
+bool invalid_flag;
+bool div_by_zero_flag;
+bool overflow_flag;
+bool tiny_before_rounding_flag;
+bool tiny_after_rounding_flag;
+bool underflow_before_rounding_flag;
+bool underflow_after_rounding_flag;
+bool inexact_flag;
+bool carry_flag;
+
+void reset_flags() {
+    invalid_flag = false;
+    div_by_zero_flag = false;
+    overflow_flag = false;
+    tiny_before_rounding_flag = false;
+    tiny_after_rounding_flag = false;
+    underflow_before_rounding_flag = false;
+    underflow_after_rounding_flag = false;
+    inexact_flag = false;
+    carry_flag = false;
+}
 
 } // end namespace mpfx

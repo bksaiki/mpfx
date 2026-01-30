@@ -3,6 +3,7 @@
 #include <optional>
 #include <tuple>
 
+#include "flags.hpp"
 #include "params.hpp"
 #include "types.hpp"
 
@@ -127,7 +128,7 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
     MPFX_DEBUG_ASSERT(p <= FP::P, "cannot keep the requested precision" << p);
 
     // our precision might be limited by subnormalization
-    bool overshiftp = false;
+    bool overshiftp = false; // are all digits insignificant and non-adjacent to n?
     if (n.has_value()) {
         const exp_t nx = e - p;
         const exp_t offset = *n - nx;
@@ -138,6 +139,14 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
             overshiftp = offset_pos > p; // set overshift flag
             p = overshiftp ? 0 : p - offset_pos; // precision cannot be negative
             e = overshiftp ? *n : e; // overshift implies e < n, set for correct increment to MIN_VAL
+
+            // exponent of the minimum normal value
+            const exp_t emin = *n + p;
+
+            // check for tiny before rounding
+            if (e < emin) {
+                tiny_before_rounding_flag = true;
+            }
         }
     }
 
@@ -153,6 +162,14 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
     if (c_lost != 0) {
         // slow path: inexact result
         MPFX_DEBUG_ASSERT(p_lost > 0, "we must have lost precision");
+
+        // set inexact flag
+        inexact_flag = true;
+
+        // set underflow (before rounding) flag if tiny before rounding
+        if (tiny_before_rounding_flag) {
+            underflow_before_rounding_flag = true;
+        }
 
         // value of the LSB for precision p
         const mant_t one = 1ULL << p_lost;
@@ -227,9 +244,12 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
 
             // check if we need to carry
             static constexpr mant_t overflow_mask = 1ULL << P;
-            const bool carryp = c >= overflow_mask;
-            e += static_cast<exp_t>(carryp);
-            c >>= static_cast<uint8_t>(carryp);
+            if (c >= overflow_mask) {
+                // increment caused carry
+                e += 1;
+                c >>= 1;
+                carry_flag = true;
+            }
         }
     }
 

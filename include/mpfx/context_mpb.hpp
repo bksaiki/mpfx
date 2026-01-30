@@ -110,6 +110,9 @@ public:
 
         // Check for overflow
         if (std::abs(x) > maxval) {
+            // set the overflow flag
+            overflow_flag = true;
+
             // should we round to infinity?
             const bool s = std::signbit(x);
             if (__overflow_to_infinity(rm, s, maxval_odd)) {
