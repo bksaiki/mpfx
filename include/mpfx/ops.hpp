@@ -50,7 +50,7 @@ inline double abs(double x, const Context& ctx) {
 
 /// @brief Computes `x + y` using the given context.
 /// Must be the case that `ctx.round_prec() <= 53`.
-template<EngineType E = EngineType::FP_RTO>
+template<EngineType E = EngineType::FP_RTO, flag_mask_t FlagMask = Flags::ALL_FLAGS>
 double add(double x, double y, const Context& ctx) {
     double result;
 
@@ -77,15 +77,12 @@ double add(double x, double y, const Context& ctx) {
     }
 
     // check for special values to raise status flags
-    if (std::isnan(result)) {
-        if (std::isinf(x) && std::isinf(y) && (std::signbit(x) != std::signbit(y))) {
-            // invalid operation: inf + -inf
-            flags.set_invalid();
-        } else if (std::isnan(x) || std::isnan(y)) {
-            // propagate NaN (this is valid, no flag)
-        } else {
-            // any other NaN result is invalid
-            flags.set_invalid();
+    if constexpr (FlagMask & Flags::INVALID) {
+        if (std::isnan(result)) {
+            if (std::isinf(x) && std::isinf(y) && (std::signbit(x) != std::signbit(y))) {
+                // invalid operation: inf + -inf
+                flags.set_invalid();
+            }
         }
     }
 
@@ -94,7 +91,7 @@ double add(double x, double y, const Context& ctx) {
 
 /// @brief Computes `x - y` using the given context.
 /// Must be the case that `ctx.round_prec() <= 53`.
-template<EngineType E = EngineType::FP_RTO>
+template<EngineType E = EngineType::FP_RTO, flag_mask_t FlagMask = Flags::ALL_FLAGS>
 double sub(double x, double y, const Context& ctx) {
     double result;
 
@@ -121,15 +118,12 @@ double sub(double x, double y, const Context& ctx) {
     }
 
     // check for special values to raise status flags
-    if (std::isnan(result)) {
-        if (std::isinf(x) && std::isinf(y) && (std::signbit(x) == std::signbit(y))) {
-            // invalid operation: inf - inf
-            flags.set_invalid();
-        } else if (std::isnan(x) || std::isnan(y)) {
-            // propagate NaN (this is valid, no flag)
-        } else {
-            // any other NaN result is invalid
-            flags.set_invalid();
+    if constexpr (FlagMask & Flags::INVALID) {
+        if (std::isnan(result)) {
+            if (std::isinf(x) && std::isinf(y) && (std::signbit(x) == std::signbit(y))) {
+                // invalid operation: inf - inf
+                flags.set_invalid();
+            }
         }
     }
 
@@ -138,7 +132,7 @@ double sub(double x, double y, const Context& ctx) {
 
 /// @brief Computes `x * y` using the given context.
 /// Must be the case that `ctx.round_prec() <= 53`.
-template<EngineType E = EngineType::FP_RTO>
+template<EngineType E = EngineType::FP_RTO, flag_mask_t FlagMask = Flags::ALL_FLAGS>
 double mul(double x, double y, const Context& ctx) {
     const prec_t p = ctx.round_prec();
     double result;
@@ -184,10 +178,12 @@ double mul(double x, double y, const Context& ctx) {
     }
 
     // check for special values to raise status flags
-    if (std::isnan(result)) {
-        if ((x == 0.0 && std::isinf(y)) || (std::isinf(x) && y == 0.0)) {
-            // invalid operation: 0 * inf
-            flags.set_invalid();
+    if constexpr (FlagMask & Flags::INVALID) {
+        if (std::isnan(result)) {
+            if ((x == 0.0 && std::isinf(y)) || (std::isinf(x) && y == 0.0)) {
+                // invalid operation: 0 * inf
+                flags.set_invalid();
+            }
         }
     }
 
@@ -196,7 +192,7 @@ double mul(double x, double y, const Context& ctx) {
 
 /// @brief Computes `x / y` using the given context.
 /// Must be the case that `ctx.round_prec() <= 53`.
-template<EngineType E = EngineType::FP_RTO>
+template<EngineType E = EngineType::FP_RTO, flag_mask_t FlagMask = Flags::ALL_FLAGS>
 double div(double x, double y, const Context& ctx) {
     double result;
 
@@ -223,12 +219,16 @@ double div(double x, double y, const Context& ctx) {
     }
 
     // check for special values to raise status flags
-    if (std::isnan(result)) {
-        if ((x == 0.0 && y == 0.0) || (std::isinf(x) && std::isinf(y))) {
-            // invalid operation: 0/0 or inf/inf
-            flags.set_invalid();
+    if constexpr (FlagMask & Flags::INVALID) {
+        if (std::isnan(result)) {
+            if ((x == 0.0 && y == 0.0) || (std::isinf(x) && std::isinf(y))) {
+                // invalid operation: 0/0 or inf/inf
+                flags.set_invalid();
+            }
         }
-    } else if (std::isinf(result)) {
+    }
+
+    if constexpr (FlagMask & Flags::DIV_BY_ZERO) {
         if (std::isfinite(x) && x != 0.0 && y == 0.0) {
             // division by zero: finite non-zero / 0
             flags.set_div_by_zero();
@@ -240,7 +240,7 @@ double div(double x, double y, const Context& ctx) {
 
 /// @brief Computes `sqrt(x)` using the given context.
 /// Must be the case that `ctx.round_prec() <= 53`.
-template<EngineType E = EngineType::FP_RTO>
+template<EngineType E = EngineType::FP_RTO, flag_mask_t FlagMask = Flags::ALL_FLAGS>
 double sqrt(double x, const Context& ctx) {
     double result;
 
@@ -267,10 +267,12 @@ double sqrt(double x, const Context& ctx) {
     }
 
     // check for special values to raise status flags
-    if (std::isnan(result)) {
-        if (x < 0.0 && std::isfinite(x)) {
-            // invalid operation: sqrt of negative number
-            flags.set_invalid();
+    if constexpr (FlagMask & Flags::INVALID) {
+        if (std::isnan(result)) {
+            if (x < 0.0 && std::isfinite(x)) {
+                // invalid operation: sqrt of negative number
+                flags.set_invalid();
+            }
         }
     }
 
@@ -279,7 +281,7 @@ double sqrt(double x, const Context& ctx) {
 
 /// @brief Computes `x * y + z` using the given context.
 /// Must be the case that `ctx.round_prec() <= 53`.
-template<EngineType E = EngineType::FP_RTO>
+template<EngineType E = EngineType::FP_RTO, flag_mask_t FlagMask = Flags::ALL_FLAGS>
 double fma(double x, double y, double z, const Context& ctx) {
     double result;
 
@@ -306,22 +308,24 @@ double fma(double x, double y, double z, const Context& ctx) {
     }
 
     // check for special values to raise status flags
-    if (std::isnan(result)) {
-        const bool x_nan = std::isnan(x);
-        const bool y_nan = std::isnan(y);
-        const bool x_inf = std::isinf(x);
-        const bool y_inf = std::isinf(y);
+    if constexpr (FlagMask & Flags::INVALID) {
+        if (std::isnan(result)) {
+            const bool x_nan = std::isnan(x);
+            const bool y_nan = std::isnan(y);
+            const bool x_inf = std::isinf(x);
+            const bool y_inf = std::isinf(y);
 
-        // Check for invalid multiplication (0 * inf)
-        if ((x == 0.0 && y_inf) || (x_inf && y == 0.0)) {
-            flags.set_invalid();
-        } else if ((x_inf && !y_nan) || (y_inf && !x_nan)) {
-            // product is infinite
-            const double p = x * y;
-
-            // Check for invalid addition (inf + -inf)
-            if (std::isinf(z) && (std::signbit(p) != std::signbit(z))) {
+            // Check for invalid multiplication (0 * inf)
+            if ((x == 0.0 && y_inf) || (x_inf && y == 0.0)) {
                 flags.set_invalid();
+            } else if ((x_inf && !y_nan) || (y_inf && !x_nan)) {
+                // product is infinite
+                const double p = x * y;
+
+                // Check for invalid addition (inf + -inf)
+                if (std::isinf(z) && (std::signbit(p) != std::signbit(z))) {
+                    flags.set_invalid();
+                }
             }
         }
     }

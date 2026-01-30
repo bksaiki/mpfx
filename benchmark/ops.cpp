@@ -13,8 +13,11 @@
 
 #include <mpfr.h>
 #include <mpfx.hpp>
-#include <softfloat.h>
 #include <floppy_float.h>
+
+extern "C" {
+    #include <softfloat.h>
+}
 
 
 enum class OP1 {
@@ -604,14 +607,14 @@ double floppyfloat_op3(const std::vector<double>& x_vals, const std::vector<doub
 ////////////////////////////////////////////////////////////
 // MPFX engine implementations
 
-template <mpfx::EngineType E, OP1 O>
+template <mpfx::EngineType E, OP1 O, mpfx::flag_mask_t Flags = mpfx::Flags::NONE>
 double mpfx_op1(const std::vector<double>& x_vals, const mpfx::MPBContext& ctx, size_t N) {
     volatile double result = 0.0;
     auto start = std::chrono::steady_clock::now();
     
     for (size_t i = 0; i < N; i++) {
         if constexpr (O == OP1::SQRT) {
-            result = mpfx::sqrt<E>(x_vals[i], ctx);
+            result = mpfx::sqrt<E, Flags>(x_vals[i], ctx);
         } else {
             MPFX_STATIC_ASSERT(false, "unsupported OP1");
         }
@@ -623,20 +626,20 @@ double mpfx_op1(const std::vector<double>& x_vals, const mpfx::MPBContext& ctx, 
     return duration;
 }
 
-template <mpfx::EngineType E, OP2 O>
+template <mpfx::EngineType E, OP2 O, mpfx::flag_mask_t Flags = mpfx::Flags::NONE>
 double mpfx_op2(const std::vector<double>& x_vals, const std::vector<double>& y_vals, const mpfx::MPBContext& ctx, size_t N) {
     volatile double result = 0.0;
     auto start = std::chrono::steady_clock::now();
     
     for (size_t i = 0; i < N; i++) {
         if constexpr (O == OP2::ADD) {
-            result = mpfx::add<E>(x_vals[i], y_vals[i], ctx);
+            result = mpfx::add<E, Flags>(x_vals[i], y_vals[i], ctx);
         } else if constexpr (O == OP2::SUB) {
-            result = mpfx::sub<E>(x_vals[i], y_vals[i], ctx);
+            result = mpfx::sub<E, Flags>(x_vals[i], y_vals[i], ctx);
         } else if constexpr (O == OP2::MUL) {
-            result = mpfx::mul<E>(x_vals[i], y_vals[i], ctx);
+            result = mpfx::mul<E, Flags>(x_vals[i], y_vals[i], ctx);
         } else if constexpr (O == OP2::DIV) {
-            result = mpfx::div<E>(x_vals[i], y_vals[i], ctx);
+            result = mpfx::div<E, Flags>(x_vals[i], y_vals[i], ctx);
         } else {
             MPFX_STATIC_ASSERT(false, "unsupported OP2");
         }
@@ -648,14 +651,14 @@ double mpfx_op2(const std::vector<double>& x_vals, const std::vector<double>& y_
     return duration;
 }
 
-template <mpfx::EngineType E, OP3 O>
+template <mpfx::EngineType E, OP3 O, mpfx::flag_mask_t Flags = mpfx::Flags::NONE>
 double mpfx_op3(const std::vector<double>& x_vals, const std::vector<double>& y_vals, const std::vector<double>& z_vals, const mpfx::MPBContext& ctx, size_t N) {
     volatile double result = 0.0;
     auto start = std::chrono::steady_clock::now();
     
     for (size_t i = 0; i < N; i++) {
         if constexpr (O == OP3::FMA) {
-            result = mpfx::fma<E>(x_vals[i], y_vals[i], z_vals[i], ctx);
+            result = mpfx::fma<E, Flags>(x_vals[i], y_vals[i], z_vals[i], ctx);
         } else {
             MPFX_STATIC_ASSERT(false, "unsupported OP3");
         }
