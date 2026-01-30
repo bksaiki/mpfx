@@ -47,7 +47,7 @@ static double run_mixed(
         const auto x_q = mpfx::round(x_vals[i], ctx_quant);
         const auto y_q = mpfx::round(y_vals[i], ctx_quant);
         // Multiply in TF32 (can be done exactly)
-        const auto prod = mpfx::mul<mpfx::EngineType::FP_EXACT>(x_q, y_q, ctx_mul);
+        const auto prod = mpfx::mul<mpfx::Engine::FP_EXACT>(x_q, y_q, ctx_mul);
         // Accumulate in FP32
         dot_product = mpfx::add(dot_product, prod, ctx_add);
     }

@@ -209,7 +209,7 @@ TEST(OpsFloat, TestAddEFTUniform) {
                 const double y = dist(rng);
 
                 const double z_ref = ref_add(x, y, p, rm);
-                const double z = mpfx::add<mpfx::EngineType::EFT>(x, y, ctx);
+                const double z = mpfx::add<mpfx::Engine::EFT>(x, y, ctx);
                 EXPECT_EQ(z_ref, z);
             }
         }
@@ -320,7 +320,7 @@ TEST(OpsFloat, TestMulEFTUniform) {
                 const double y = dist(rng);
 
                 const double z_ref = ref_mul(x, y, p, rm);
-                const double z = mpfx::mul<mpfx::EngineType::EFT>(x, y, ctx);
+                const double z = mpfx::mul<mpfx::Engine::EFT>(x, y, ctx);
                 EXPECT_EQ(z_ref, z);
             }
         }
@@ -397,7 +397,7 @@ TEST(OpsFloat, TestDivEFTUniform) {
                 const double y = dist(rng);
 
                 const double z_ref = ref_div(x, y, p, rm);
-                const double z = mpfx::div<mpfx::EngineType::EFT>(x, y, ctx);
+                const double z = mpfx::div<mpfx::Engine::EFT>(x, y, ctx);
                 EXPECT_EQ(z_ref, z);
             }
         }
@@ -469,7 +469,7 @@ TEST(OpsFloat, TestSqrtEFTUniform) {
                 const double x = dist(rng);
 
                 const double z_ref = ref_sqrt(x, p, rm);
-                const double z = mpfx::sqrt<mpfx::EngineType::EFT>(x, ctx);
+                const double z = mpfx::sqrt<mpfx::Engine::EFT>(x, ctx);
                 EXPECT_EQ(z_ref, z);
             }
         }
@@ -545,7 +545,7 @@ TEST(OpsFloat, TestFmaEFTUniform) {
                 const double z = dist(rng);
 
                 const double w_ref = ref_fma(x, y, z, p, rm);
-                const double w = mpfx::fma<mpfx::EngineType::EFT>(x, y, z, ctx);
+                const double w = mpfx::fma<mpfx::Engine::EFT>(x, y, z, ctx);
                 EXPECT_EQ(w_ref, w);
             }
         }

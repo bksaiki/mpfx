@@ -13,8 +13,11 @@
 
 #include <mpfr.h>
 #include <mpfx.hpp>
-#include <softfloat.h>
 #include <floppy_float.h>
+
+extern "C" {
+    #include <softfloat.h>
+}
 
 
 enum class OP1 {
@@ -604,14 +607,14 @@ double floppyfloat_op3(const std::vector<double>& x_vals, const std::vector<doub
 ////////////////////////////////////////////////////////////
 // MPFX engine implementations
 
-template <mpfx::EngineType E, OP1 O>
+template <mpfx::Engine E, OP1 O, mpfx::flag_mask_t Flags = mpfx::Flags::NO_FLAGS>
 double mpfx_op1(const std::vector<double>& x_vals, const mpfx::MPBContext& ctx, size_t N) {
     volatile double result = 0.0;
     auto start = std::chrono::steady_clock::now();
     
     for (size_t i = 0; i < N; i++) {
         if constexpr (O == OP1::SQRT) {
-            result = mpfx::sqrt<E>(x_vals[i], ctx);
+            result = mpfx::sqrt<E, Flags>(x_vals[i], ctx);
         } else {
             MPFX_STATIC_ASSERT(false, "unsupported OP1");
         }
@@ -623,20 +626,20 @@ double mpfx_op1(const std::vector<double>& x_vals, const mpfx::MPBContext& ctx, 
     return duration;
 }
 
-template <mpfx::EngineType E, OP2 O>
+template <mpfx::Engine E, OP2 O, mpfx::flag_mask_t Flags = mpfx::Flags::NO_FLAGS>
 double mpfx_op2(const std::vector<double>& x_vals, const std::vector<double>& y_vals, const mpfx::MPBContext& ctx, size_t N) {
     volatile double result = 0.0;
     auto start = std::chrono::steady_clock::now();
     
     for (size_t i = 0; i < N; i++) {
         if constexpr (O == OP2::ADD) {
-            result = mpfx::add<E>(x_vals[i], y_vals[i], ctx);
+            result = mpfx::add<E, Flags>(x_vals[i], y_vals[i], ctx);
         } else if constexpr (O == OP2::SUB) {
-            result = mpfx::sub<E>(x_vals[i], y_vals[i], ctx);
+            result = mpfx::sub<E, Flags>(x_vals[i], y_vals[i], ctx);
         } else if constexpr (O == OP2::MUL) {
-            result = mpfx::mul<E>(x_vals[i], y_vals[i], ctx);
+            result = mpfx::mul<E, Flags>(x_vals[i], y_vals[i], ctx);
         } else if constexpr (O == OP2::DIV) {
-            result = mpfx::div<E>(x_vals[i], y_vals[i], ctx);
+            result = mpfx::div<E, Flags>(x_vals[i], y_vals[i], ctx);
         } else {
             MPFX_STATIC_ASSERT(false, "unsupported OP2");
         }
@@ -648,14 +651,14 @@ double mpfx_op2(const std::vector<double>& x_vals, const std::vector<double>& y_
     return duration;
 }
 
-template <mpfx::EngineType E, OP3 O>
+template <mpfx::Engine E, OP3 O, mpfx::flag_mask_t Flags = mpfx::Flags::NO_FLAGS>
 double mpfx_op3(const std::vector<double>& x_vals, const std::vector<double>& y_vals, const std::vector<double>& z_vals, const mpfx::MPBContext& ctx, size_t N) {
     volatile double result = 0.0;
     auto start = std::chrono::steady_clock::now();
     
     for (size_t i = 0; i < N; i++) {
         if constexpr (O == OP3::FMA) {
-            result = mpfx::fma<E>(x_vals[i], y_vals[i], z_vals[i], ctx);
+            result = mpfx::fma<E, Flags>(x_vals[i], y_vals[i], z_vals[i], ctx);
         } else {
             MPFX_STATIC_ASSERT(false, "unsupported OP3");
         }
@@ -697,10 +700,10 @@ void benchmark_op1(
     const double duration_floppyfloat = floppyfloat_op1<O>(x_vals, output_ctx, num_inputs);
 
     // Run MPFX engines
-    const double duration_mpfx_rto = mpfx_op1<mpfx::EngineType::FP_RTO, O>(x_vals, output_ctx, num_inputs);
-    const double duration_mpfx_softfloat = mpfx_op1<mpfx::EngineType::SOFTFLOAT, O>(x_vals, output_ctx, num_inputs);
-    const double duration_mpfx_ffloat = mpfx_op1<mpfx::EngineType::FFLOAT, O>(x_vals, output_ctx, num_inputs);
-    const double duration_mpfx_eft = mpfx_op1<mpfx::EngineType::EFT, O>(x_vals, output_ctx, num_inputs);
+    const double duration_mpfx_rto = mpfx_op1<mpfx::Engine::FP_RTO, O>(x_vals, output_ctx, num_inputs);
+    const double duration_mpfx_softfloat = mpfx_op1<mpfx::Engine::SOFTFLOAT, O>(x_vals, output_ctx, num_inputs);
+    const double duration_mpfx_ffloat = mpfx_op1<mpfx::Engine::FFLOAT, O>(x_vals, output_ctx, num_inputs);
+    const double duration_mpfx_eft = mpfx_op1<mpfx::Engine::EFT, O>(x_vals, output_ctx, num_inputs);
 
     // Report result
     report_result(
@@ -735,10 +738,10 @@ void benchmark_op2(
     const double duration_floppyfloat = floppyfloat_op2<O>(x_vals, y_vals, output_ctx, num_inputs);
 
     // Run MPFX engines
-    const double duration_mpfx_rto = mpfx_op2<mpfx::EngineType::FP_RTO, O>(x_vals, y_vals, output_ctx, num_inputs);
-    const double duration_mpfx_softfloat = mpfx_op2<mpfx::EngineType::SOFTFLOAT, O>(x_vals, y_vals, output_ctx, num_inputs);
-    const double duration_mpfx_ffloat = mpfx_op2<mpfx::EngineType::FFLOAT, O>(x_vals, y_vals, output_ctx, num_inputs);
-    const double duration_mpfx_eft = mpfx_op2<mpfx::EngineType::EFT, O>(x_vals, y_vals, output_ctx, num_inputs);
+    const double duration_mpfx_rto = mpfx_op2<mpfx::Engine::FP_RTO, O>(x_vals, y_vals, output_ctx, num_inputs);
+    const double duration_mpfx_softfloat = mpfx_op2<mpfx::Engine::SOFTFLOAT, O>(x_vals, y_vals, output_ctx, num_inputs);
+    const double duration_mpfx_ffloat = mpfx_op2<mpfx::Engine::FFLOAT, O>(x_vals, y_vals, output_ctx, num_inputs);
+    const double duration_mpfx_eft = mpfx_op2<mpfx::Engine::EFT, O>(x_vals, y_vals, output_ctx, num_inputs);
 
     // Report result
     report_result(
@@ -775,10 +778,10 @@ void benchmark_op3(
     const double duration_floppyfloat = floppyfloat_op3<O>(x_vals, y_vals, z_vals, output_ctx, num_inputs);
 
     // Run MPFX engines
-    const double duration_mpfx_rto = mpfx_op3<mpfx::EngineType::FP_RTO, O>(x_vals, y_vals, z_vals, output_ctx, num_inputs);
-    const double duration_mpfx_softfloat = mpfx_op3<mpfx::EngineType::SOFTFLOAT, O>(x_vals, y_vals, z_vals, output_ctx, num_inputs);
-    const double duration_mpfx_ffloat = mpfx_op3<mpfx::EngineType::FFLOAT, O>(x_vals, y_vals, z_vals, output_ctx, num_inputs);
-    const double duration_mpfx_eft = mpfx_op3<mpfx::EngineType::EFT, O>(x_vals, y_vals, z_vals, output_ctx, num_inputs);
+    const double duration_mpfx_rto = mpfx_op3<mpfx::Engine::FP_RTO, O>(x_vals, y_vals, z_vals, output_ctx, num_inputs);
+    const double duration_mpfx_softfloat = mpfx_op3<mpfx::Engine::SOFTFLOAT, O>(x_vals, y_vals, z_vals, output_ctx, num_inputs);
+    const double duration_mpfx_ffloat = mpfx_op3<mpfx::Engine::FFLOAT, O>(x_vals, y_vals, z_vals, output_ctx, num_inputs);
+    const double duration_mpfx_eft = mpfx_op3<mpfx::Engine::EFT, O>(x_vals, y_vals, z_vals, output_ctx, num_inputs);
 
     // Report result
     report_result(

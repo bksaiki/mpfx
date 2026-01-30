@@ -16,6 +16,9 @@
 // rounding
 #include <mpfx/round.hpp>
 
+// status flags
+#include <mpfx/flags.hpp>
+
 // utility macros and functions
 #include <mpfx/types.hpp>
 #include <mpfx/utils.hpp>

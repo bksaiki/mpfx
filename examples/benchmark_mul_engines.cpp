@@ -144,7 +144,7 @@ static double run_rto_engine(
 
     volatile double result;
     for (size_t i = 0; i < N; i++) {
-        result = mpfx::mul<mpfx::EngineType::FP_RTO>(x_vals[i], y_vals[i], ROUND_CTX);
+        result = mpfx::mul<mpfx::Engine::FP_RTO>(x_vals[i], y_vals[i], ROUND_CTX);
     }
 
     auto end = steady_clock::now();
@@ -165,7 +165,7 @@ static double run_exact_engine(
 
     volatile double result;
     for (size_t i = 0; i < N; i++) {
-        result = mpfx::mul<mpfx::EngineType::FP_EXACT>(x_vals[i], y_vals[i], ROUND_CTX);
+        result = mpfx::mul<mpfx::Engine::FP_EXACT>(x_vals[i], y_vals[i], ROUND_CTX);
     }
 
     auto end = steady_clock::now();
@@ -186,7 +186,7 @@ static double run_fixed_engine(
 
     volatile double result;
     for (size_t i = 0; i < N; i++) {
-        result = mpfx::mul<mpfx::EngineType::FIXED>(x_vals[i], y_vals[i], ROUND_CTX);
+        result = mpfx::mul<mpfx::Engine::FIXED>(x_vals[i], y_vals[i], ROUND_CTX);
     }
 
     auto end = steady_clock::now();
@@ -207,7 +207,7 @@ static double run_softfloat_engine(
 
     volatile double result;
     for (size_t i = 0; i < N; i++) {
-        result = mpfx::mul<mpfx::EngineType::SOFTFLOAT>(x_vals[i], y_vals[i], ROUND_CTX);
+        result = mpfx::mul<mpfx::Engine::SOFTFLOAT>(x_vals[i], y_vals[i], ROUND_CTX);
     }
 
     auto end = steady_clock::now();
@@ -228,7 +228,7 @@ static double run_floppyfloat_engine(
 
     volatile double result;
     for (size_t i = 0; i < N; i++) {
-        result = mpfx::mul<mpfx::EngineType::FFLOAT>(x_vals[i], y_vals[i], ROUND_CTX);
+        result = mpfx::mul<mpfx::Engine::FFLOAT>(x_vals[i], y_vals[i], ROUND_CTX);
     }
 
     auto end = steady_clock::now();
@@ -249,7 +249,7 @@ static double run_eft_engine(
 
     volatile double result;
     for (size_t i = 0; i < N; i++) {
-        result = mpfx::mul<mpfx::EngineType::EFT>(x_vals[i], y_vals[i], ROUND_CTX);
+        result = mpfx::mul<mpfx::Engine::EFT>(x_vals[i], y_vals[i], ROUND_CTX);
     }
 
     auto end = steady_clock::now();

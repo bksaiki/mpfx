@@ -110,6 +110,7 @@ set(HEADERS
     include/mpfx/engine_fpe.hpp
     include/mpfx/engine_fx.hpp
     include/mpfx/engine_sf.hpp
+    include/mpfx/flags.hpp
     include/mpfx/ops.hpp
     include/mpfx/params.hpp
     include/mpfx/round.hpp
@@ -120,6 +121,7 @@ set(HEADERS
 set(SOURCES
     src/engine_ff.cpp
     src/engine_sf.cpp
+    src/flags.cpp
 )
 
 # Create compiled library

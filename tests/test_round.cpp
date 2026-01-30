@@ -9,7 +9,7 @@ using namespace mpfx;
 
 using round_test_t = std::tuple<exp_t, mant_t, exp_t, mant_t, mpfx::RM>;
 
-TEST(RoundOpt, TestRoundExamples) {
+TEST(TestRound, TestRoundExamples) {
     EXPECT_EQ(round(0.0, 1, std::nullopt, RM::RNE), 0.0);
     EXPECT_EQ(round(std::bit_cast<double>(1ULL), 1, std::nullopt, RM::RNE), std::bit_cast<double>(1ULL));
     EXPECT_EQ(round(std::bit_cast<double>(3ULL), 1, std::nullopt, RM::RTZ), std::bit_cast<double>(2ULL));
@@ -27,7 +27,7 @@ TEST(RoundOpt, TestRoundExamples) {
     EXPECT_EQ(round(0.25, 8, -1, RM::RTZ), 0.0);
 }
 
-TEST(RoundOpt, TestRoundFixedExamples) {
+TEST(TestRound, TestRoundFixedExamples) {
     EXPECT_EQ(round(0, 50, 1, std::nullopt, RM::RNE), 0.0);
     EXPECT_EQ(round(1, 0, 1, std::nullopt, RM::RNE), 1.0);
     EXPECT_EQ(round(3, 0, 1, std::nullopt, RM::RTZ), 2.0);
@@ -48,7 +48,7 @@ TEST(RoundOpt, TestRoundFixedExamples) {
 }
 
 
-TEST(RoundOpt, TestRoundWithPrec) {
+TEST(TestRound, TestRoundWithPrec) {
     std::vector<round_test_t> inputs = {
         // 8 * 2 ** -3 (representable)
         {-3, 8, -1, 2, RM::RNE}, // 8 * 2 ** -3 => 1 * 2 ** -1
@@ -88,14 +88,14 @@ TEST(RoundOpt, TestRoundWithPrec) {
     };
 
     for (const auto& [exp_in, c_in, exp_out, c_out, rm] : inputs) {
-        const auto x = static_cast<double>(mpfx::digits_to_double(false, exp_in, c_in));
-        const auto y_expect = static_cast<double>(mpfx::digits_to_double(false, exp_out, c_out));
+        const auto x = static_cast<double>(mpfx::make_double(false, exp_in, c_in));
+        const auto y_expect = static_cast<double>(mpfx::make_double(false, exp_out, c_out));
         const auto y = round(x, 2, std::nullopt, rm);
         EXPECT_EQ(y, y_expect);
     }
 }
 
-TEST(RoundOpt, TestRoundWithPrecFixed) {
+TEST(TestRound, TestRoundWithPrecFixed) {
     std::vector<round_test_t> inputs = {
         // 8 * 2 ** -3 (representable)
         {-3, 8, -1, 2, RM::RNE}, // 8 * 2 ** -3 => 1 * 2 ** -1
@@ -135,13 +135,13 @@ TEST(RoundOpt, TestRoundWithPrecFixed) {
     };
 
     for (const auto& [exp_in, c_in, exp_out, c_out, rm] : inputs) {
-        const auto y_expect = static_cast<double>(mpfx::digits_to_double(false, exp_out, c_out));
+        const auto y_expect = static_cast<double>(mpfx::make_double(false, exp_out, c_out));
         const auto y = round(c_in, exp_in, 2, std::nullopt, rm);
         EXPECT_EQ(y, y_expect);
     }
 }
 
-TEST(RoundOpt, TestRoundWithN) {
+TEST(TestRound, TestRoundWithN) {
     std::vector<round_test_t> inputs = {
         // 8 * 2 ** -3 (representable)
         {-3, 8, -1, 2, RM::RNE}, // 8 * 2 ** -3 => 1 * 2 ** -1
@@ -181,14 +181,14 @@ TEST(RoundOpt, TestRoundWithN) {
     };
 
     for (const auto& [exp_in, c_in, exp_out, c_out, rm] : inputs) {
-        const auto x = static_cast<double>(mpfx::digits_to_double(false, exp_in, c_in));
-        const auto y_expect = static_cast<double>(mpfx::digits_to_double(false, exp_out, c_out));
+        const auto x = static_cast<double>(mpfx::make_double(false, exp_in, c_in));
+        const auto y_expect = static_cast<double>(mpfx::make_double(false, exp_out, c_out));
         const auto y = round(x, 3, -2, rm);
         EXPECT_EQ(y, y_expect);
     }
 }
 
-TEST(RoundOpt, TestRoundWithNFixed) {
+TEST(TestRound, TestRoundWithNFixed) {
     std::vector<round_test_t> inputs = {
         // 8 * 2 ** -3 (representable)
         {-3, 8, -1, 2, RM::RNE}, // 8 * 2 ** -3 => 1 * 2 ** -1
@@ -228,7 +228,7 @@ TEST(RoundOpt, TestRoundWithNFixed) {
     };
 
     for (const auto& [exp_in, c_in, exp_out, c_out, rm] : inputs) {
-        const auto y_expect = static_cast<double>(mpfx::digits_to_double(false, exp_out, c_out));
+        const auto y_expect = static_cast<double>(mpfx::make_double(false, exp_out, c_out));
         const auto y = round(c_in, exp_in, 3, -2, rm);
         EXPECT_EQ(y, y_expect);
     }
