@@ -119,18 +119,42 @@ set(HEADERS
     include/mpfx/types.hpp
 )
 
-# Create interface library (header-only)
-add_library(${PROJECT_NAME} INTERFACE)
+# Source files for compiled library
+set(SOURCES
+    src/engine_ff.cpp
+    src/engine_sf.cpp
+)
 
-# Set interface include directories
-target_include_directories(${PROJECT_NAME} INTERFACE
+# Create compiled library
+add_library(${PROJECT_NAME} SHARED ${SOURCES} ${HEADERS})
+
+# Set library version
+set_target_properties(${PROJECT_NAME} PROPERTIES
+    VERSION ${PROJECT_VERSION}
+    SOVERSION ${PROJECT_VERSION_MAJOR}
+)
+
+# Include directories for building and installing
+target_include_directories(${PROJECT_NAME} PUBLIC
     $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
 )
 
+# Link against FloppyFloat static library
+target_link_libraries(${PROJECT_NAME} PRIVATE floppy_float_static)
+
+# Link against SoftFloat static library
+target_link_libraries(${PROJECT_NAME} PRIVATE softfloat)
+
+# Link against GMP and MPFR (needed for other parts of the library)
+target_link_libraries(${PROJECT_NAME} PUBLIC ${GMP_LIBRARY} ${MPFR_LIBRARY})
+
 # Install targets
 install(TARGETS ${PROJECT_NAME}
     EXPORT ${PROJECT_NAME}Targets
+    LIBRARY DESTINATION lib
+    ARCHIVE DESTINATION lib
+    RUNTIME DESTINATION bin
 )
 
 install(DIRECTORY include/mpfx
