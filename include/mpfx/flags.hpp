@@ -51,72 +51,72 @@ private:
 
 public:
 
-    static constexpr flag_mask_t INVALID = 1u << 0;
-    static constexpr flag_mask_t DIV_BY_ZERO = 1u << 1;
-    static constexpr flag_mask_t OVERFLOW = 1u << 2;
-    static constexpr flag_mask_t TINY_BEFORE_ROUNDING = 1u << 3;
-    static constexpr flag_mask_t TINY_AFTER_ROUNDING = 1u << 4;
-    static constexpr flag_mask_t UNDERFLOW_BEFORE_ROUNDING = 1u << 5;
-    static constexpr flag_mask_t UNDERFLOW_AFTER_ROUNDING = 1u << 6;
-    static constexpr flag_mask_t INEXACT = 1u << 7;
-    static constexpr flag_mask_t CARRY = 1u << 8;
+    static constexpr flag_mask_t INVALID_FLAG = 1u << 0;
+    static constexpr flag_mask_t DIV_BY_ZERO_FLAG = 1u << 1;
+    static constexpr flag_mask_t OVERFLOW_FLAG = 1u << 2;
+    static constexpr flag_mask_t TINY_BEFORE_ROUNDING_FLAG = 1u << 3;
+    static constexpr flag_mask_t TINY_AFTER_ROUNDING_FLAG = 1u << 4;
+    static constexpr flag_mask_t UNDERFLOW_BEFORE_ROUNDING_FLAG = 1u << 5;
+    static constexpr flag_mask_t UNDERFLOW_AFTER_ROUNDING_FLAG = 1u << 6;
+    static constexpr flag_mask_t INEXACT_FLAG = 1u << 7;
+    static constexpr flag_mask_t CARRY_FLAG = 1u << 8;
 
-    static constexpr flag_mask_t NONE = 0;
-    static constexpr flag_mask_t ALL_FLAGS = INVALID | DIV_BY_ZERO | OVERFLOW |
-                                         TINY_BEFORE_ROUNDING | TINY_AFTER_ROUNDING |
-                                         UNDERFLOW_BEFORE_ROUNDING | UNDERFLOW_AFTER_ROUNDING |
-                                         INEXACT | CARRY;
+    static constexpr flag_mask_t NO_FLAGS = 0;
+    static constexpr flag_mask_t ALL_FLAGS = INVALID_FLAG | DIV_BY_ZERO_FLAG | OVERFLOW_FLAG |
+                                         TINY_BEFORE_ROUNDING_FLAG | TINY_AFTER_ROUNDING_FLAG |
+                                         UNDERFLOW_BEFORE_ROUNDING_FLAG | UNDERFLOW_AFTER_ROUNDING_FLAG |
+                                         INEXACT_FLAG | CARRY_FLAG;
 
     /// @brief Constructor initializes all flags to false.
     Flags() : flags(0) {}
 
     /// @brief Check if invalid flag is set.
-    bool invalid() const { return flags & INVALID; }
+    bool invalid() const { return flags & INVALID_FLAG; }
     /// @brief Set invalid flag.
-    void set_invalid() { flags |= INVALID; }
+    void set_invalid() { flags |= INVALID_FLAG; }
 
     /// @brief Check if division by zero flag is set.
-    bool div_by_zero() const { return flags & DIV_BY_ZERO; }
+    bool div_by_zero() const { return flags & DIV_BY_ZERO_FLAG; }
     /// @brief Set division by zero flag.
-    void set_div_by_zero() { flags |= DIV_BY_ZERO; }
+    void set_div_by_zero() { flags |= DIV_BY_ZERO_FLAG; }
 
     /// @brief Check if overflow flag is set.
-    bool overflow() const { return flags & OVERFLOW; }
+    bool overflow() const { return flags & OVERFLOW_FLAG; }
     /// @brief Set overflow flag.
-    void set_overflow() { flags |= OVERFLOW; }
+    void set_overflow() { flags |= OVERFLOW_FLAG; }
 
     /// @brief Check if tiny before rounding flag is set.
-    bool tiny_before_rounding() const { return flags & TINY_BEFORE_ROUNDING; }
+    bool tiny_before_rounding() const { return flags & TINY_BEFORE_ROUNDING_FLAG; }
     /// @brief Set tiny before rounding flag.
-    void set_tiny_before_rounding() { flags |= TINY_BEFORE_ROUNDING; }
+    void set_tiny_before_rounding() { flags |= TINY_BEFORE_ROUNDING_FLAG; }
 
     /// @brief Check if tiny after rounding flag is set.
-    bool tiny_after_rounding() const { return flags & TINY_AFTER_ROUNDING; }
+    bool tiny_after_rounding() const { return flags & TINY_AFTER_ROUNDING_FLAG; }
     /// @brief Set tiny after rounding flag.
-    void set_tiny_after_rounding() { flags |= TINY_AFTER_ROUNDING; }
+    void set_tiny_after_rounding() { flags |= TINY_AFTER_ROUNDING_FLAG; }
 
     /// @brief Check if underflow before rounding flag is set.
-    bool underflow_before_rounding() const { return flags & UNDERFLOW_BEFORE_ROUNDING; }
+    bool underflow_before_rounding() const { return flags & UNDERFLOW_BEFORE_ROUNDING_FLAG; }
     /// @brief Set underflow before rounding flag.
-    void set_underflow_before_rounding() { flags |= UNDERFLOW_BEFORE_ROUNDING; }
+    void set_underflow_before_rounding() { flags |= UNDERFLOW_BEFORE_ROUNDING_FLAG; }
 
     /// @brief Check if underflow after rounding flag is set.
-    bool underflow_after_rounding() const { return flags & UNDERFLOW_AFTER_ROUNDING; }
+    bool underflow_after_rounding() const { return flags & UNDERFLOW_AFTER_ROUNDING_FLAG; }
     /// @brief Set underflow after rounding flag.
-    void set_underflow_after_rounding() { flags |= UNDERFLOW_AFTER_ROUNDING; }
+    void set_underflow_after_rounding() { flags |= UNDERFLOW_AFTER_ROUNDING_FLAG; }
 
     /// @brief Check if inexact flag is set.
-    bool inexact() const { return flags & INEXACT; }
+    bool inexact() const { return flags & INEXACT_FLAG; }
     /// @brief Set inexact flag.
-    void set_inexact() { flags |= INEXACT; }
+    void set_inexact() { flags |= INEXACT_FLAG; }
 
     /// @brief Check if carry flag is set.
-    bool carry() const { return flags & CARRY; }
+    bool carry() const { return flags & CARRY_FLAG; }
     /// @brief Set carry flag.
-    void set_carry() { flags |= CARRY; }
+    void set_carry() { flags |= CARRY_FLAG; }
 
     /// @brief Reset all status flags to false.
-    void reset() { flags = 0; }
+    void reset() { flags = NO_FLAGS; }
 };
 
 /// @brief Global flags instance.

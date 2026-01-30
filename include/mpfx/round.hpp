@@ -217,10 +217,10 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
     if (c == 0) {
         // fast path: zero value
         // raise both tiny flags
-        if constexpr (FlagMask & Flags::TINY_BEFORE_ROUNDING) {
+        if constexpr (FlagMask & Flags::TINY_BEFORE_ROUNDING_FLAG) {
             flags.set_tiny_before_rounding();
         }
-        if constexpr (FlagMask & Flags::TINY_AFTER_ROUNDING) {
+        if constexpr (FlagMask & Flags::TINY_AFTER_ROUNDING_FLAG) {
             flags.set_tiny_after_rounding();
         }
 
@@ -242,7 +242,7 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
 
         if (tiny_before) {
             // set tiny before rounding flag
-            if constexpr (FlagMask & Flags::TINY_BEFORE_ROUNDING) {
+            if constexpr (FlagMask & Flags::TINY_BEFORE_ROUNDING_FLAG) {
                 flags.set_tiny_before_rounding();
             }
 
@@ -266,7 +266,7 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
         MPFX_DEBUG_ASSERT(p_lost > 0, "we must have lost precision");
 
         // set inexact flag
-        if constexpr (FlagMask & Flags::INEXACT) {
+        if constexpr (FlagMask & Flags::INEXACT_FLAG) {
             flags.set_inexact();
         }
 
@@ -277,12 +277,12 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
             MPFX_DEBUG_ASSERT(n.has_value(), "n must be set");
 
             // set the underflow before rounding flag
-            if constexpr (FlagMask & Flags::UNDERFLOW_BEFORE_ROUNDING) {
+            if constexpr (FlagMask & Flags::UNDERFLOW_BEFORE_ROUNDING_FLAG) {
                 flags.set_underflow_before_rounding();
             }
 
-            static constexpr bool CHECK_TINY_AFTER = FlagMask & Flags::TINY_AFTER_ROUNDING;
-            static constexpr bool CHECK_UNDERFLOW_AFTER = FlagMask & Flags::UNDERFLOW_AFTER_ROUNDING;
+            static constexpr bool CHECK_TINY_AFTER = FlagMask & Flags::TINY_AFTER_ROUNDING_FLAG;
+            static constexpr bool CHECK_UNDERFLOW_AFTER = FlagMask & Flags::UNDERFLOW_AFTER_ROUNDING_FLAG;
 
             // check if we are tiny after rounding
             if constexpr (CHECK_TINY_AFTER || CHECK_UNDERFLOW_AFTER) {
@@ -318,10 +318,10 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
 
                 // set tiny after rounding flag
                 if (tiny_after) {
-                    if constexpr (FlagMask & Flags::TINY_AFTER_ROUNDING) {
+                    if constexpr (FlagMask & Flags::TINY_AFTER_ROUNDING_FLAG) {
                         flags.set_tiny_after_rounding();
                     }
-                    if constexpr (FlagMask & Flags::UNDERFLOW_AFTER_ROUNDING) {
+                    if constexpr (FlagMask & Flags::UNDERFLOW_AFTER_ROUNDING_FLAG) {
                         flags.set_underflow_after_rounding();
                     }
                 }
@@ -345,7 +345,7 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
                 // increment caused carry
                 e += 1;
                 c_kept >>= 1;
-                if constexpr (FlagMask & Flags::CARRY) {
+                if constexpr (FlagMask & Flags::CARRY_FLAG) {
                     if (e > emin) {
                         flags.set_carry();
                     }
@@ -356,7 +356,7 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
         // exact result
         // set tiny after rounding flag if tiny before
         if (tiny_before) {
-            if constexpr (FlagMask & Flags::TINY_AFTER_ROUNDING) {
+            if constexpr (FlagMask & Flags::TINY_AFTER_ROUNDING_FLAG) {
                 flags.set_tiny_after_rounding();
             }
         }
