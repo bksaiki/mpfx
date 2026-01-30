@@ -12,6 +12,7 @@
 
 namespace mpfx {
 
+/// @brief Type for status flag masks.
 using flag_mask_t = uint32_t;
 
 /**

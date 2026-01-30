@@ -15,7 +15,7 @@
 namespace mpfx {
 
 /// @brief Engine types for arithmetic operations
-enum class EngineType {
+enum class Engine {
     FP_RTO,    // Native floating-point using RTO emulation
     FP_EXACT,  // Exact computation engine
     FIXED,     // Fixed-point arithmetic engine
@@ -50,26 +50,26 @@ inline double abs(double x, const Context& ctx) {
 
 /// @brief Computes `x + y` using the given context.
 /// Must be the case that `ctx.round_prec() <= 53`.
-template<EngineType E = EngineType::FP_RTO, flag_mask_t FlagMask = Flags::ALL_FLAGS>
+template<Engine E = Engine::FP_RTO, flag_mask_t FlagMask = Flags::ALL_FLAGS>
 double add(double x, double y, const Context& ctx) {
     double result;
 
-    if constexpr (E == EngineType::FP_RTO) {
+    if constexpr (E == Engine::FP_RTO) {
         // compute result using RTO engine
         const double r = engine_fp::add(x, y, ctx.round_prec());
         // use context to round
         result = ctx.round(r);
-    } else if constexpr (E == EngineType::SOFTFLOAT) {
+    } else if constexpr (E == Engine::SOFTFLOAT) {
         // compute result using SoftFloat engine
         const double r = engine_sf::add(x, y, ctx.round_prec());
         // use context to round
         result = ctx.round(r);
-    } else if constexpr (E == EngineType::FFLOAT) {
+    } else if constexpr (E == Engine::FFLOAT) {
         // compute result using FloppyFloat engine
         const double r = engine_ff::add(x, y, ctx.round_prec());
         // use context to round
         result = ctx.round(r);
-    } else if constexpr (E == EngineType::EFT) {
+    } else if constexpr (E == Engine::EFT) {
         // compute result using Error-Free Transformation engine
         const double r = engine_eft::add(x, y, ctx.round_prec());
         // use context to round
@@ -91,26 +91,26 @@ double add(double x, double y, const Context& ctx) {
 
 /// @brief Computes `x - y` using the given context.
 /// Must be the case that `ctx.round_prec() <= 53`.
-template<EngineType E = EngineType::FP_RTO, flag_mask_t FlagMask = Flags::ALL_FLAGS>
+template<Engine E = Engine::FP_RTO, flag_mask_t FlagMask = Flags::ALL_FLAGS>
 double sub(double x, double y, const Context& ctx) {
     double result;
 
-    if constexpr (E == EngineType::FP_RTO) {
+    if constexpr (E == Engine::FP_RTO) {
         // compute result using RTO engine
         const double r = engine_fp::sub(x, y, ctx.round_prec());
         // use context to round
         result = ctx.round(r);
-    } else if constexpr (E == EngineType::SOFTFLOAT) {
+    } else if constexpr (E == Engine::SOFTFLOAT) {
         // compute result using SoftFloat engine
         const double r = engine_sf::sub(x, y, ctx.round_prec());
         // use context to round
         result = ctx.round(r);
-    } else if constexpr (E == EngineType::FFLOAT) {
+    } else if constexpr (E == Engine::FFLOAT) {
         // compute result using FloppyFloat engine
         const double r = engine_ff::sub(x, y, ctx.round_prec());
         // use context to round
         result = ctx.round(r);
-    } else if constexpr (E == EngineType::EFT) {
+    } else if constexpr (E == Engine::EFT) {
         // compute result using error-free transformations
         const double r = engine_eft::sub(x, y, ctx.round_prec());
         // use context to round
@@ -132,22 +132,22 @@ double sub(double x, double y, const Context& ctx) {
 
 /// @brief Computes `x * y` using the given context.
 /// Must be the case that `ctx.round_prec() <= 53`.
-template<EngineType E = EngineType::FP_RTO, flag_mask_t FlagMask = Flags::ALL_FLAGS>
+template<Engine E = Engine::FP_RTO, flag_mask_t FlagMask = Flags::ALL_FLAGS>
 double mul(double x, double y, const Context& ctx) {
     const prec_t p = ctx.round_prec();
     double result;
 
-    if constexpr (E == EngineType::FP_RTO) {
+    if constexpr (E == Engine::FP_RTO) {
         // compute result using RTO engine
         const double r = engine_fp::mul(x, y, p);
         // use context to round
         result = ctx.round(r);
-    } else if constexpr (E == EngineType::FP_EXACT) {
+    } else if constexpr (E == Engine::FP_EXACT) {
         // compute result using exact engine
         const double r = engine_fpe::mul(x, y, p);
         // use context to round
         result = ctx.round(r);
-    } else if constexpr (E == EngineType::FIXED) {
+    } else if constexpr (E == Engine::FIXED) {
         // compute result using fixed-point arithmetic engine
         if (std::isfinite(x) && std::isfinite(y)) {
             // we can use fixed-point arithmetic
@@ -160,17 +160,17 @@ double mul(double x, double y, const Context& ctx) {
             // use context to round
             result = ctx.round(r);
         }
-    } else if constexpr (E == EngineType::SOFTFLOAT) {
+    } else if constexpr (E == Engine::SOFTFLOAT) {
         // compute result using SoftFloat engine
         const double r = engine_sf::mul(x, y, p);
         // use context to round
         result = ctx.round(r);
-    } else if constexpr (E == EngineType::FFLOAT) {
+    } else if constexpr (E == Engine::FFLOAT) {
         // compute result using FloppyFloat engine
         const double r = engine_ff::mul(x, y, p);
         // use context to round
         result = ctx.round(r);
-    } else if constexpr (E == EngineType::EFT) {
+    } else if constexpr (E == Engine::EFT) {
         // compute result using error-free transformations
         const double r = engine_eft::mul(x, y, p);
         // use context to round
@@ -192,26 +192,26 @@ double mul(double x, double y, const Context& ctx) {
 
 /// @brief Computes `x / y` using the given context.
 /// Must be the case that `ctx.round_prec() <= 53`.
-template<EngineType E = EngineType::FP_RTO, flag_mask_t FlagMask = Flags::ALL_FLAGS>
+template<Engine E = Engine::FP_RTO, flag_mask_t FlagMask = Flags::ALL_FLAGS>
 double div(double x, double y, const Context& ctx) {
     double result;
 
-    if constexpr (E == EngineType::FP_RTO) {
+    if constexpr (E == Engine::FP_RTO) {
         // compute result using RTO engine
         const double r = engine_fp::div(x, y, ctx.round_prec());
         // use context to round
         result = ctx.round(r);
-    } else if constexpr (E == EngineType::SOFTFLOAT) {
+    } else if constexpr (E == Engine::SOFTFLOAT) {
         // compute result using SoftFloat engine
         const double r = engine_sf::div(x, y, ctx.round_prec());
         // use context to round
         result = ctx.round(r);
-    } else if constexpr (E == EngineType::FFLOAT) {
+    } else if constexpr (E == Engine::FFLOAT) {
         // compute result using FloppyFloat engine
         const double r = engine_ff::div(x, y, ctx.round_prec());
         // use context to round
         result = ctx.round(r);
-    } else if constexpr (E == EngineType::EFT) {
+    } else if constexpr (E == Engine::EFT) {
         // compute result using error-free transformations
         const double r = engine_eft::div(x, y, ctx.round_prec());
         // use context to round
@@ -240,26 +240,26 @@ double div(double x, double y, const Context& ctx) {
 
 /// @brief Computes `sqrt(x)` using the given context.
 /// Must be the case that `ctx.round_prec() <= 53`.
-template<EngineType E = EngineType::FP_RTO, flag_mask_t FlagMask = Flags::ALL_FLAGS>
+template<Engine E = Engine::FP_RTO, flag_mask_t FlagMask = Flags::ALL_FLAGS>
 double sqrt(double x, const Context& ctx) {
     double result;
 
-    if constexpr (E == EngineType::FP_RTO) {
+    if constexpr (E == Engine::FP_RTO) {
         // compute result using RTO engine
         const double r = engine_fp::sqrt(x, ctx.round_prec());
         // use context to round
         result = ctx.round(r);
-    } else if constexpr (E == EngineType::SOFTFLOAT) {
+    } else if constexpr (E == Engine::SOFTFLOAT) {
         // compute result using SoftFloat engine
         const double r = engine_sf::sqrt(x, ctx.round_prec());
         // use context to round
         result = ctx.round(r);
-    } else if constexpr (E == EngineType::FFLOAT) {
+    } else if constexpr (E == Engine::FFLOAT) {
         // compute result using FloppyFloat engine
         const double r = engine_ff::sqrt(x, ctx.round_prec());
         // use context to round
         result = ctx.round(r);
-    } else if constexpr (E == EngineType::EFT) {
+    } else if constexpr (E == Engine::EFT) {
         // compute result using error-free transformations
         const double r = engine_eft::sqrt(x, ctx.round_prec());
         // use context to round
@@ -281,26 +281,26 @@ double sqrt(double x, const Context& ctx) {
 
 /// @brief Computes `x * y + z` using the given context.
 /// Must be the case that `ctx.round_prec() <= 53`.
-template<EngineType E = EngineType::FP_RTO, flag_mask_t FlagMask = Flags::ALL_FLAGS>
+template<Engine E = Engine::FP_RTO, flag_mask_t FlagMask = Flags::ALL_FLAGS>
 double fma(double x, double y, double z, const Context& ctx) {
     double result;
 
-    if constexpr (E == EngineType::FP_RTO) {
+    if constexpr (E == Engine::FP_RTO) {
         // compute result using RTO engine
         const double r = engine_fp::fma(x, y, z, ctx.round_prec());
         // use context to round
         result = ctx.round(r);
-    } else if constexpr (E == EngineType::SOFTFLOAT) {
+    } else if constexpr (E == Engine::SOFTFLOAT) {
         // compute result using SoftFloat engine
         const double r = engine_sf::fma(x, y, z, ctx.round_prec());
         // use context to round
         result = ctx.round(r);
-    } else if constexpr (E == EngineType::FFLOAT) {
+    } else if constexpr (E == Engine::FFLOAT) {
         // compute result using FloppyFloat engine
         const double r = engine_ff::fma(x, y, z, ctx.round_prec());
         // use context to round
         result = ctx.round(r);
-    } else if constexpr (E == EngineType::EFT) {
+    } else if constexpr (E == Engine::EFT) {
         // compute result using error-free transformations
         const double r = engine_eft::fma(x, y, z, ctx.round_prec());
         // use context to round
