@@ -15,9 +15,6 @@ add_executable(run_tests ${TEST_SOURCES})
 target_link_libraries(run_tests
     mpfx
     GTest::gtest_main
-    ${GMP_LIBRARY}
-    ${MPFR_LIBRARY}
-    softfloat
 )
 
 # Register tests with CTest

@@ -62,9 +62,13 @@ echo "Using build target: $BUILD_TARGET"
 # Build SoftFloat
 cd "build/$BUILD_TARGET"
 
-echo "Building SoftFloat with round-to-odd support..."
+# Add -fPIC to COMPILE_C flags for position-independent code
+echo "Patching Makefile to add -fPIC flag..."
+sed -i.bak 's/-O2 -o \$@/-fPIC -O2 -o $@/' Makefile
+
+echo "Building SoftFloat with -fPIC"
 make clean 2>/dev/null || true  # Clean if possible
-make EXTRACFLAGS="-DSOFTFLOAT_ROUND_ODD"
+make
 
 # Create installation directory structure
 echo "Installing SoftFloat to $INSTALL_DIR..."

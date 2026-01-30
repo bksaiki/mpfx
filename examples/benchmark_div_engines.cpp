@@ -5,6 +5,7 @@
 #include <vector>
 
 #include <mpfx.hpp>
+#include <floppy_float.h>
 
 #ifdef USE_SOFTFLOAT
 extern "C" {

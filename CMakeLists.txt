@@ -76,21 +76,18 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(floppyfloat)
 
 # Include FloppyFloat headers
-if(floppyfloat_POPULATED)
-    include_directories(${floppyfloat_SOURCE_DIR}/src)
-    add_definitions(-DUSE_FLOPPYFLOAT)
-endif()
+include_directories(${floppyfloat_SOURCE_DIR}/src)
+add_definitions(-DUSE_FLOPPYFLOAT)
 
 # SoftFloat
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
 find_package(SoftFloat)
-if(SOFTFLOAT_FOUND)
-    message(STATUS "SoftFloat found: ${SOFTFLOAT_LIBRARIES}")
-    include_directories(${SOFTFLOAT_INCLUDE_DIRS})
-    add_definitions(-DUSE_SOFTFLOAT)
-else()
-    message(STATUS "SoftFloat not found. SoftFloat benchmarks will be disabled.")
+if(NOT SOFTFLOAT_FOUND)
+    message(FATAL_ERROR "SoftFloat not found")
 endif()
+
+include_directories(${SOFTFLOAT_INCLUDE_DIRS})
+add_definitions(-DUSE_SOFTFLOAT)
 
 # Include directories
 include_directories(
@@ -119,18 +116,42 @@ set(HEADERS
     include/mpfx/types.hpp
 )
 
-# Create interface library (header-only)
-add_library(${PROJECT_NAME} INTERFACE)
+# Source files for compiled library
+set(SOURCES
+    src/engine_ff.cpp
+    src/engine_sf.cpp
+)
 
-# Set interface include directories
-target_include_directories(${PROJECT_NAME} INTERFACE
+# Create compiled library
+add_library(${PROJECT_NAME} SHARED ${SOURCES} ${HEADERS})
+
+# Set library version
+set_target_properties(${PROJECT_NAME} PROPERTIES
+    VERSION ${PROJECT_VERSION}
+    SOVERSION ${PROJECT_VERSION_MAJOR}
+)
+
+# Include directories for building and installing
+target_include_directories(${PROJECT_NAME} PUBLIC
     $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
 )
 
+# Link against FloppyFloat static library
+target_link_libraries(${PROJECT_NAME} PRIVATE floppy_float_static)
+
+# Link against SoftFloat static library
+target_link_libraries(${PROJECT_NAME} PRIVATE softfloat)
+
+# Link against GMP and MPFR (needed for other parts of the library)
+target_link_libraries(${PROJECT_NAME} PUBLIC ${GMP_LIBRARY} ${MPFR_LIBRARY})
+
 # Install targets
 install(TARGETS ${PROJECT_NAME}
     EXPORT ${PROJECT_NAME}Targets
+    LIBRARY DESTINATION lib
+    ARCHIVE DESTINATION lib
+    RUNTIME DESTINATION bin
 )
 
 install(DIRECTORY include/mpfx
