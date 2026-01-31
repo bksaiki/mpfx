@@ -1,4 +1,5 @@
 #include <limits>
+#include <random>
 
 #include <mpfx.hpp>
 #include <gtest/gtest.h>
@@ -136,5 +137,51 @@ TEST(TestConvert, TestUnpackFloatFP32) {
         EXPECT_EQ(s, false);
         EXPECT_EQ(exp, FP::EXPMAX);
         EXPECT_EQ(c, FP::IMPLICIT1 | FP::MMASK);
+    }
+}
+
+TEST(TestConvert, TestUnpackPackFP64) {
+    using FP = mpfx::float_params<double>::params;
+    using limits = mpfx::float_params<double>::limits;
+    using uint_t = mpfx::float_params<double>::uint_t;
+    using int_t = std::make_signed_t<uint_t>;
+    static constexpr auto MAX_VAL = limits::max();
+    static constexpr auto MAX_ORD = std::bit_cast<uint_t>(MAX_VAL);
+    static constexpr size_t N = 1'000'000;
+
+    std::random_device r;
+    std::mt19937_64 rng(r());
+    std::uniform_int_distribution<int_t> dist(-MAX_ORD, MAX_ORD);
+
+    for (size_t i = 0; i < N; i++) {
+        const int_t ord = dist(rng);
+        const uint_t bits = (ord < 0) ? (static_cast<uint_t>(-ord) | FP::SMASK) : static_cast<uint_t>(ord);
+        const double x = std::bit_cast<double>(static_cast<uint_t>(bits));
+        const auto [s, exp, c] = mpfx::unpack_float(x);
+        const double y = mpfx::make_float<double>(s, exp, c);
+        EXPECT_EQ(x, y);
+    }
+}
+
+TEST(TestConvert, TestUnpackPackFP32) {
+    using FP = mpfx::float_params<float>::params;
+    using limits = mpfx::float_params<float>::limits;
+    using uint_t = mpfx::float_params<float>::uint_t;
+    using int_t = std::make_signed_t<uint_t>;
+    static constexpr auto MAX_VAL = limits::max();
+    static constexpr auto MAX_ORD = std::bit_cast<uint_t>(MAX_VAL);
+    static constexpr size_t N = 1'000'000;
+
+    std::random_device r;
+    std::mt19937_64 rng(r());
+    std::uniform_int_distribution<int_t> dist(-MAX_ORD, MAX_ORD);
+
+    for (size_t i = 0; i < N; i++) {
+        const int_t ord = dist(rng);
+        const uint_t bits = (ord < 0) ? (static_cast<uint_t>(-ord) | FP::SMASK) : static_cast<uint_t>(ord);
+        const float x = std::bit_cast<float>(static_cast<uint_t>(bits));
+        const auto [s, exp, c] = mpfx::unpack_float(x);
+        const float y = mpfx::make_float<float>(s, exp, c);
+        EXPECT_EQ(x, y);
     }
 }

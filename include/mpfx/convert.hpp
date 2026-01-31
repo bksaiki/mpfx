@@ -40,10 +40,16 @@ inline T make_float(bool s, exp_t exp, typename float_params<T>::uint_t c) {
     }
 
     uint_t ebits, mbits;
-    if (e == FP::EMIN) {
+    if (e < FP::EMIN) {
         // subnormal result
+
+        // check if we shifted off any digits
+        const exp_t adjust = FP::EMIN - e;
+        const mant_t c_lost = c & bitmask<mant_t>(adjust);
+        MPFX_ASSERT(c_lost == 0, "make_double: losing digits due to subnormalization");
+
         ebits = 0;
-        mbits = c;
+        mbits = c >> adjust;
     } else {
         // normal result
         ebits = e + FP::BIAS;
