@@ -314,12 +314,12 @@ TEST(TestFlags, TestOverflowFlag) {
         const bool s1 = s_dist(rng) != 0;
         const auto c1 = c_dist(rng);
         const auto exp1 = exp_dist(rng);
-        const double x = mpfx::make_double(s1, exp1, c1);
+        const double x = mpfx::make_float<double>(s1, exp1, c1);
 
         // generate random overflow threshold
         const auto c2 = c_dist(rng);
         const auto exp2 = exp_dist(rng);
-        const auto bound = mpfx::make_double(false, exp2, c2);
+        const auto bound = mpfx::make_float<double>(false, exp2, c2);
 
         // rounding context
         const mpfx::MPBContext ctx(p, MIN_EXP, rm, bound);
@@ -368,7 +368,7 @@ TEST(TestFlags, TestTinyBeforeFlag) {
         const bool s = s_dist(rng) != 0;
         const auto c = c_dist(rng);
         const auto exp = exp_dist(rng);
-        const double x = mpfx::make_double(s, exp, c);
+        const double x = mpfx::make_float<double>(s, exp, c);
 
         // generate random precision and n
         const auto p = prec_dist(rng);
@@ -419,7 +419,7 @@ TEST(TestFlags, TestTinyAfterFlag) {
         const bool s = s_dist(rng) != 0;
         const auto c = c_dist(rng);
         const auto exp = exp_dist(rng);
-        const double x = mpfx::make_double(s, exp, c);
+        const double x = mpfx::make_float<double>(s, exp, c);
 
         // generate random precision and n
         const auto p = prec_dist(rng);
@@ -473,7 +473,7 @@ TEST(TestFlags, TestInexactFlag) {
         const bool s = s_dist(rng) != 0;
         const auto c = c_dist(rng);
         const auto exp = exp_dist(rng);
-        const double x = mpfx::make_double(s, exp, c);
+        const double x = mpfx::make_float<double>(s, exp, c);
 
         // generate random precision and n
         const auto p = prec_dist(rng);
@@ -519,7 +519,7 @@ TEST(TestFlags, TestUnderflowBeforeFlag) {
         const bool s = s_dist(rng) != 0;
         const auto c = c_dist(rng);
         const auto exp = exp_dist(rng);
-        const double x = mpfx::make_double(s, exp, c);
+        const double x = mpfx::make_float<double>(s, exp, c);
 
         // generate random precision and n
         const auto p = prec_dist(rng);
@@ -566,7 +566,7 @@ TEST(TestFlags, TestUnderflowAfterFlag) {
         const bool s = s_dist(rng) != 0;
         const auto c = c_dist(rng);
         const auto exp = exp_dist(rng);
-        const double x = mpfx::make_double(s, exp, c);
+        const double x = mpfx::make_float<double>(s, exp, c);
 
         // generate random precision and n
         const auto p = prec_dist(rng);
@@ -613,7 +613,7 @@ TEST(TestFlags, TestCarry) {
         const bool s = s_dist(rng) != 0;
         const auto c = c_dist(rng);
         const auto exp = exp_dist(rng);
-        const double x = mpfx::make_double(s, exp, c);
+        const double x = mpfx::make_float<double>(s, exp, c);
 
         // generate random precision and n
         const auto p = prec_dist(rng);

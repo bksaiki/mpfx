@@ -21,7 +21,7 @@ inline exp_t ieee754_emin(prec_t es) {
 }
 
 inline double ieee754_max_value(prec_t es, prec_t nbits) {
-    using FP64 = ieee754_consts<11, 64>; // IEEE 754 double precision
+    using FP64 = ieee754_params<11, 64>; // IEEE 754 double precision
 
     // format parameters
     const prec_t prec = ieee754_prec(es, nbits);

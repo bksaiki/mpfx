@@ -77,7 +77,7 @@ public:
 
     inline MPBContext(prec_t prec, exp_t emin, RM rm, double maxval)
         : mps_ctx_(prec, emin, rm), maxval_(maxval) {
-        using FP = ieee754_consts<11, 64>; // IEEE 754 double precision
+        using FP = ieee754_params<11, 64>; // IEEE 754 double precision
 
         // check that the maximum value is valid
         MPFX_ASSERT(!std::signbit(maxval), "maxval must be non-negative");

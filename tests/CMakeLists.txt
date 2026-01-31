@@ -2,6 +2,7 @@
 
 # Test executables
 set(TEST_SOURCES
+    test_convert.cpp
     test_context.cpp
     test_engine.cpp
     test_flags.cpp
