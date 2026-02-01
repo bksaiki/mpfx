@@ -99,7 +99,7 @@ double add(double x, double y, const Context& ctx) {
 
     // check for special values to raise status flags
     if constexpr (FlagMask & Flags::INVALID_FLAG) {
-        if (std::isnan(result)) {
+        if (std::isnan(result)) [[unlikely]] {
             if (std::isinf(x) && std::isinf(y) && (std::signbit(x) != std::signbit(y))) {
                 // invalid operation: inf + -inf
                 flags.set_invalid();
@@ -146,7 +146,7 @@ double sub(double x, double y, const Context& ctx) {
 
     // check for special values to raise status flags
     if constexpr (FlagMask & Flags::INVALID_FLAG) {
-        if (std::isnan(result)) {
+        if (std::isnan(result)) [[unlikely]] {
             if (std::isinf(x) && std::isinf(y) && (std::signbit(x) == std::signbit(y))) {
                 // invalid operation: inf - inf
                 flags.set_invalid();
@@ -212,7 +212,7 @@ double mul(double x, double y, const Context& ctx) {
 
     // check for special values to raise status flags
     if constexpr (FlagMask & Flags::INVALID_FLAG) {
-        if (std::isnan(result)) {
+        if (std::isnan(result)) [[unlikely]] {
             if ((x == 0.0 && std::isinf(y)) || (std::isinf(x) && y == 0.0)) {
                 // invalid operation: 0 * inf
                 flags.set_invalid();
@@ -259,7 +259,7 @@ double div(double x, double y, const Context& ctx) {
 
     // check for special values to raise status flags
     if constexpr (FlagMask & Flags::INVALID_FLAG) {
-        if (std::isnan(result)) {
+        if (std::isnan(result)) [[unlikely]] {
             if ((x == 0.0 && y == 0.0) || (std::isinf(x) && std::isinf(y))) {
                 // invalid operation: 0/0 or inf/inf
                 flags.set_invalid();
@@ -312,7 +312,7 @@ double sqrt(double x, const Context& ctx) {
 
     // check for special values to raise status flags
     if constexpr (FlagMask & Flags::INVALID_FLAG) {
-        if (std::isnan(result)) {
+        if (std::isnan(result)) [[unlikely]] {
             if (x < 0.0 && std::isfinite(x)) {
                 // invalid operation: sqrt of negative number
                 flags.set_invalid();
@@ -360,7 +360,7 @@ double fma(double x, double y, double z, const Context& ctx) {
 
     // check for special values to raise status flags
     if constexpr (FlagMask & Flags::INVALID_FLAG) {
-        if (std::isnan(result)) {
+        if (std::isnan(result)) [[unlikely]] {
             const bool x_nan = std::isnan(x);
             const bool y_nan = std::isnan(y);
             const bool x_inf = std::isinf(x);

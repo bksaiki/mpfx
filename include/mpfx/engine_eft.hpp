@@ -21,38 +21,6 @@ namespace engine_eft {
 
 namespace {
 
-static constexpr int FINALIZE_OPT = 0;
-
-/// @brief Finalizes the rounding of an EFT result to round-to-odd.
-///
-/// Assumes `high` and `low` are both finite.
-// template <std::floating_point T>
-// inline T round_finalize_reference(T high, T low) {
-//     MPFX_DEBUG_ASSERT(std::isfinite(high), "round_finalize: high part is not finite");
-//     MPFX_DEBUG_ASSERT(std::isfinite(low), "round_finalize: low part is not finite");
-//     using U = typename float_to_uint<T>::type;
-
-//     if (low == static_cast<T>(0.0)) {
-//         // result is exact
-//         return high;
-//     } else {
-//         // result is inexact => `high` and `low` are both non-zero
-//         // we will compute the RTO result by jamming the sticky bit
-//         // into the RTZ result
-
-//         // if the signs differ, `high` is the RAZ result
-//         U b = std::bit_cast<U>(high);
-//         if (std::signbit(high) != std::signbit(low)) {
-//             // `high` is not the RTZ result, so adjust it by "borrowing"
-//             // from the low part: h - l = (h - u) + (u - l)
-//             b -= high > 0. ? 1 : -1;
-//         }
-
-//         b |= 1; // jam sticky bit for RTO
-//         return std::bit_cast<T>(b);
-//     }
-// }
-
 /// @brief Finalizes the rounding of an EFT result to round-to-odd.
 /// Assumes `high` and `low` are both finite.
 template <std::floating_point T>
@@ -77,7 +45,7 @@ inline T round_finalize(T high, T low) {
     const int sign_low = b_low >> SIGN_SHIFT;
     const int sign_diff = sign_high ^ sign_low;
 
-    // compute adjustment for RTZ: +1 for negative high, -1 for positive high
+    // compute adjustment for RTZ: +1 for negative `high`, -1 for positive `high`
     // only apply if the signs differ
     const int adjust_mask = -static_cast<int>(sign_diff);
     const int adjust = static_cast<int>((sign_high << 1) - 1) & adjust_mask;
