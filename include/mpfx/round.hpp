@@ -204,17 +204,27 @@ inline bool round_increment(bool s, mant_t c_kept, mant_t c_lost, prec_t p_lost,
 template <prec_t P, flag_mask_t FlagMask = Flags::ALL_FLAGS>
 double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<exp_t>& n, RM rm) {
     using FP = float_params<double>::params; // double precision
-    MPFX_STATIC_ASSERT(P <= 63, "mantissa cannot be 64 bits");
-    MPFX_DEBUG_ASSERT(p <= FP::P, "cannot keep the requested precision" << p);
+    static constexpr size_t MAX_C_WIDTH = 8 * sizeof(mant_t) - 1; // -1 to tolerate a carry
     static constexpr exp_t MAX_E = FP::EMAX + 1;
+    MPFX_STATIC_ASSERT(P <=  MAX_C_WIDTH, "mantissa is too large");
+
+    // which flags to check
+    static constexpr bool CHECK_TINY_BEFORE = FlagMask & Flags::TINY_BEFORE_ROUNDING_FLAG;
+    static constexpr bool CHECK_TINY_AFTER = FlagMask & Flags::TINY_AFTER_ROUNDING_FLAG;
+    static constexpr bool CHECK_UNDERFLOW_BEFORE = FlagMask & Flags::UNDERFLOW_BEFORE_ROUNDING_FLAG;
+    static constexpr bool CHECK_UNDERFLOW_AFTER = FlagMask & Flags::UNDERFLOW_AFTER_ROUNDING_FLAG;
+    static constexpr bool CHECK_INEXACT = FlagMask & Flags::INEXACT_FLAG;
+    static constexpr bool CHECK_CARRY = FlagMask & Flags::CARRY_FLAG;
+
+    MPFX_DEBUG_ASSERT(p <= FP::P, "cannot keep the requested precision" << p);
 
     if (c == 0) {
         // fast path: zero value
         // raise both tiny flags
-        if constexpr (FlagMask & Flags::TINY_BEFORE_ROUNDING_FLAG) {
+        if constexpr (CHECK_TINY_BEFORE) {
             flags.set_tiny_before_rounding();
         }
-        if constexpr (FlagMask & Flags::TINY_AFTER_ROUNDING_FLAG) {
+        if constexpr (CHECK_TINY_AFTER) {
             flags.set_tiny_after_rounding();
         }
 
@@ -238,26 +248,29 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
             // our precision is limited by subnormalization
 
             // set tiny before rounding flag
-            if constexpr (FlagMask & Flags::TINY_BEFORE_ROUNDING_FLAG) {
+            if constexpr (CHECK_TINY_BEFORE) {
                 flags.set_tiny_before_rounding();
             }
 
-            // check for the easy case of tininess after rounding
-            if (e < emin - 1) {
-                // definitely tiny after rounding, since we are at least
-                // one binade below the smallest normal number
-                tiny_after = true;
-            }
+            // check for tininess after rounding
+            if (CHECK_TINY_AFTER || CHECK_UNDERFLOW_AFTER) {
+                // check for the easy case of tininess after rounding
+                if (e < emin - 1) {
+                    // definitely tiny after rounding, since we are at least
+                    // one binade below the smallest normal number
+                    tiny_after = true;
+                }
 
-            // we are in the largest binade below 2^emin
-            // significand of the largest representable value below 2^emin
-            // the cutoff value is always odd: 1.111...111 x 2^(emin-1)
-            const mant_t cutoff = bitmask<mant_t>(p) << (P - p);
-            if (c <= cutoff) {
-                tiny_after = true;
-            } else {
-                // otherwise, we are in the hard case and need to check
-                // for tininess after splitting the significand
+                // we are in the largest binade below 2^emin
+                // significand of the largest representable value below 2^emin
+                // the cutoff value is always odd: 1.111...111 x 2^(emin-1)
+                const mant_t cutoff = bitmask<mant_t>(p) << (P - p);
+                if (c <= cutoff) {
+                    tiny_after = true;
+                } else {
+                    // otherwise, we are in the hard case and need to check
+                    // for tininess after splitting the significand
+                }
             }
 
             // "overshift" is set if we shift more than p bits
@@ -279,14 +292,7 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
         // slow path: inexact result
         MPFX_DEBUG_ASSERT(p_lost > 0, "we must have lost precision");
 
-        // set inexact flag
-        if constexpr (FlagMask & Flags::INEXACT_FLAG) {
-            flags.set_inexact();
-        }
-
         // check the hard case for tiny after rounding
-        static constexpr bool CHECK_TINY_AFTER = FlagMask & Flags::TINY_AFTER_ROUNDING_FLAG;
-        static constexpr bool CHECK_UNDERFLOW_AFTER = FlagMask & Flags::UNDERFLOW_AFTER_ROUNDING_FLAG;
         if (CHECK_TINY_AFTER || CHECK_UNDERFLOW_AFTER) {
             if (tiny_before && !tiny_after) {
                 // we are just below 2^emin but above the cutoff value
@@ -326,7 +332,7 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
                 // increment caused carry
                 e += 1;
                 c_kept >>= 1;
-                if constexpr (FlagMask & Flags::CARRY_FLAG) {
+                if constexpr (CHECK_CARRY) {
                     if (e > emin) {
                         flags.set_carry();
                     }
@@ -335,21 +341,26 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
         }
 
         // set the underflow flags
-        if constexpr (FlagMask & Flags::UNDERFLOW_BEFORE_ROUNDING_FLAG) {
+        if constexpr (CHECK_UNDERFLOW_BEFORE) {
             if (tiny_before) {
                 flags.set_underflow_before_rounding();
             }
         }
-        if constexpr (FlagMask & Flags::UNDERFLOW_AFTER_ROUNDING_FLAG) {
+        if constexpr (CHECK_UNDERFLOW_AFTER) {
             if (tiny_after) {
                 flags.set_underflow_after_rounding();
             }
+        }
+
+        // set inexact flag
+        if constexpr (CHECK_INEXACT) {
+            flags.set_inexact();
         }
     } else {
         // exact result
 
         // set tiny after rounding flag if tiny before
-        if constexpr (FlagMask & Flags::TINY_AFTER_ROUNDING_FLAG) {
+        if constexpr (CHECK_TINY_AFTER) {
             if (tiny_before) {
                 flags.set_tiny_after_rounding();
             }
