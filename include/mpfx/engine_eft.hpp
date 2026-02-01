@@ -21,33 +21,6 @@ namespace engine_eft {
 
 namespace {
 
-/// @brief Type trait to give an unsigned integer type of the same size
-/// as a floating-point type.
-template <std::floating_point T>
-struct float_to_uint;
-
-template <>
-struct float_to_uint<float> {
-    using type = uint32_t;
-};
-
-template <>
-struct float_to_uint<double> {
-    using type = uint64_t;
-};
-
-
-/// @brief Gives the next representable floating-point value towards zero.
-///
-/// Assumes `x` is finite and non-zero.
-template <std::floating_point T>
-inline T next_toward_zero(const T& x) {
-    using U = typename float_to_uint<T>::type;
-    auto u = std::bit_cast<U>(x);
-    u -= x > 0. ? 1 : -1;
-    return std::bit_cast<T>(u);
-}
-
 /// @brief Finalizes the rounding of an EFT result to round-to-odd.
 ///
 /// Assumes `high` and `low` are both finite.
@@ -55,31 +28,38 @@ template <std::floating_point T>
 inline T round_finalize(T high, T low) {
     MPFX_DEBUG_ASSERT(std::isfinite(high), "round_finalize: high part is not finite");
     MPFX_DEBUG_ASSERT(std::isfinite(low), "round_finalize: low part is not finite");
-    using U = typename float_to_uint<T>::type;
+    using FP = typename float_params<T>::params;
+    using U = typename float_params<T>::uint_t;
+    static constexpr auto SIGN_SHIFT = FP::N - 1;
+    static constexpr auto EXP_MANT_MASK = __bitmask<U, FP::N - 1>::val;
 
-    if (low == static_cast<T>(0.0)) {
-        // result is exact
-        return high;
-    } else {
-        // result is inexact
-        // `high` and `low` are both non-zero
+    // reinterpret as unsigned integers
+    const U b_high = std::bit_cast<U>(high);
+    const U b_low = std::bit_cast<U>(low);
 
-        // might need to do a fixup to ensure `high` is the RTZ result
-        if (std::signbit(high) != std::signbit(low)) {
-            // `high` is not the RTZ result, so adjust it by "borrowing"
-            // from the low part: h - l = (h - u) + (u - l)
-            high = next_toward_zero(high);
-        }
+    // compute sign difference
+    const int sign_high = b_high >> SIGN_SHIFT;
+    const int sign_low = b_low >> SIGN_SHIFT;
+    const int sign_diff = sign_high ^ sign_low;
 
-        // apply RTZ rounding
-        U b = std::bit_cast<U>(high);
-        b |= 1; // set LSB to make odd
-        return std::bit_cast<T>(b);
-    }
+    // gate any adjustment if low part is zero
+    const bool low_nz = b_low & EXP_MANT_MASK;
+    const int adjust_mask = sign_diff & static_cast<int>(low_nz);
+
+    // compute adjustment: +1 for negative high, -1 for positive high
+    // gate with sign_diff (only adjust if signs differ) AND low_nonzero (only if inexact)
+    const int adjustment = static_cast<int>((sign_high << 1) - 1) & -static_cast<int>(adjust_mask);
+
+    // apply adjustment and jam sticky bit (also gated by low_nonzero)
+    U result = b_high + static_cast<U>(adjustment);
+    result |= static_cast<U>(low_nz); // jam sticky bit only if low != 0
+
+    // reinterpret back to floating-point
+    return std::bit_cast<T>(result);
 }
 
 template <std::floating_point T>
-inline std::tuple<T, T> two_sum(const T& x, const T& y) {
+inline std::tuple<T, T> two_sum(T x, T y) {
     const bool swap = std::fabs(x) < std::fabs(y);
     const T a = swap ? y : x;
     const T b = swap ? x : y;
@@ -91,7 +71,7 @@ inline std::tuple<T, T> two_sum(const T& x, const T& y) {
 }
 
 template <std::floating_point T>
-inline std::tuple<T, T> two_prod(const T& x, const T& y) {
+inline std::tuple<T, T> two_prod(T x, T y) {
     const T p = x * y;
     const T e = std::fma(x, y, -p);
     return { p, e };
@@ -103,7 +83,7 @@ inline std::tuple<T, T> two_prod(const T& x, const T& y) {
 /// round-to-nearest result of `x / y`, and `r` is
 /// the error term.
 template <std::floating_point T>
-inline std::tuple<T, T> two_div(const T& x, const T& y) {
+inline std::tuple<T, T> two_div(T x, T y) {
     const T q = x / y;
     const T r = -std::fma(q, y, -x) / y;
     return { q, r };
@@ -115,10 +95,10 @@ inline std::tuple<T, T> two_div(const T& x, const T& y) {
 /// round-to-nearest result of `sqrt(x)`, and `r` is
 /// the error term.
 template <std::floating_point T>
-inline std::tuple<T, T> two_sqrt(const T& x) {
+inline std::tuple<T, T> two_sqrt(T x) {
     const T r1 = std::sqrt(x);
-    const T n = fma(-r1, r1, x);
-    const T d = r1 + r1;
+    const T n = std::fma(-r1, r1, x);
+    const T d = static_cast<T>(2) * r1;
     const T r2 = n / d;
     return { r1, r2 };
 }
@@ -129,7 +109,7 @@ inline std::tuple<T, T> two_sqrt(const T& x) {
 /// round-to-nearest result of `x * y + z`, and `r2` is
 /// the error term.
 template <std::floating_point T>
-inline std::tuple<T, T> eft_fma(const T& x, const T& y, const T& z) {
+inline std::tuple<T, T> eft_fma(T x, T y, T z) {
     const auto r1 = std::fma(x, y, z);
     const auto [u1, u2] = two_prod(x, y);
     const auto [a1, a2] = two_sum(z, u2);
@@ -155,7 +135,7 @@ inline double add(double x, double y, prec_t p) {
         "add: requested precision exceeds double-precision capability"
     );
 
-    if (!std::isfinite(x) || !std::isfinite(y)) {
+    if (!std::isfinite(x) || !std::isfinite(y)) [[unlikely]] {
         // handle special values using standard addition
         return x + y;
     }
@@ -178,7 +158,7 @@ inline double sub(double x, double y, prec_t p) {
         "sub: requested precision exceeds double-precision capability"
     );
 
-    if (!std::isfinite(x) || !std::isfinite(y)) {
+    if (!std::isfinite(x) || !std::isfinite(y)) [[unlikely]] {
         // handle special values using standard subtraction
         return x - y;
     }
@@ -201,7 +181,7 @@ inline double mul(double x, double y, prec_t p) {
         "mul: requested precision exceeds double-precision capability"
     );
 
-    if (!std::isfinite(x) || !std::isfinite(y)) {
+    if (!std::isfinite(x) || !std::isfinite(y)) [[unlikely]] {
         // handle special values using standard multiplication
         return x * y;
     }
@@ -224,7 +204,7 @@ inline double div(double x, double y, prec_t p) {
         "div: requested precision exceeds double-precision capability"
     );
 
-    if (!std::isfinite(x) || !std::isfinite(y) || y == 0.0) {
+    if (!std::isfinite(x) || !std::isfinite(y) || y == 0.0) [[unlikely]] {
         // handle special values using standard division
         return x / y;
     }
@@ -247,7 +227,7 @@ inline double sqrt(double x, prec_t p) {
         "sqrt: requested precision exceeds double-precision capability"
     );
 
-    if (!std::isfinite(x) || x <= 0.0) {
+    if (!std::isfinite(x) || x <= 0.0) [[unlikely]] {
         // handle special values using standard square root
         return std::sqrt(x);
     }
@@ -270,7 +250,7 @@ inline double fma(double x, double y, double z, prec_t p) {
         "fma: requested precision exceeds double-precision capability"
     );
 
-    if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) {
+    if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) [[unlikely]] {
         // handle special values using standard FMA
         return std::fma(x, y, z);
     }
