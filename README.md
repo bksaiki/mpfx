@@ -25,6 +25,7 @@ cmake --build .
 - `BUILD_SHARED_LIBS`: Build shared libraries (default: ON)
 - `BUILD_TESTS`: Build test executables (default: ON)
 - `BUILD_EXAMPLES`: Build example programs (default: OFF)
+- `BUILD_BENCHMARKS`: Build benchmark programs (default: OFF)
 
 ### Build Types
 

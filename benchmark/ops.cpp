@@ -607,7 +607,7 @@ double floppyfloat_op3(const std::vector<double>& x_vals, const std::vector<doub
 ////////////////////////////////////////////////////////////
 // MPFX engine implementations
 
-template <mpfx::Engine E, OP1 O, mpfx::flag_mask_t Flags = mpfx::Flags::NO_FLAGS>
+template <mpfx::Engine E, OP1 O, mpfx::flag_mask_t Flags = mpfx::Flags::ALL_FLAGS>
 double mpfx_op1(const std::vector<double>& x_vals, const mpfx::Context& ctx, size_t N) {
     volatile double result = 0.0;
     auto start = std::chrono::steady_clock::now();
@@ -626,7 +626,7 @@ double mpfx_op1(const std::vector<double>& x_vals, const mpfx::Context& ctx, siz
     return duration;
 }
 
-template <mpfx::Engine E, OP2 O, mpfx::flag_mask_t Flags = mpfx::Flags::NO_FLAGS>
+template <mpfx::Engine E, OP2 O, mpfx::flag_mask_t Flags = mpfx::Flags::ALL_FLAGS>
 double mpfx_op2(const std::vector<double>& x_vals, const std::vector<double>& y_vals, const mpfx::Context& ctx, size_t N) {
     volatile double result = 0.0;
     auto start = std::chrono::steady_clock::now();
@@ -651,7 +651,7 @@ double mpfx_op2(const std::vector<double>& x_vals, const std::vector<double>& y_
     return duration;
 }
 
-template <mpfx::Engine E, OP3 O, mpfx::flag_mask_t Flags = mpfx::Flags::NO_FLAGS>
+template <mpfx::Engine E, OP3 O, mpfx::flag_mask_t Flags = mpfx::Flags::ALL_FLAGS>
 double mpfx_op3(const std::vector<double>& x_vals, const std::vector<double>& y_vals, const std::vector<double>& z_vals, const mpfx::Context& ctx, size_t N) {
     volatile double result = 0.0;
     auto start = std::chrono::steady_clock::now();
