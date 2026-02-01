@@ -29,7 +29,7 @@ TEST(Context, TestMPSContext) {
 }
 
 TEST(Context, TestMPBContext) {
-    const MPBContext ctx(5, -5, mpfx::RM::RNE, 62.0);
+    const MPBContext ctx(5, -5, 62.0, mpfx::RM::RNE);
     // getters
     EXPECT_EQ(ctx.prec(), 5);
     EXPECT_EQ(ctx.emin(), -5);

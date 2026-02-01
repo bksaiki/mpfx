@@ -1,6 +1,6 @@
 #pragma once
 
-#include "context_mpb.hpp"
+#include "context.hpp"
 #include "params.hpp"
 #include "types.hpp"
 
@@ -40,7 +40,7 @@ inline double ieee754_max_value(prec_t es, prec_t nbits) {
 ///
 /// This context implements the usual IEEE 754 semantics for floating-point
 /// arithmetic, including exponent bounds and overflow handling.
-class IEEE754Context : public MPBContext {
+class IEEE754Context : public Context {
 private:
     /// @brief Number of exponent bits.
     prec_t es_;
@@ -48,16 +48,16 @@ private:
     prec_t nbits_;
 
 public:
-
     /// @brief Constructs an IEEE 754 context.
     /// @param es number of exponent bits
     /// @param nbits total number of bits (including sign bit)
     /// @param rm rounding mode
     inline IEEE754Context(prec_t es, prec_t nbits, RM rm)
-        : MPBContext(
+        : Context(
             ieee754_prec(es, nbits),
-            ieee754_emin(es), rm,
-            ieee754_max_value(es, nbits)),
+            ieee754_emin(es) - static_cast<exp_t>(ieee754_prec(es, nbits)),
+            ieee754_max_value(es, nbits),
+            rm),
         es_(es), nbits_(nbits) {}
 
     /// @brief Gets the number of exponent bits.
@@ -68,6 +68,16 @@ public:
     /// @brief Gets the total number of bits (including sign bit).
     inline prec_t nbits() const {
         return nbits_;
+    }
+
+    /// @brief Gets the minimum exponent of this context.
+    inline exp_t emin() const {
+        return ieee754_emin(es_);
+    }
+
+    /// @brief Gets the maximum exponent of this context.
+    inline exp_t emax() const {
+        return ieee754_emax(es_);
     }
 };
 
