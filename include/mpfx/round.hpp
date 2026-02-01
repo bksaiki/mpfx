@@ -140,21 +140,18 @@ inline bool round_increment(bool s, mant_t c_kept, mant_t c_lost, prec_t p_lost,
             // nearest rounding modes - factor out common logic
             // Compute rounding bit: -1 (below halfway), 0 (exactly halfway), 1 (above halfway)
             const mant_t halfway = 1ULL << (p_lost - 1);
-            if (c_lost > halfway) {
-                // above halfway - always increment
-                return true;
-            } else if (c_lost < halfway || overshiftp) {
-                // below halfway - never increment
-                return false;
+            if (overshiftp || c_lost != halfway) [[likely]] {
+                // increment if above halfway and not overshifting
+                return !overshiftp && c_lost > halfway;
+            }
+
+            // exactly at halfway - tie-breaking
+            if (rm == RM::RNE) {
+                // ties to even: increment if LSB is odd
+                return (c_kept >> p_lost) & 0x1;
             } else {
-                // exactly at halfway - tie-breaking (rare)
-                if (rm == RM::RNE) {
-                    // ties to even: increment if LSB is odd
-                    return (c_kept >> p_lost) & 0x1;
-                } else {
-                    // ties away from zero: always increment
-                    return true;
-                }
+                // ties away from zero: always increment
+                return true;
             }
         }
         case RM::RTP:
@@ -274,12 +271,12 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
     const prec_t p_lost = p_kept < P ? P - p_kept : 0;
     const mant_t c_mask = bitmask<mant_t>(p_lost);
     const mant_t c_lost = c & c_mask;
-    mant_t c_kept = c & ~c_mask;
 
     // check if we rounded off any significant digits
     if (c_lost != 0) {
         // slow path: inexact result
         MPFX_DEBUG_ASSERT(p_lost > 0, "we must have lost precision");
+        mant_t c_kept = c & ~c_mask; // mask off lost digits
 
         // check the hard case for tiny after rounding
         if constexpr (CHECK_TINY_AFTER || CHECK_UNDERFLOW_AFTER) {
@@ -328,6 +325,9 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
             }
         }
 
+        // final significand after rounding
+        c = c_kept;
+
         // set the underflow flags
         if constexpr (CHECK_UNDERFLOW_BEFORE) {
             if (tiny_before) {
@@ -346,7 +346,7 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
         }
     }
 
-    return encode<P>(s, e, c_kept);
+    return encode<P>(s, e, c);
 }
 
 } // anonymous namespace
