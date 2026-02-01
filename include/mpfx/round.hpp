@@ -370,9 +370,9 @@ double round(double x, prec_t p, const std::optional<exp_t>& n, RM rm) {
     auto [s, exp, c] = unpack_float<double>(x);
 
     // fully normalize the significand
-    const prec_t xp = std::bit_width(c);
-    if (xp < FP::P) [[unlikely]] {
-        // subnormal input
+    if (exp == FP::EXPMIN) {
+        // subnormal or in the first normal binade
+        const prec_t xp = static_cast<prec_t>(std::bit_width(c));
         const prec_t lz = FP::P - xp;
         c <<= lz;
         exp -= static_cast<exp_t>(lz);
