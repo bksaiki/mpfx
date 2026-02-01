@@ -71,7 +71,7 @@ inline std::string to_string(OP3 op) {
 
 
 template <std::floating_point T>
-static void generate_inputs(std::vector<T>& vals, const mpfx::MPBContext& ctx, double lower = -1.0, double upper = 1.0) {
+static void generate_inputs(std::vector<T>& vals, const mpfx::Context& ctx, double lower = -1.0, double upper = 1.0) {
     std::random_device rd;
     std::mt19937_64 rng(rd());
     std::uniform_real_distribution<double> dist(lower, upper);
@@ -229,7 +229,7 @@ static mpfr_rnd_t cvt_rm(mpfx::RM rm) {
 }
 
 template <OP1 O>
-double mpfr_op1(const std::vector<double>& x_vals, const mpfx::MPBContext& ctx, size_t N) {
+double mpfr_op1(const std::vector<double>& x_vals, const mpfx::Context& ctx, size_t N) {
     // Quantize to FP32
     std::vector<float> x_fl(N);
     for (size_t i = 0; i < N; i++) {
@@ -265,7 +265,7 @@ double mpfr_op1(const std::vector<double>& x_vals, const mpfx::MPBContext& ctx, 
 }
 
 template <OP2 O>
-double mpfr_op2(const std::vector<double>& x_vals, const std::vector<double>& y_vals, const mpfx::MPBContext& ctx, size_t N) {
+double mpfr_op2(const std::vector<double>& x_vals, const std::vector<double>& y_vals, const mpfx::Context& ctx, size_t N) {
     // Quantize to FP32
     std::vector<float> x_fl(N);
     std::vector<float> y_fl(N);
@@ -312,7 +312,7 @@ double mpfr_op2(const std::vector<double>& x_vals, const std::vector<double>& y_
 }
 
 template <OP3 O>
-double mpfr_op3(const std::vector<double>& x_vals, const std::vector<double>& y_vals, const std::vector<double>& z_vals, const mpfx::MPBContext& ctx, size_t N) {
+double mpfr_op3(const std::vector<double>& x_vals, const std::vector<double>& y_vals, const std::vector<double>& z_vals, const mpfx::Context& ctx, size_t N) {
     // Quantize to FP32
     std::vector<float> x_fl(N);
     std::vector<float> y_fl(N);
@@ -378,7 +378,7 @@ static uint8_t cvt_rm_softfloat(mpfx::RM rm) {
 }
 
 template <OP1 O>
-double softfloat_op1(const std::vector<double>& x_vals, const mpfx::MPBContext& ctx, size_t N) {
+double softfloat_op1(const std::vector<double>& x_vals, const mpfx::Context& ctx, size_t N) {
     softfloat_roundingMode = cvt_rm_softfloat(ctx.rm());
 
     // Quantize to FP32
@@ -409,7 +409,7 @@ double softfloat_op1(const std::vector<double>& x_vals, const mpfx::MPBContext& 
 }
 
 template <OP2 O>
-double softfloat_op2(const std::vector<double>& x_vals, const std::vector<double>& y_vals, const mpfx::MPBContext& ctx, size_t N) {
+double softfloat_op2(const std::vector<double>& x_vals, const std::vector<double>& y_vals, const mpfx::Context& ctx, size_t N) {
     softfloat_roundingMode = cvt_rm_softfloat(ctx.rm());
 
     // Quantize to FP32
@@ -452,7 +452,7 @@ double softfloat_op2(const std::vector<double>& x_vals, const std::vector<double
 }
 
 template <OP3 O>
-double softfloat_op3(const std::vector<double>& x_vals, const std::vector<double>& y_vals, const std::vector<double>& z_vals, const mpfx::MPBContext& ctx, size_t N) {
+double softfloat_op3(const std::vector<double>& x_vals, const std::vector<double>& y_vals, const std::vector<double>& z_vals, const mpfx::Context& ctx, size_t N) {
     softfloat_roundingMode = cvt_rm_softfloat(ctx.rm());
 
     // Quantize to FP32
@@ -509,7 +509,7 @@ static Vfpu::RoundingMode cvt_rm_floppyfloat(mpfx::RM rm) {
 }
 
 template <OP1 O>
-double floppyfloat_op1(const std::vector<double>& x_vals, const mpfx::MPBContext& ctx, size_t N) {
+double floppyfloat_op1(const std::vector<double>& x_vals, const mpfx::Context& ctx, size_t N) {
     FloppyFloat ff;
     ff.rounding_mode = cvt_rm_floppyfloat(ctx.rm());
 
@@ -537,7 +537,7 @@ double floppyfloat_op1(const std::vector<double>& x_vals, const mpfx::MPBContext
 }
 
 template <OP2 O>
-double floppyfloat_op2(const std::vector<double>& x_vals, const std::vector<double>& y_vals, const mpfx::MPBContext& ctx, size_t N) {
+double floppyfloat_op2(const std::vector<double>& x_vals, const std::vector<double>& y_vals, const mpfx::Context& ctx, size_t N) {
     FloppyFloat ff;
     ff.rounding_mode = cvt_rm_floppyfloat(ctx.rm());
 
@@ -573,7 +573,7 @@ double floppyfloat_op2(const std::vector<double>& x_vals, const std::vector<doub
 }
 
 template <OP3 O>
-double floppyfloat_op3(const std::vector<double>& x_vals, const std::vector<double>& y_vals, const std::vector<double>& z_vals, const mpfx::MPBContext& ctx, size_t N) {
+double floppyfloat_op3(const std::vector<double>& x_vals, const std::vector<double>& y_vals, const std::vector<double>& z_vals, const mpfx::Context& ctx, size_t N) {
     FloppyFloat ff;
     ff.rounding_mode = cvt_rm_floppyfloat(ctx.rm());
 
@@ -608,7 +608,7 @@ double floppyfloat_op3(const std::vector<double>& x_vals, const std::vector<doub
 // MPFX engine implementations
 
 template <mpfx::Engine E, OP1 O, mpfx::flag_mask_t Flags = mpfx::Flags::NO_FLAGS>
-double mpfx_op1(const std::vector<double>& x_vals, const mpfx::MPBContext& ctx, size_t N) {
+double mpfx_op1(const std::vector<double>& x_vals, const mpfx::Context& ctx, size_t N) {
     volatile double result = 0.0;
     auto start = std::chrono::steady_clock::now();
     
@@ -627,7 +627,7 @@ double mpfx_op1(const std::vector<double>& x_vals, const mpfx::MPBContext& ctx, 
 }
 
 template <mpfx::Engine E, OP2 O, mpfx::flag_mask_t Flags = mpfx::Flags::NO_FLAGS>
-double mpfx_op2(const std::vector<double>& x_vals, const std::vector<double>& y_vals, const mpfx::MPBContext& ctx, size_t N) {
+double mpfx_op2(const std::vector<double>& x_vals, const std::vector<double>& y_vals, const mpfx::Context& ctx, size_t N) {
     volatile double result = 0.0;
     auto start = std::chrono::steady_clock::now();
     
@@ -652,7 +652,7 @@ double mpfx_op2(const std::vector<double>& x_vals, const std::vector<double>& y_
 }
 
 template <mpfx::Engine E, OP3 O, mpfx::flag_mask_t Flags = mpfx::Flags::NO_FLAGS>
-double mpfx_op3(const std::vector<double>& x_vals, const std::vector<double>& y_vals, const std::vector<double>& z_vals, const mpfx::MPBContext& ctx, size_t N) {
+double mpfx_op3(const std::vector<double>& x_vals, const std::vector<double>& y_vals, const std::vector<double>& z_vals, const mpfx::Context& ctx, size_t N) {
     volatile double result = 0.0;
     auto start = std::chrono::steady_clock::now();
     
@@ -675,8 +675,8 @@ double mpfx_op3(const std::vector<double>& x_vals, const std::vector<double>& y_
 
 template <OP1 O>
 void benchmark_op1(
-    const mpfx::MPBContext& input_ctx,
-    const mpfx::MPBContext& output_ctx,
+    const mpfx::Context& input_ctx,
+    const mpfx::Context& output_ctx,
     size_t num_inputs
 ) {
     // Generate inputs
@@ -715,8 +715,8 @@ void benchmark_op1(
 
 template <OP2 O>
 void benchmark_op2(
-    const mpfx::MPBContext& input_ctx,
-    const mpfx::MPBContext& output_ctx,
+    const mpfx::Context& input_ctx,
+    const mpfx::Context& output_ctx,
     size_t num_inputs
 ) {
     // Generate inputs
@@ -753,8 +753,8 @@ void benchmark_op2(
 
 template <OP3 O>
 void benchmark_op3(
-    const mpfx::MPBContext& input_ctx,
-    const mpfx::MPBContext& output_ctx,
+    const mpfx::Context& input_ctx,
+    const mpfx::Context& output_ctx,
     size_t num_inputs
 ) {
     // Generate inputs

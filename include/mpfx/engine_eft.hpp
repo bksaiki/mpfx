@@ -21,8 +21,39 @@ namespace engine_eft {
 
 namespace {
 
+static constexpr int FINALIZE_OPT = 0;
+
 /// @brief Finalizes the rounding of an EFT result to round-to-odd.
 ///
+/// Assumes `high` and `low` are both finite.
+// template <std::floating_point T>
+// inline T round_finalize_reference(T high, T low) {
+//     MPFX_DEBUG_ASSERT(std::isfinite(high), "round_finalize: high part is not finite");
+//     MPFX_DEBUG_ASSERT(std::isfinite(low), "round_finalize: low part is not finite");
+//     using U = typename float_to_uint<T>::type;
+
+//     if (low == static_cast<T>(0.0)) {
+//         // result is exact
+//         return high;
+//     } else {
+//         // result is inexact => `high` and `low` are both non-zero
+//         // we will compute the RTO result by jamming the sticky bit
+//         // into the RTZ result
+
+//         // if the signs differ, `high` is the RAZ result
+//         U b = std::bit_cast<U>(high);
+//         if (std::signbit(high) != std::signbit(low)) {
+//             // `high` is not the RTZ result, so adjust it by "borrowing"
+//             // from the low part: h - l = (h - u) + (u - l)
+//             b -= high > 0. ? 1 : -1;
+//         }
+
+//         b |= 1; // jam sticky bit for RTO
+//         return std::bit_cast<T>(b);
+//     }
+// }
+
+/// @brief Finalizes the rounding of an EFT result to round-to-odd.
 /// Assumes `high` and `low` are both finite.
 template <std::floating_point T>
 inline T round_finalize(T high, T low) {
@@ -31,9 +62,13 @@ inline T round_finalize(T high, T low) {
     using FP = typename float_params<T>::params;
     using U = typename float_params<T>::uint_t;
     static constexpr auto SIGN_SHIFT = FP::N - 1;
-    static constexpr auto EXP_MANT_MASK = __bitmask<U, FP::N - 1>::val;
 
-    // reinterpret as unsigned integers
+    // fast path: low part is zero
+    if (low == static_cast<T>(0)) {
+        return high; // exact result, no adjustment needed
+    }
+
+    // slow path: low part is non-zero (so is high part)
     const U b_high = std::bit_cast<U>(high);
     const U b_low = std::bit_cast<U>(low);
 
@@ -42,17 +77,14 @@ inline T round_finalize(T high, T low) {
     const int sign_low = b_low >> SIGN_SHIFT;
     const int sign_diff = sign_high ^ sign_low;
 
-    // gate any adjustment if low part is zero
-    const bool low_nz = b_low & EXP_MANT_MASK;
-    const int adjust_mask = sign_diff & static_cast<int>(low_nz);
+    // compute adjustment for RTZ: +1 for negative high, -1 for positive high
+    // only apply if the signs differ
+    const int adjust_mask = -static_cast<int>(sign_diff);
+    const int adjust = static_cast<int>((sign_high << 1) - 1) & adjust_mask;
 
-    // compute adjustment: +1 for negative high, -1 for positive high
-    // gate with sign_diff (only adjust if signs differ) AND low_nonzero (only if inexact)
-    const int adjustment = static_cast<int>((sign_high << 1) - 1) & -static_cast<int>(adjust_mask);
-
-    // apply adjustment and jam sticky bit (also gated by low_nonzero)
-    U result = b_high + static_cast<U>(adjustment);
-    result |= static_cast<U>(low_nz); // jam sticky bit only if low != 0
+    // apply adjustment and jam sticky bit for RTO
+    U result = static_cast<U>(b_high + adjust);
+    result |= 1;
 
     // reinterpret back to floating-point
     return std::bit_cast<T>(result);
