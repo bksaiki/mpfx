@@ -1,5 +1,7 @@
 #pragma once
 
+#include <concepts>
+
 #include "types.hpp"
 
 namespace mpfx {
@@ -17,7 +19,7 @@ struct __bitmask {
 /// @tparam E bitwidth of the exponent field
 /// @tparam N total bitwidth of the format
 template <uint64_t E_, uint64_t N_>
-struct ieee754_consts {
+struct ieee754_params {
     static constexpr uint64_t E = E_;
     static constexpr uint64_t N = N_;
 
@@ -41,8 +43,26 @@ struct ieee754_consts {
     static constexpr mant_t IMPLICIT1 = 1ULL << M;
 };
 
+/// @brief Type trait providing IEEE 754 format parameters and constants.
+/// @tparam T floating-point type
+template <std::floating_point T>
+struct float_params {};
 
+template <>
+struct float_params<float> {
+    using params = ieee754_params<8, 32>;
+    using limits = std::numeric_limits<float>;
+    using uint_t = uint32_t;
+    using int_t = int32_t;
+};
 
+template <>
+struct float_params<double> {
+    using params = ieee754_params<11, 64>;
+    using limits = std::numeric_limits<double>;
+    using uint_t = uint64_t;
+    using int_t = int64_t;
+};
 
 } // namespace mpfx
 

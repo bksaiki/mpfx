@@ -69,10 +69,11 @@ inline RoundingDirection get_direction(RoundingMode mode, bool sign) {
 namespace {
 
 /// @brief Encodes the result of rounding as a double-precision
-/// floating-point number.
+/// floating-point number. This is an optimized version of `make_float<double>`
+/// which assumes that `c` is either 0 or has precision exactly `P`.
 template <prec_t P>
 double encode(bool s, exp_t e, mant_t c) {
-    using FP = ieee754_consts<11, 64>; // double precision
+    using FP = float_params<double>::params; // double precision
 
     // for encoding we need to ensure that we have 53 bits of precision
     // we cannot lose bits since we guarded against too much precision,
@@ -115,20 +116,13 @@ double encode(bool s, exp_t e, mant_t c) {
 
 /// @brief Should we increment to round?
 /// @param s sign
-/// @param c current significand
+/// @param c_kept current significand
 /// @param c_lost lost significand bits
 /// @param p_lost number of lost precision bits
 /// @param overshiftp are we overshifting all digits?
 /// @param rm rounding mode
 /// @return should we increment the significand?
-inline bool round_increment(
-    bool s,
-    bool odd,
-    mant_t c_lost,
-    prec_t p_lost,
-    bool overshiftp,
-    RM rm
-) {
+inline bool round_increment(bool s, mant_t c_kept, mant_t c_lost, prec_t p_lost, bool overshiftp, RM rm) {
     MPFX_DEBUG_ASSERT(p_lost > 0, "we must have lost precision");
 
     // case split on rounding mode
@@ -146,7 +140,7 @@ inline bool round_increment(
             const int8_t rb = overshiftp ? -1 : cmp; // overshift implies below halfway
 
             // increment if above halfway or exactly halfway and LSB is odd
-            incrementp = rb > 0 || (rb == 0 && odd);
+            incrementp = rb > 0 || (rb == 0 && ((c_kept >> p_lost) & 0x1));
             break;
         }
         case RM::RNA: {
@@ -181,12 +175,12 @@ inline bool round_increment(
             incrementp = true;
             break;
         case RM::RTO:
-            // round to odd
-            incrementp = !odd;
+            // round to odd => increment if LSB is even
+            incrementp = ((c_kept >> p_lost) & 0x1) == 0;
             break;
         case RM::RTE:
-            // round to even
-            incrementp = !odd;
+            // round to even => increment if LSB is odd
+            incrementp = ((c_kept >> p_lost) & 0x1) != 0;
             break;
         default:
             incrementp = false;
@@ -209,7 +203,7 @@ inline bool round_increment(
 /// @return the correctly rounded result as a `double`
 template <prec_t P, flag_mask_t FlagMask = Flags::ALL_FLAGS>
 double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<exp_t>& n, RM rm) {
-    using FP = ieee754_consts<11, 64>; // double precision
+    using FP = float_params<double>::params; // double precision
     MPFX_STATIC_ASSERT(P <= 63, "mantissa cannot be 64 bits");
     MPFX_DEBUG_ASSERT(p <= FP::P, "cannot keep the requested precision" << p);
     static constexpr exp_t MAX_E = FP::EMAX + 1;
@@ -310,9 +304,10 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
                         // hard case: we are larger than the cutoff value
                         // need to check if we round to 2^emin (unbounded exponent)
                         // by rounding with a split that is one digit lower
+                        const mant_t one = 1ULL << (p_lost - 1); // dummy value to indicate oddness
                         const mant_t c_half_mask = bitmask<mant_t>(p_lost - 1);
                         const mant_t c_lost_half = c_lost & c_half_mask;
-                        tiny_after = !round_increment(s, true, c_lost_half, p_lost - 1, false, rm);
+                        tiny_after = !round_increment(s, one, c_lost_half, p_lost - 1, false, rm);
                     }
                 }
 
@@ -328,14 +323,11 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
             }
         }
 
-        // size of the increment
-        const mant_t one = 1ULL << p_lost;
-
-        // is the mantissa odd?
-        const bool odd = (c_kept & one) != 0;
-
         // should we increment?
-        if (round_increment(s, odd, c_lost, p_lost, overshiftp, rm)) {
+        if (round_increment(s, c_kept, c_lost, p_lost, overshiftp, rm)) {
+            // size of the increment
+            const mant_t one = 1ULL << p_lost;
+
             // apply increment
             c_kept += one;
 
@@ -375,7 +367,7 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
 /// where p is the target precision.
 template<flag_mask_t FlagMask = Flags::ALL_FLAGS>
 inline double round(double x, prec_t p, const std::optional<exp_t>& n, RM rm) {
-    using FP = ieee754_consts<11, 64>; // double precision
+    using FP = float_params<double>::params; // double precision
 
     // Fast path: special values (infinity, NaN, zero)
     if (!std::isfinite(x)) {

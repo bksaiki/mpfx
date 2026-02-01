@@ -71,6 +71,9 @@ static void set_softfloat_rm(mpfx::RM rm) {
     }
 }
 
+template <
+    mpfx::Engine E = mpfx::Engine::FP_RTO,
+    mpfx::flag_mask_t FlagMask = mpfx::Flags::ALL_FLAGS>
 double benchmark_mpfx_add(const std::vector<double>& x_vals, 
                          const std::vector<double>& y_vals,
                          int p, mpfx::RM rm) {
@@ -82,7 +85,7 @@ double benchmark_mpfx_add(const std::vector<double>& x_vals,
     auto start = high_resolution_clock::now();
     
     for (size_t i = 0; i < n; i++) {
-        result = mpfx::add(x_vals[i], y_vals[i], ctx);
+        result = mpfx::add<E, FlagMask>(x_vals[i], y_vals[i], ctx);
     }
     
     auto end = high_resolution_clock::now();
