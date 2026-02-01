@@ -127,10 +127,10 @@ double encode(bool s, exp_t e, mant_t c) {
 /// @param c_kept current significand
 /// @param c_lost lost significand bits
 /// @param p_lost number of lost precision bits
-/// @param overshiftp are we overshifting all digits?
 /// @param rm rounding mode
+/// @param overshiftp are we overshifting all digits?
 /// @return should we increment the significand?
-inline bool round_increment(bool s, mant_t c_kept, mant_t c_lost, prec_t p_lost, bool overshiftp, RM rm) {
+inline bool round_increment(bool s, mant_t c_kept, mant_t c_lost, prec_t p_lost, RM rm, bool overshiftp) {
     MPFX_DEBUG_ASSERT(p_lost > 0, "we must have lost precision");
 
     // case split on rounding mode
@@ -140,24 +140,18 @@ inline bool round_increment(bool s, mant_t c_kept, mant_t c_lost, prec_t p_lost,
             // nearest rounding modes - factor out common logic
             // Compute rounding bit: -1 (below halfway), 0 (exactly halfway), 1 (above halfway)
             const mant_t halfway = 1ULL << (p_lost - 1);
-            const int8_t cmp = static_cast<int8_t>(c_lost > halfway) - static_cast<int8_t>(c_lost < halfway);
-            const int8_t rb = overshiftp ? -1 : cmp; // overshift implies below halfway
+            if (overshiftp || c_lost != halfway) [[likely]] {
+                // increment if above halfway and not overshifting
+                return !overshiftp && c_lost > halfway;
+            }
 
-            if (rb > 0) {
-                // above halfway - always increment
+            // exactly at halfway - tie-breaking
+            if (rm == RM::RNE) {
+                // ties to even: increment if LSB is odd
+                return (c_kept >> p_lost) & 0x1;
+            } else {
+                // ties away from zero: always increment
                 return true;
-            } else if (rb < 0) {
-                // below halfway - never increment
-                return false;
-            } else [[unlikely]] {
-                // exactly at halfway - tie-breaking (rare)
-                if (rm == RM::RNE) {
-                    // ties to even: increment if LSB is odd
-                    return (c_kept >> p_lost) & 0x1;
-                } else {
-                    // ties away from zero: always increment
-                    return true;
-                }
             }
         }
         case RM::RTP:
@@ -184,6 +178,7 @@ inline bool round_increment(bool s, mant_t c_kept, mant_t c_lost, prec_t p_lost,
     }
 }
 
+
 /// @brief Finalizes the rounding procedure.
 /// @tparam P the precision of the significand `c`
 /// @tparam FlagMask the mask of flags to set
@@ -191,14 +186,13 @@ inline bool round_increment(bool s, mant_t c_kept, mant_t c_lost, prec_t p_lost,
 /// @param e normalized exponent
 /// @param c integer significand
 /// @param p precision to keep
+/// @param n optional minimum normalized exponent for subnormalization
 /// @param rm rounding mode
-/// @param overshiftp are we overshifting all digits?
 /// @return the correctly rounded result as a `double`
 template <prec_t P, flag_mask_t FlagMask = Flags::ALL_FLAGS>
 double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<exp_t>& n, RM rm) {
     using FP = float_params<double>::params; // double precision
     static constexpr size_t MAX_C_WIDTH = 8 * sizeof(mant_t) - 1; // -1 to tolerate a carry
-    static constexpr exp_t MAX_E = FP::EMAX + 1;
     MPFX_STATIC_ASSERT(P <= MAX_C_WIDTH, "mantissa is too large");
 
     // which flags to check
@@ -226,7 +220,6 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
     }
 
     prec_t p_kept = p;        // actual precision kept
-    exp_t emin = MAX_E;       // minimum normalized exponent (if n is set)
     bool overshiftp = false;  // are all digits insignificant and non-adjacent to n?
     bool tiny_before = false; // was the value tiny before rounding?
     bool tiny_after = false;  // was the value tiny after rounding?
@@ -234,13 +227,15 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
     // handle possible subnormalization
     if (n.has_value()) {
         // compute the minimum normalized exponent
-        emin = *n + static_cast<exp_t>(p);
-        tiny_before = e < emin;
+        const exp_t emin = *n + static_cast<exp_t>(p);
+        const exp_t eoffset = emin - e;
 
-        if (tiny_before) {
+        if (eoffset > 0) {
             // our precision is limited by subnormalization
+            const prec_t shift = static_cast<prec_t>(eoffset);
 
-            // set tiny before rounding flag
+            // we are definitely tiny before rounding
+            tiny_before = true;
             if constexpr (CHECK_TINY_BEFORE) {
                 flags.set_tiny_before_rounding();
             }
@@ -248,42 +243,40 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
             // check for tininess after rounding
             if constexpr (CHECK_TINY_AFTER || CHECK_UNDERFLOW_AFTER) {
                 // check for the easy case of tininess after rounding
-                if (e < emin - 1) {
-                    // definitely tiny after rounding, since we are at least
-                    // one binade below the smallest normal number
-                    tiny_after = true;
-                } else {
-                    // we are in the largest binade below 2^emin
-                    // significand of the largest representable value below 2^emin
-                    // the cutoff value is always odd: 1.111...111 x 2^(emin-1)
-                    const mant_t cutoff = bitmask<mant_t>(p) << (P - p);
-                    if (c <= cutoff) {
-                        tiny_after = true;
-                    } else {
-                        // otherwise, we are in the hard case and need to check
-                        // for tininess after splitting the significand
+
+                // significand of the largest representable value in a binade
+                const mant_t cutoff = bitmask<mant_t>(p) << (P - p);
+
+                // tiny if we are below: 1.111...111 x 2^(emin-1)
+                // if not set, we are in the hard case and need to check
+                // for tininess after splitting the significand
+                tiny_after = shift > 1 || (c <= cutoff);
+
+                // set tiny after rounding flag if tiny before
+                if constexpr (CHECK_TINY_AFTER) {
+                    if (tiny_after) {
+                        flags.set_tiny_after_rounding();
                     }
                 }
             }
 
             // "overshift" is set if we shift more than p bits
-            const prec_t shift = static_cast<prec_t>(emin - e);
             overshiftp = shift > p; // set overshift flag
             p_kept = overshiftp ? 0 : p - shift; // precision cannot be non-positive
             e = overshiftp ? *n : e; // set exponent for subnormalization
         }
     }
 
-    // split bits into kept and lost parts
+    // extract the lost digits
     const prec_t p_lost = p_kept < P ? P - p_kept : 0;
     const mant_t c_mask = bitmask<mant_t>(p_lost);
     const mant_t c_lost = c & c_mask;
-    mant_t c_kept = c & ~c_mask;
 
     // check if we rounded off any significant digits
     if (c_lost != 0) {
         // slow path: inexact result
         MPFX_DEBUG_ASSERT(p_lost > 0, "we must have lost precision");
+        mant_t c_kept = c & ~c_mask; // mask off lost digits
 
         // check the hard case for tiny after rounding
         if constexpr (CHECK_TINY_AFTER || CHECK_UNDERFLOW_AFTER) {
@@ -292,7 +285,6 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
                 MPFX_DEBUG_ASSERT(n.has_value(), "n must be set");
                 MPFX_DEBUG_ASSERT(p_kept < P, "must have kept at least one digit");
                 MPFX_DEBUG_ASSERT(p_lost > 1, "must have lost at least 2 digits");
-                MPFX_DEBUG_ASSERT(e == emin - 1, "must be in the largest binade below 2^emin");
                 MPFX_DEBUG_ASSERT(!overshiftp, "must not have overshifted all digits");
 
                 // need to check if we round to 2^emin (unbounded exponent)
@@ -300,19 +292,19 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
                 const mant_t one = 1ULL << (p_lost - 1); // dummy value to indicate oddness
                 const mant_t c_half_mask = bitmask<mant_t>(p_lost - 1);
                 const mant_t c_lost_half = c_lost & c_half_mask;
-                tiny_after = !round_increment(s, one, c_lost_half, p_lost - 1, false, rm);
-            }
+                tiny_after = !round_increment(s, one, c_lost_half, p_lost - 1, rm, false);
 
-            // set tiny after rounding flag
-            if constexpr (CHECK_TINY_AFTER) {
-                if (tiny_after) {
-                    flags.set_tiny_after_rounding();
+                // set tiny after rounding flag if tiny before
+                if constexpr (CHECK_TINY_AFTER) {
+                    if (tiny_after) {
+                        flags.set_tiny_after_rounding();
+                    }
                 }
             }
         }
 
         // should we increment?
-        if (round_increment(s, c_kept, c_lost, p_lost, overshiftp, rm)) {
+        if (round_increment(s, c_kept, c_lost, p_lost, rm, overshiftp)) {
             // size of the increment
             const mant_t one = 1ULL << p_lost;
 
@@ -326,12 +318,15 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
                 e += 1;
                 c_kept >>= 1;
                 if constexpr (CHECK_CARRY) {
-                    if (e > emin) {
+                    if (!tiny_before) {
                         flags.set_carry();
                     }
                 }
             }
         }
+
+        // final significand after rounding
+        c = c_kept;
 
         // set the underflow flags
         if constexpr (CHECK_UNDERFLOW_BEFORE) {
@@ -349,18 +344,9 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
         if constexpr (CHECK_INEXACT) {
             flags.set_inexact();
         }
-    } else {
-        // exact result
-
-        // set tiny after rounding flag if tiny before
-        if constexpr (CHECK_TINY_AFTER) {
-            if (tiny_before) {
-                flags.set_tiny_after_rounding();
-            }
-        }
     }
 
-    return encode<P>(s, e, c_kept);
+    return encode<P>(s, e, c);
 }
 
 } // anonymous namespace
@@ -384,9 +370,9 @@ double round(double x, prec_t p, const std::optional<exp_t>& n, RM rm) {
     auto [s, exp, c] = unpack_float<double>(x);
 
     // fully normalize the significand
-    const prec_t xp = std::bit_width(c);
-    if (xp < FP::P) [[unlikely]] {
-        // subnormal input
+    if (exp == FP::EXPMIN) {
+        // subnormal or in the first normal binade
+        const prec_t xp = static_cast<prec_t>(std::bit_width(c));
         const prec_t lz = FP::P - xp;
         c <<= lz;
         exp -= static_cast<exp_t>(lz);
