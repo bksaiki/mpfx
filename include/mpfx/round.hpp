@@ -4,6 +4,7 @@
 #include <optional>
 #include <tuple>
 
+#include "convert.hpp"
 #include "flags.hpp"
 #include "params.hpp"
 #include "types.hpp"
@@ -96,7 +97,7 @@ double encode(bool s, exp_t e, mant_t c) {
     // encode exponent and mantissa
     uint64_t ebits, mbits;
     if (c == 0) {
-        // zero result => subnormalization underflowed to 0
+        // zero result
         ebits = 0;
         mbits = 0;
     } else {
@@ -284,7 +285,7 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
 
         // check the hard case for tiny after rounding
         if constexpr (CHECK_TINY_AFTER || CHECK_UNDERFLOW_AFTER) {
-            if (tiny_before && !tiny_after) {
+            if (tiny_before && !tiny_after) [[unlikely]] {
                 // we are just below 2^emin but above the cutoff value
                 MPFX_DEBUG_ASSERT(n.has_value(), "n must be set");
                 MPFX_DEBUG_ASSERT(p_kept < P, "must have kept at least one digit");
@@ -369,36 +370,28 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
 /// Assumes that the argument has at least p + 2 bits of precision,
 /// where p is the target precision.
 template<flag_mask_t FlagMask = Flags::ALL_FLAGS>
-inline double round(double x, prec_t p, const std::optional<exp_t>& n, RM rm) {
+double round(double x, prec_t p, const std::optional<exp_t>& n, RM rm) {
     using FP = float_params<double>::params; // double precision
 
-    // Fast path: special values (infinity, NaN, zero)
+    // Fast path: special values (infinity, NaN)
     if (!std::isfinite(x)) {
         return x;
     }
 
-    // load floating-point data as integer
-    const uint64_t b = std::bit_cast<uint64_t>(x);
-    const bool s = (b >> (FP::N - 1)) != 0;
-    const uint64_t ebits = (b & FP::EMASK) >> FP::M;
-    const uint64_t mbits = b & FP::MMASK;
-
     // decode floating-point data
-    exp_t e;
-    mant_t c;
-    if (ebits == 0) [[unlikely]] {
-        // subnormal => fully normalize the significand
-        e = FP::EMIN;
-        c = mbits;
+    auto [s, exp, c] = unpack_float<double>(x);
 
-        const auto lz = FP::P - std::bit_width(mbits);
-        e -= static_cast<exp_t>(lz);
+    // fully normalize the significand
+    const prec_t xp = std::bit_width(c);
+    if (xp < FP::P) [[unlikely]] {
+        // subnormal input
+        const prec_t lz = FP::P - xp;
         c <<= lz;
-    } else {
-        // normal (assuming no infinity or NaN)
-        e = static_cast<exp_t>(ebits) - FP::BIAS;
-        c = FP::IMPLICIT1 | mbits;
+        exp -= static_cast<exp_t>(lz);
     }
+
+    // compute normalized exponent
+    const exp_t e = exp + static_cast<exp_t>(FP::P - 1);
 
     // finalize rounding (mantissa has precision `FP::P`)
     return round_finalize<FP::P, FlagMask>(s, e, c, p, n, rm);
@@ -411,7 +404,7 @@ inline double round(double x, prec_t p, const std::optional<exp_t>& n, RM rm) {
 /// Assumes that the argument has at least p + 2 bits of precision,
 /// where p is the target precision.
 template<flag_mask_t FlagMask = Flags::ALL_FLAGS>
-inline double round(int64_t m, exp_t exp, prec_t p, const std::optional<exp_t>& n, RM rm) {
+double round(int64_t m, exp_t exp, prec_t p, const std::optional<exp_t>& n, RM rm) {
     static constexpr int64_t MIN_VAL = std::numeric_limits<int64_t>::min();
     static constexpr prec_t PREC = 63;
 
