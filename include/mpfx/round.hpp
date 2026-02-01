@@ -140,7 +140,7 @@ inline bool round_increment(bool s, mant_t c_kept, mant_t c_lost, prec_t p_lost,
             const int8_t rb = overshiftp ? -1 : cmp; // overshift implies below halfway
 
             // increment if above halfway or exactly halfway and LSB is odd
-            incrementp = rb > 0 || (rb == 0 && ((c_kept & 0x1) != 0));
+            incrementp = rb > 0 || (rb == 0 && ((c_kept >> p_lost) & 0x1));
             break;
         }
         case RM::RNA: {
@@ -176,11 +176,11 @@ inline bool round_increment(bool s, mant_t c_kept, mant_t c_lost, prec_t p_lost,
             break;
         case RM::RTO:
             // round to odd => increment if LSB is even
-            incrementp = ((c_kept & 0x1) == 0);
+            incrementp = ((c_kept >> p_lost) & 0x1) == 0;
             break;
         case RM::RTE:
             // round to even => increment if LSB is odd
-            incrementp = ((c_kept & 0x1) != 0);
+            incrementp = ((c_kept >> p_lost) & 0x1) != 0;
             break;
         default:
             incrementp = false;
