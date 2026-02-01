@@ -8,7 +8,7 @@ Context::Context(prec_t p, const std::optional<exp_t>& n, const std::optional<do
 
     // Validate and compute maxval_odd_ if maxval is present
     if (maxval_.has_value()) {
-        const double maxval = maxval_.value();
+        const double maxval = *maxval_;
         MPFX_ASSERT(!std::signbit(maxval), "maxval must be non-negative");
         MPFX_ASSERT(maxval == mpfx::round<Flags::NO_FLAGS>(maxval, p_, n_, rm_), "maxval must be finite");
 

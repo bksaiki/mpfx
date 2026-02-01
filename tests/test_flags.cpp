@@ -322,7 +322,7 @@ TEST(TestFlags, TestOverflowFlag) {
         const auto bound = mpfx::make_float<double>(false, exp2, c2);
 
         // rounding context
-        const mpfx::MPBContext ctx(p, MIN_EXP, rm, bound);
+        const mpfx::MPBContext ctx(p, MIN_EXP, bound, rm);
 
         // round with context
         const auto y = ctx.round(x);

@@ -21,7 +21,7 @@ private:
     exp_t emax_;
 
 public:
-    MPBContext(prec_t prec, exp_t emin, RM rm, double maxval);
+    MPBContext(prec_t prec, exp_t emin, double maxval, RM rm);
 
     /// @brief Gets the minimum exponent of this context.
     inline exp_t emin() const {

@@ -62,7 +62,7 @@ private:
             return x;
         }
 
-        const double maxval = maxval_.value();
+        const double maxval = *maxval_;
         if (std::abs(x) > maxval) {
             if constexpr (FlagMask & Flags::OVERFLOW_FLAG) {
                 flags.set_overflow();
@@ -124,7 +124,7 @@ public:
     }
 
     /// @brief Rounds `x` according to this rounding context.
-    /// @tparam Mask to indicate the status flags to check during rounding.
+    /// @tparam FlagMask mask to indicate the status flags to check during rounding.
     /// @param x a number to round
     /// @return the rounded number
     template <flag_mask_t FlagMask = Flags::ALL_FLAGS>
@@ -134,7 +134,7 @@ public:
     }
 
     /// @brief Rounds `m * 2^exp` according to this rounding context.
-    /// @tparam Mask to indicate the status flags to check during rounding.
+    /// @tparam FlagMask mask to indicate the status flags to check during rounding.
     /// @param m integer significand
     /// @param exp base-2 exponent
     /// @return the rounded number
