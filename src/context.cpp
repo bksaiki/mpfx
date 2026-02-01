@@ -16,6 +16,8 @@ Context::Context(prec_t p, const std::optional<exp_t>& n, const std::optional<do
         const uint64_t bits = std::bit_cast<uint64_t>(maxval);
         const int pth_bit_pos = static_cast<int>(FP::M) - static_cast<int>(p_) + 1;
         maxval_is_odd_ = (pth_bit_pos >= 0) && ((bits >> pth_bit_pos) & 1);
+    } else {
+        maxval_is_odd_ = false;
     }
 }
 
