@@ -140,13 +140,10 @@ inline bool round_increment(bool s, mant_t c_kept, mant_t c_lost, prec_t p_lost,
             // nearest rounding modes - factor out common logic
             // Compute rounding bit: -1 (below halfway), 0 (exactly halfway), 1 (above halfway)
             const mant_t halfway = 1ULL << (p_lost - 1);
-            const int8_t cmp = static_cast<int8_t>(c_lost > halfway) - static_cast<int8_t>(c_lost < halfway);
-            const int8_t rb = overshiftp ? -1 : cmp; // overshift implies below halfway
-
-            if (rb > 0) {
+            if (c_lost > halfway) {
                 // above halfway - always increment
                 return true;
-            } else if (rb < 0) {
+            } else if (c_lost < halfway || overshiftp) {
                 // below halfway - never increment
                 return false;
             } else [[unlikely]] {
@@ -183,6 +180,7 @@ inline bool round_increment(bool s, mant_t c_kept, mant_t c_lost, prec_t p_lost,
             return false;
     }
 }
+
 
 /// @brief Finalizes the rounding procedure.
 /// @tparam P the precision of the significand `c`
@@ -235,12 +233,14 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
     if (n.has_value()) {
         // compute the minimum normalized exponent
         emin = *n + static_cast<exp_t>(p);
-        tiny_before = e < emin;
+        const exp_t eoffset = emin - e;
 
-        if (tiny_before) {
+        if (eoffset > 0) {
             // our precision is limited by subnormalization
+            const prec_t shift = static_cast<prec_t>(eoffset);
 
-            // set tiny before rounding flag
+            // we are definitely tiny before rounding
+            tiny_before = true;
             if constexpr (CHECK_TINY_BEFORE) {
                 flags.set_tiny_before_rounding();
             }
@@ -248,26 +248,17 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
             // check for tininess after rounding
             if constexpr (CHECK_TINY_AFTER || CHECK_UNDERFLOW_AFTER) {
                 // check for the easy case of tininess after rounding
-                if (e < emin - 1) {
-                    // definitely tiny after rounding, since we are at least
-                    // one binade below the smallest normal number
-                    tiny_after = true;
-                } else {
-                    // we are in the largest binade below 2^emin
-                    // significand of the largest representable value below 2^emin
-                    // the cutoff value is always odd: 1.111...111 x 2^(emin-1)
-                    const mant_t cutoff = bitmask<mant_t>(p) << (P - p);
-                    if (c <= cutoff) {
-                        tiny_after = true;
-                    } else {
-                        // otherwise, we are in the hard case and need to check
-                        // for tininess after splitting the significand
-                    }
-                }
+
+                // significand of the largest representable value in a binade
+                const mant_t cutoff = bitmask<mant_t>(p) << (P - p);
+
+                // tiny if we are below: 1.111...111 x 2^(emin-1)
+                // if not set, we are in the hard case and need to check
+                // for tininess after splitting the significand
+                tiny_after = shift > 1 || (c <= cutoff);
             }
 
             // "overshift" is set if we shift more than p bits
-            const prec_t shift = static_cast<prec_t>(emin - e);
             overshiftp = shift > p; // set overshift flag
             p_kept = overshiftp ? 0 : p - shift; // precision cannot be non-positive
             e = overshiftp ? *n : e; // set exponent for subnormalization
