@@ -50,7 +50,10 @@ private:
     }
 
     /// @brief Helper function to handle overflow.
-    inline double round_overflow(double x) const {
+    /// @tparam Mask to indicate the status flags to set during overflow handling.
+    /// @param x a number to check for overflow
+    template <flag_mask_t FlagMask>
+    double round_overflow(double x) const {
         if (!maxval_.has_value()) {
             return x;
         }
@@ -61,8 +64,12 @@ private:
 
         const double maxval = maxval_.value();
         if (std::abs(x) > maxval) {
-            flags.set_overflow();
-            flags.set_inexact();
+            if constexpr (FlagMask & Flags::OVERFLOW_FLAG) {
+                flags.set_overflow();
+            }
+            if constexpr (FlagMask & Flags::INEXACT_FLAG) {
+                flags.set_inexact();
+            }
 
             const bool s = std::signbit(x);
             if (overflow_to_infinity(rm_, s, maxval_is_odd_)) {
@@ -117,20 +124,24 @@ public:
     }
 
     /// @brief Rounds `x` according to this rounding context.
+    /// @tparam Mask to indicate the status flags to check during rounding.
     /// @param x a number to round
     /// @return the rounded number
-    inline double round(double x) const {
-        x = mpfx::round(x, p_, n_, rm_);
-        return round_overflow(x);
+    template <flag_mask_t FlagMask = Flags::ALL_FLAGS>
+    double round(double x) const {
+        x = mpfx::round<FlagMask>(x, p_, n_, rm_);
+        return round_overflow<FlagMask>(x);
     }
 
     /// @brief Rounds `m * 2^exp` according to this rounding context.
+    /// @tparam Mask to indicate the status flags to check during rounding.
     /// @param m integer significand
     /// @param exp base-2 exponent
     /// @return the rounded number
-    inline double round(int64_t m, exp_t exp) const {
-        double x = mpfx::round(m, exp, p_, n_, rm_);
-        return round_overflow(x);
+    template <flag_mask_t FlagMask = Flags::ALL_FLAGS>
+    double round(int64_t m, exp_t exp) const {
+        double x = mpfx::round<FlagMask>(m, exp, p_, n_, rm_);
+        return round_overflow<FlagMask>(x);
     }
 };
 
