@@ -304,9 +304,10 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
                         // hard case: we are larger than the cutoff value
                         // need to check if we round to 2^emin (unbounded exponent)
                         // by rounding with a split that is one digit lower
+                        const mant_t one = 1ULL << (p_lost - 1); // dummy value to indicate oddness
                         const mant_t c_half_mask = bitmask<mant_t>(p_lost - 1);
                         const mant_t c_lost_half = c_lost & c_half_mask;
-                        tiny_after = !round_increment(s, 0x1, c_lost_half, p_lost - 1, false, rm);
+                        tiny_after = !round_increment(s, one, c_lost_half, p_lost - 1, false, rm);
                     }
                 }
 
