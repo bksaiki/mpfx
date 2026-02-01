@@ -21,7 +21,7 @@ using prec_t = uint64_t;
 /// @param k size of the bitmask
 /// @return the bitmask
 template <typename T>
-T bitmask(uint64_t k) {
+inline T bitmask(uint64_t k) {
     MPFX_STATIC_ASSERT(std::is_integral_v<T> && std::is_unsigned_v<T>, "T must be an unsigned integer");
     static constexpr uint64_t MAX_K = 8 * sizeof(T);
     MPFX_DEBUG_ASSERT(k < 64, "exceeded maximum bitmask size");

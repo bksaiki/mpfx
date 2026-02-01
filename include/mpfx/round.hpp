@@ -96,22 +96,19 @@ double encode(bool s, exp_t e, mant_t c) {
 
     // encode exponent and mantissa
     uint64_t ebits, mbits;
-    if (c == 0) {
+    if (c == 0) [[unlikely]] {
         // zero result
         ebits = 0;
         mbits = 0;
+    } else if (e < FP::EMIN) [[unlikely]] {
+        // subnormal result
+        const exp_t shift = FP::EMIN - e;
+        ebits = 0;
+        mbits = c >> shift;
     } else {
-        // non-zero result
-        if (e < FP::EMIN) [[unlikely]] {
-            // subnormal result
-            const exp_t shift = FP::EMIN - e;
-            ebits = 0;
-            mbits = c >> shift;
-        } else [[likely]] {
-            // normal result - most common case
-            ebits = e + FP::BIAS;
-            mbits = c & FP::MMASK;
-        }
+        // normal result - most common case
+        ebits = e + FP::BIAS;
+        mbits = c & FP::MMASK;
     }
 
     // repack the result
@@ -141,14 +138,14 @@ inline bool round_increment(bool s, mant_t c_kept, mant_t c_lost, prec_t p_lost,
             const int8_t cmp = static_cast<int8_t>(c_lost > halfway) - static_cast<int8_t>(c_lost < halfway);
             const int8_t rb = overshiftp ? -1 : cmp; // overshift implies below halfway
 
-            if (rb > 0) {
+            if (rb > 0) [[likely]] {
                 // above halfway - always increment
                 return true;
-            } else if (rb < 0) {
+            } else if (rb < 0) [[likely]] {
                 // below halfway - never increment
                 return false;
-            } else {
-                // exactly at halfway - tie-breaking
+            } else [[unlikely]] {
+                // exactly at halfway - tie-breaking (rare)
                 if (rm == RM::RNE) {
                     // ties to even: increment if LSB is odd
                     return (c_kept >> p_lost) & 0x1;
@@ -209,7 +206,7 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
 
     MPFX_DEBUG_ASSERT(p <= FP::P, "cannot keep the requested precision" << p);
 
-    if (c == 0) {
+    if (c == 0) [[unlikely]] {
         // fast path: zero value
         // raise both tiny flags
         if constexpr (CHECK_TINY_BEFORE) {
@@ -319,7 +316,7 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
 
             // check if we need to carry
             static constexpr mant_t overflow_mask = 1ULL << P;
-            if (c_kept >= overflow_mask) {
+            if (c_kept >= overflow_mask) [[unlikely]] {
                 // increment caused carry
                 e += 1;
                 c_kept >>= 1;
