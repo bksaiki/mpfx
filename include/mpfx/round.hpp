@@ -69,10 +69,11 @@ inline RoundingDirection get_direction(RoundingMode mode, bool sign) {
 namespace {
 
 /// @brief Encodes the result of rounding as a double-precision
-/// floating-point number.
+/// floating-point number. This is an optimized version of `make_float<double>`
+/// which assumes that `c` is either 0 or has precision exactly `P`.
 template <prec_t P>
 double encode(bool s, exp_t e, mant_t c) {
-    using FP = ieee754_params<11, 64>; // double precision
+    using FP = float_params<double>::params; // double precision
 
     // for encoding we need to ensure that we have 53 bits of precision
     // we cannot lose bits since we guarded against too much precision,
@@ -209,7 +210,7 @@ inline bool round_increment(
 /// @return the correctly rounded result as a `double`
 template <prec_t P, flag_mask_t FlagMask = Flags::ALL_FLAGS>
 double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<exp_t>& n, RM rm) {
-    using FP = ieee754_params<11, 64>; // double precision
+    using FP = float_params<double>::params; // double precision
     MPFX_STATIC_ASSERT(P <= 63, "mantissa cannot be 64 bits");
     MPFX_DEBUG_ASSERT(p <= FP::P, "cannot keep the requested precision" << p);
     static constexpr exp_t MAX_E = FP::EMAX + 1;
@@ -375,7 +376,7 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
 /// where p is the target precision.
 template<flag_mask_t FlagMask = Flags::ALL_FLAGS>
 inline double round(double x, prec_t p, const std::optional<exp_t>& n, RM rm) {
-    using FP = ieee754_params<11, 64>; // double precision
+    using FP = float_params<double>::params; // double precision
 
     // Fast path: special values (infinity, NaN, zero)
     if (!std::isfinite(x)) {

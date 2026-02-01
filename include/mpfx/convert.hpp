@@ -45,8 +45,8 @@ inline T make_float(bool s, exp_t exp, typename float_params<T>::uint_t c) {
 
         // check if we shifted off any digits
         const exp_t adjust = FP::EMIN - e;
-        const mant_t c_lost = c & bitmask<mant_t>(adjust);
-        MPFX_ASSERT(c_lost == 0, "make_double: losing digits due to subnormalization");
+        const uint_t c_lost = c & bitmask<uint_t>(adjust);
+        MPFX_DEBUG_ASSERT(c_lost == 0, "make_float: losing digits due to subnormalization");
 
         ebits = 0;
         mbits = c >> adjust;
@@ -110,7 +110,7 @@ inline std::tuple<bool, exp_t, typename float_params<T>::uint_t> unpack_float(T 
 /// @param x double-precision floating-point number
 /// @return a tuple `(m, exp)` representing `x` as `m * 2^exp`
 inline std::tuple<int64_t, exp_t> to_fixed(double x) {
-    using FP = ieee754_params<11, 64>; // double precision
+    using FP = float_params<double>::params; // double precision
     MPFX_ASSERT(std::isfinite(x), "to_fixed: input must be finite");
 
     // fast path: zero
