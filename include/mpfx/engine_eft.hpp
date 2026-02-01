@@ -51,7 +51,7 @@ inline T round_finalize(T high, T low) {
     const int adjust = static_cast<int>((sign_high << 1) - 1) & adjust_mask;
 
     // apply adjustment and jam sticky bit for RTO
-    U result = static_cast<U>(b_high + adjust);
+    U result = b_high + adjust;
     result |= 1;
 
     // reinterpret back to floating-point

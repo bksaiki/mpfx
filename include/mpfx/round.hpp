@@ -66,6 +66,11 @@ inline RoundingDirection get_direction(RoundingMode mode, bool sign) {
         RoundingDirection::TO_EVEN, RoundingDirection::TO_EVEN,
     };
 
+    if (static_cast<size_t>(mode) > static_cast<size_t>(RoundingMode::RTE)) [[unlikely]] {
+        MPFX_DEBUG_ASSERT(false, "get_direction: invalid rounding mode");
+        return RoundingDirection::TO_ZERO; // default return to avoid warnings
+    }
+
     const size_t idx = (static_cast<size_t>(mode) << 1) | static_cast<size_t>(sign);
     return table[idx];
 }
@@ -138,10 +143,10 @@ inline bool round_increment(bool s, mant_t c_kept, mant_t c_lost, prec_t p_lost,
             const int8_t cmp = static_cast<int8_t>(c_lost > halfway) - static_cast<int8_t>(c_lost < halfway);
             const int8_t rb = overshiftp ? -1 : cmp; // overshift implies below halfway
 
-            if (rb > 0) [[likely]] {
+            if (rb > 0) {
                 // above halfway - always increment
                 return true;
-            } else if (rb < 0) [[likely]] {
+            } else if (rb < 0) {
                 // below halfway - never increment
                 return false;
             } else [[unlikely]] {
