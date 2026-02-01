@@ -92,12 +92,12 @@ double encode(bool s, exp_t e, mant_t c) {
 
     // encode exponent and mantissa
     uint64_t ebits, mbits;
-    if (UNLIKELY(c == 0)) {
+    if (c == 0) [[unlikely]] {
         // edge case: subnormalization underflowed to 0
         // `e` might be an unexpected value here
         ebits = 0;
         mbits = 0;
-    } else if (UNLIKELY(e < FP::EMIN)) {
+    } else if (e < FP::EMIN) {
         // subnormal result
         const exp_t shift = FP::EMIN - e;
         ebits = 0;
@@ -396,7 +396,7 @@ inline double round(double x, prec_t p, const std::optional<exp_t>& n, RM rm) {
     // decode floating-point data
     exp_t e;
     mant_t c;
-    if (UNLIKELY(ebits == 0)) {
+    if (ebits == 0) [[unlikely]] {
         // subnormal => fully normalize the significand
         e = FP::EMIN;
         c = mbits;
