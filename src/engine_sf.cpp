@@ -10,6 +10,18 @@ namespace mpfx {
 
 namespace engine_sf {
 
+// Converts from double to float64_t
+static float64_t to_sf(double x) {
+    float64_t result;
+    result.v = std::bit_cast<uint64_t>(x);
+    return result;
+}
+
+// Converts from float64_t to double
+static double from_sf(float64_t x) {
+    return std::bit_cast<double>(x.v);
+}
+
 /// @brief Computes `x + y` using softfloat.
 ///
 /// Ensures the result has at least `p` bits of precision.
@@ -21,17 +33,8 @@ double add(double x, double y, prec_t p) {
         "add: requested precision exceeds double-precision capability"
     );
 
-    // Convert inputs to SoftFloat f64
-    float64_t sf_x, sf_y;
-    sf_x.v = std::bit_cast<uint64_t>(x);
-    sf_y.v = std::bit_cast<uint64_t>(y);
-
-    // Perform multiplication using SoftFloat with round-to-odd mode
     softfloat_roundingMode = softfloat_round_odd;
-    float64_t sf_result = f64_add(sf_x, sf_y);
-
-    // Convert result back to double
-    return std::bit_cast<double>(sf_result.v);
+    return from_sf(f64_add(to_sf(x), to_sf(y)));
 }
 
 /// @brief Computes `x - y` using softfloat.
@@ -45,17 +48,8 @@ double sub(double x, double y, prec_t p) {
         "sub: requested precision exceeds double-precision capability"
     );
 
-    // Convert inputs to SoftFloat f64
-    float64_t sf_x, sf_y;
-    sf_x.v = std::bit_cast<uint64_t>(x);
-    sf_y.v = std::bit_cast<uint64_t>(y);
-
-    // Perform subtraction using SoftFloat with round-to-odd mode
     softfloat_roundingMode = softfloat_round_odd;
-    float64_t sf_result = f64_sub(sf_x, sf_y);
-
-    // Convert result back to double
-    return std::bit_cast<double>(sf_result.v);
+    return from_sf(f64_sub(to_sf(x), to_sf(y)));
 }
 
 /// @brief Computes `x * y` using softfloat.
@@ -69,17 +63,8 @@ double mul(double x, double y, prec_t p) {
         "mul: requested precision exceeds double-precision capability"
     );
 
-    // Convert inputs to SoftFloat f64
-    float64_t sf_x, sf_y;
-    sf_x.v = std::bit_cast<uint64_t>(x);
-    sf_y.v = std::bit_cast<uint64_t>(y);
-
-    // Perform multiplication using SoftFloat with round-to-odd mode
     softfloat_roundingMode = softfloat_round_odd;
-    float64_t sf_result = f64_mul(sf_x, sf_y);
-
-    // Convert result back to double
-    return std::bit_cast<double>(sf_result.v);
+    return from_sf(f64_mul(to_sf(x), to_sf(y)));
 }
 
 /// @brief Computes `x / y` using softfloat.
@@ -93,17 +78,8 @@ double div(double x, double y, prec_t p) {
         "div: requested precision exceeds double-precision capability"
     );
 
-    // Convert inputs to SoftFloat f64
-    float64_t sf_x, sf_y;
-    sf_x.v = std::bit_cast<uint64_t>(x);
-    sf_y.v = std::bit_cast<uint64_t>(y);
-
-    // Perform division using SoftFloat with round-to-odd mode
     softfloat_roundingMode = softfloat_round_odd;
-    float64_t sf_result = f64_div(sf_x, sf_y);
-
-    // Convert result back to double
-    return std::bit_cast<double>(sf_result.v);
+    return from_sf(f64_div(to_sf(x), to_sf(y)));
 }
 
 /// @brief Computes `sqrt(x)` using softfloat.
@@ -117,16 +93,8 @@ double sqrt(double x, prec_t p) {
         "sqrt: requested precision exceeds double-precision capability"
     );
 
-    // Convert input to SoftFloat f64
-    float64_t sf_x;
-    sf_x.v = std::bit_cast<uint64_t>(x);
-
-    // Perform square root using SoftFloat with round-to-odd mode
     softfloat_roundingMode = softfloat_round_odd;
-    float64_t sf_result = f64_sqrt(sf_x);
-
-    // Convert result back to double
-    return std::bit_cast<double>(sf_result.v);
+    return from_sf(f64_sqrt(to_sf(x)));
 }
 
 /// @brief Computes `x * y + z` using softfloat.
@@ -140,18 +108,8 @@ double fma(double x, double y, double z, prec_t p) {
         "fma: requested precision exceeds double-precision capability"
     );
 
-    // Convert inputs to SoftFloat f64
-    float64_t sf_x, sf_y, sf_z;
-    sf_x.v = std::bit_cast<uint64_t>(x);
-    sf_y.v = std::bit_cast<uint64_t>(y);
-    sf_z.v = std::bit_cast<uint64_t>(z);
-
-    // Perform fused multiply-add using SoftFloat with round-to-odd mode
     softfloat_roundingMode = softfloat_round_odd;
-    float64_t sf_result = f64_mulAdd(sf_x, sf_y, sf_z);
-
-    // Convert result back to double
-    return std::bit_cast<double>(sf_result.v);
+    return from_sf(f64_mulAdd(to_sf(x), to_sf(y), to_sf(z)));
 }
 
 } // end namespace engine_sf

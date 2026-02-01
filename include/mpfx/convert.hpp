@@ -86,11 +86,11 @@ inline std::tuple<bool, exp_t, typename float_params<T>::uint_t> unpack_float(T 
     // unbias the exponent
     exp_t exp;
     uint_t c;
-    if (ebits == 0) {
+    if (ebits == 0) [[unlikely]] {
         // subnormal
         exp = FP::EXPMIN;
         c = mbits;
-    } else {
+    } else [[likely]] {
         // normal (assuming no infinity or NaN)
         const exp_t e = static_cast<exp_t>(ebits) - FP::BIAS;
         exp = e - static_cast<exp_t>(FP::M);
