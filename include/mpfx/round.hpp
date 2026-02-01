@@ -44,26 +44,29 @@ enum class RoundingDirection : uint8_t {
 /// @brief Returns the rounding direction for a given rounding mode and sign.
 /// For nearest rounding modes, the direction is for tie-breaking.
 inline RoundingDirection get_direction(RoundingMode mode, bool sign) {
-    switch (mode) {
-        case RoundingMode::RNE:
-            return RoundingDirection::TO_EVEN;
-        case RoundingMode::RNA:
-            return RoundingDirection::AWAY_ZERO;
-        case RoundingMode::RTP:
-            return sign ? RoundingDirection::TO_ZERO : RoundingDirection::AWAY_ZERO;
-        case RoundingMode::RTN:
-            return sign ? RoundingDirection::AWAY_ZERO : RoundingDirection::TO_ZERO;
-        case RoundingMode::RTZ:
-            return RoundingDirection::TO_ZERO;
-        case RoundingMode::RAZ:
-            return RoundingDirection::AWAY_ZERO;
-        case RoundingMode::RTO:
-            return RoundingDirection::TO_ODD;
-        case RoundingMode::RTE:
-            return RoundingDirection::TO_EVEN;
-        default:
-            MPFX_UNREACHABLE("invalid rounding mode");
-    }
+    // Lookup table approach for better performance
+    // Index: mode * 2 + sign
+    static constexpr RoundingDirection table[] = {
+        // RNE (mode 0): sign doesn't matter
+        RoundingDirection::TO_EVEN, RoundingDirection::TO_EVEN,
+        // RNA (mode 1): sign doesn't matter
+        RoundingDirection::AWAY_ZERO, RoundingDirection::AWAY_ZERO,
+        // RTP (mode 2): depends on sign
+        RoundingDirection::AWAY_ZERO, RoundingDirection::TO_ZERO,
+        // RTN (mode 3): depends on sign
+        RoundingDirection::TO_ZERO, RoundingDirection::AWAY_ZERO,
+        // RTZ (mode 4): sign doesn't matter
+        RoundingDirection::TO_ZERO, RoundingDirection::TO_ZERO,
+        // RAZ (mode 5): sign doesn't matter
+        RoundingDirection::AWAY_ZERO, RoundingDirection::AWAY_ZERO,
+        // RTO (mode 6): sign doesn't matter
+        RoundingDirection::TO_ODD, RoundingDirection::TO_ODD,
+        // RTE (mode 7): sign doesn't matter
+        RoundingDirection::TO_EVEN, RoundingDirection::TO_EVEN,
+    };
+
+    const size_t idx = (static_cast<size_t>(mode) << 1) | static_cast<size_t>(sign);
+    return table[idx];
 }
 
 namespace {
@@ -92,20 +95,22 @@ double encode(bool s, exp_t e, mant_t c) {
 
     // encode exponent and mantissa
     uint64_t ebits, mbits;
-    if (c == 0) [[unlikely]] {
-        // edge case: subnormalization underflowed to 0
-        // `e` might be an unexpected value here
+    if (c == 0) {
+        // zero result => subnormalization underflowed to 0
         ebits = 0;
         mbits = 0;
-    } else if (e < FP::EMIN) {
-        // subnormal result
-        const exp_t shift = FP::EMIN - e;
-        ebits = 0;
-        mbits = c >> shift;
     } else {
-        // normal result
-        ebits = e + FP::BIAS;
-        mbits = c & FP::MMASK;
+        // non-zero result
+        if (e < FP::EMIN) [[unlikely]] {
+            // subnormal result
+            const exp_t shift = FP::EMIN - e;
+            ebits = 0;
+            mbits = c >> shift;
+        } else [[likely]] {
+            // normal result - most common case
+            ebits = e + FP::BIAS;
+            mbits = c & FP::MMASK;
+        }
     }
 
     // repack the result
@@ -126,69 +131,54 @@ inline bool round_increment(bool s, mant_t c_kept, mant_t c_lost, prec_t p_lost,
     MPFX_DEBUG_ASSERT(p_lost > 0, "we must have lost precision");
 
     // case split on rounding mode
-    bool incrementp;
     switch (rm) {
-        case RM::RNE: {
-            // nearest rounding, ties to even
-
-            // clever way to extract rounding information
-            // -1: below halfway
-            //  0: exactly halfway
-            //  1: above halfway
-            const mant_t halfway = 1ULL << (p_lost - 1);
-            const int8_t cmp = static_cast<int8_t>(c_lost > halfway) - static_cast<int8_t>(c_lost < halfway);
-            const int8_t rb = overshiftp ? -1 : cmp; // overshift implies below halfway
-
-            // increment if above halfway or exactly halfway and LSB is odd
-            incrementp = rb > 0 || (rb == 0 && ((c_kept >> p_lost) & 0x1));
-            break;
-        }
+        case RM::RNE:
         case RM::RNA: {
-            // nearest rounding, ties away from zero
-
-            // clever way to extract rounding information
-            // -1: below halfway
-            //  0: exactly halfway
-            //  1: above halfway
+            // nearest rounding modes - factor out common logic
+            // Compute rounding bit: -1 (below halfway), 0 (exactly halfway), 1 (above halfway)
             const mant_t halfway = 1ULL << (p_lost - 1);
             const int8_t cmp = static_cast<int8_t>(c_lost > halfway) - static_cast<int8_t>(c_lost < halfway);
             const int8_t rb = overshiftp ? -1 : cmp; // overshift implies below halfway
 
-            // increment if above halfway or exactly halfway
-            incrementp = rb >= 0;
-            break;
+            if (rb > 0) {
+                // above halfway - always increment
+                return true;
+            } else if (rb < 0) {
+                // below halfway - never increment
+                return false;
+            } else {
+                // exactly at halfway - tie-breaking
+                if (rm == RM::RNE) {
+                    // ties to even: increment if LSB is odd
+                    return (c_kept >> p_lost) & 0x1;
+                } else {
+                    // ties away from zero: always increment
+                    return true;
+                }
+            }
         }
         case RM::RTP:
             // round toward +infinity
-            incrementp = !s;
-            break;
+            return !s;
         case RM::RTN:
             // round toward -infinity
-            incrementp = s;
-            break;
+            return s;
         case RM::RTZ:
             // round toward zero
-            incrementp = false;
-            break;
+            return false;
         case RM::RAZ:
             // round away from zero
-            incrementp = true;
-            break;
+            return true;
         case RM::RTO:
             // round to odd => increment if LSB is even
-            incrementp = ((c_kept >> p_lost) & 0x1) == 0;
-            break;
+            return ((c_kept >> p_lost) & 0x1) == 0;
         case RM::RTE:
             // round to even => increment if LSB is odd
-            incrementp = ((c_kept >> p_lost) & 0x1) != 0;
-            break;
+            return (c_kept >> p_lost) & 0x1;
         default:
-            incrementp = false;
             MPFX_DEBUG_ASSERT(false, "unreachable");
-            break;
+            return false;
     }
-
-    return incrementp;
 }
 
 /// @brief Finalizes the rounding procedure.
