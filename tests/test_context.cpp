@@ -43,7 +43,7 @@ TEST(Context, TestMPBContext) {
     // overflow handling
     EXPECT_EQ(ctx.round(60.0), 60.0); // below maxval
     EXPECT_EQ(ctx.round(62.0), 62.0); // exact maxval
-    EXPECT_EQ(ctx.round(63.0), 62.0); // rounds to maxval
+    EXPECT_EQ(ctx.round(63.0), std::numeric_limits<double>::infinity()); // rounds to infinity
     EXPECT_EQ(ctx.round(64.0), std::numeric_limits<double>::infinity()); // rounds to infinity
 }
 
