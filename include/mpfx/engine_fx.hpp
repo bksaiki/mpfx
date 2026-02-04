@@ -9,6 +9,19 @@ namespace mpfx {
 
 namespace engine_fx {
 
+namespace {
+
+/// @brief Minimizes the precision of `c * 2^exp`.
+inline void minimize(exp_t& exp, mant_t& c) {
+    if (c != 0) {
+        const auto tz = std::countr_zero(c);
+        c >>= tz;
+        exp += static_cast<exp_t>(tz);
+    }
+}
+
+} // end anonymous namespace
+
 /// @brief Computes `x * y` using fixed-point arithmetic.
 /// Returns a fixed-point representation `m * 2^exp`
 /// where `m` is an `int64_t` integer significand
@@ -20,9 +33,17 @@ inline std::tuple<int64_t, exp_t> mul(double x, double y, prec_t p) {
         "mul_fixed: requested precision exceeds capability"
     );
 
-    // decode into fixed-point
-    const auto [xm, xexp] = to_fixed(x);
-    const auto [ym, yexp] = to_fixed(y);
+    // decode inputs
+    auto [xs, xexp, xc] = unpack_float<double>(x);
+    auto [ys, yexp, yc] = unpack_float<double>(y);
+
+    // minimize significands
+    minimize(xexp, xc);
+    minimize(yexp, yc);
+
+    // apply sign
+    const int64_t xm = xs ? -static_cast<int64_t>(xc) : static_cast<int64_t>(xc);
+    const int64_t ym = ys ? -static_cast<int64_t>(yc) : static_cast<int64_t>(yc);
 
     // perform multiplication (possible overflow)
     const int64_t m = xm * ym;
