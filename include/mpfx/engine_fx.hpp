@@ -12,10 +12,12 @@ namespace engine_fx {
 namespace {
 
 /// @brief Minimizes the precision of `c * 2^exp`.
-inline void minimize(mant_t& c, exp_t& exp) {
-    const auto tz = std::countr_zero(c);
-    c >>= tz;
-    exp += static_cast<exp_t>(tz);
+inline void minimize(exp_t& exp, mant_t& c) {
+    if (c != 0) {
+        const auto tz = std::countr_zero(c);
+        c >>= tz;
+        exp += static_cast<exp_t>(tz);
+    }
 }
 
 } // end anonymous namespace
@@ -36,8 +38,8 @@ inline std::tuple<int64_t, exp_t> mul(double x, double y, prec_t p) {
     auto [ys, yexp, yc] = unpack_float<double>(y);
 
     // minimize significands
-    minimize(xc, xexp);
-    minimize(yc, yexp);
+    minimize(xexp, xc);
+    minimize(yexp, yc);
 
     // apply sign
     const int64_t xm = xs ? -static_cast<int64_t>(xc) : static_cast<int64_t>(xc);

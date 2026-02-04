@@ -80,7 +80,7 @@ namespace {
 /// @brief Encodes the result of rounding as a double-precision
 /// floating-point number. This is an optimized version of `make_float<double>`
 /// which assumes that `c` is either 0 or has precision exactly `P`.
-template <prec_t P, typename T>
+template <prec_t P, std::unsigned_integral T>
 double encode(bool s, exp_t e, T c) {
     using FP = float_params<double>::params; // double precision
 
@@ -137,7 +137,7 @@ double encode(bool s, exp_t e, T c) {
 /// @param rm rounding mode
 /// @param overshiftp are we overshifting all digits?
 /// @return should we increment the significand?
-template <typename T>
+template <std::unsigned_integral T>
 inline bool round_increment(bool s, T c_kept, T c_lost, prec_t p_lost, RM rm, bool overshiftp) {
     MPFX_DEBUG_ASSERT(p_lost > 0, "we must have lost precision");
 
@@ -147,7 +147,7 @@ inline bool round_increment(bool s, T c_kept, T c_lost, prec_t p_lost, RM rm, bo
         case RM::RNA: {
             // nearest rounding modes - factor out common logic
             // Compute rounding bit: -1 (below halfway), 0 (exactly halfway), 1 (above halfway)
-            const T halfway = 1ULL << (p_lost - 1);
+            const T halfway = static_cast<T>(1) << (p_lost - 1);
             if (overshiftp || c_lost != halfway) [[likely]] {
                 // increment if above halfway and not overshifting
                 return !overshiftp && c_lost > halfway;
@@ -314,13 +314,13 @@ double round_finalize(bool s, exp_t e, T c, prec_t p, const std::optional<exp_t>
         // should we increment?
         if (round_increment(s, c_kept, c_lost, p_lost, rm, overshiftp)) {
             // size of the increment
-            const T one = 1ULL << p_lost;
+            const T one = static_cast<T>(1) << p_lost;
 
             // apply increment
             c_kept += one;
 
             // check if we need to carry
-            static constexpr T overflow_mask = 1ULL << P;
+            static constexpr T overflow_mask = static_cast<T>(1) << P;
             if (c_kept >= overflow_mask) [[unlikely]] {
                 // increment caused carry
                 e += 1;
@@ -406,11 +406,11 @@ double round(T m, exp_t exp, prec_t p, const std::optional<exp_t>& n, RM rm) {
         s = true;
         if (m == MIN_VAL) {
             // special decode to ensure 63 bits of precision
-            c = 1ULL << (PREC - 1);
+            c = static_cast<U>(1) << (PREC - 1);
             exp += 1;
         } else {
             // normal decode
-            c = static_cast<U>(std::abs(m));
+            c = static_cast<U>(-m);
         }
     } else {
         s = false;
