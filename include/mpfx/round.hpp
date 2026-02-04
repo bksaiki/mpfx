@@ -297,7 +297,7 @@ double round_finalize(bool s, exp_t e, T c, prec_t p, const std::optional<exp_t>
 
                 // need to check if we round to 2^emin (unbounded exponent)
                 // by rounding with a split that is one digit lower
-                const T one = 1ULL << (p_lost - 1); // dummy value to indicate oddness
+                const T one = static_cast<T>(1) << (p_lost - 1); // dummy value to indicate oddness
                 const T c_half_mask = bitmask<T>(p_lost - 1);
                 const T c_lost_half = c_lost & c_half_mask;
                 tiny_after = !round_increment(s, one, c_lost_half, p_lost - 1, rm, false);

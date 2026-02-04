@@ -112,5 +112,6 @@ inline int64_t to_fixed(double x, exp_t exp) {
     }
 
     return static_cast<int64_t>(std::ldexp(x, -exp));
+}
 
 } // end namespace mpfx
