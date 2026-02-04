@@ -101,52 +101,16 @@ inline std::tuple<bool, exp_t, typename float_params<T>::uint_t> unpack_float(T 
     return std::make_tuple(s, exp, c);
 }
 
+/// @brief Converts a floating-point number `x` to a integer `m` such
+/// that `x = m * 2^exp`.
+inline int64_t to_fixed(double x, exp_t exp) {
+    MPFX_DEBUG_ASSERT(std::isfinite(x), "unpack_float: input must be finite");
 
-/// @brief Converts a double-precision floating-point number `x`
-/// to a fixed-point representation `m * 2^exp`,
-/// where `m` is an `int64_t` integer significand
-/// and `exp` is a base-2 exponent.
-///
-/// @param x double-precision floating-point number
-/// @return a tuple `(m, exp)` representing `x` as `m * 2^exp`
-inline std::tuple<int64_t, exp_t> to_fixed(double x) {
-    using FP = float_params<double>::params; // double precision
-    MPFX_ASSERT(std::isfinite(x), "to_fixed: input must be finite");
-
-    // fast path: zero
+    // fast path: handle zero
     if (x == 0.0) {
-        return std::make_tuple(0, FP::EXPMIN);
+        return 0;
     }
 
-    // load floating-point data as integer
-    const uint64_t b = std::bit_cast<uint64_t>(x);
-    const bool s = (b >> (FP::N - 1)) != 0;
-    const uint64_t ebits = (b & FP::EMASK) >> FP::M;
-    const uint64_t mbits = b & FP::MMASK;
-
-    // decode (unsigned) floating-point data
-    exp_t exp; // unnormalized exponent
-    mant_t c;  // unsigned integer significand
-    if (ebits == 0) {
-        // subnormal
-        exp = FP::EXPMIN;
-        c = mbits;
-    } else {
-        // normal (assuming no infinity or NaN)
-        const exp_t e = static_cast<exp_t>(ebits) - FP::BIAS;
-        exp = e - static_cast<exp_t>(FP::M);
-        c = FP::IMPLICIT1 | mbits;
-    }
-
-    // minimize the precision of the significand
-    const auto tz = std::countr_zero(c);
-    c >>= tz;
-    exp += static_cast<exp_t>(tz);
-
-    // apply sign
-    const int64_t m = s ? -static_cast<int64_t>(c) : static_cast<int64_t>(c);
-
-    return std::make_tuple(m, exp);
-}
+    return static_cast<int64_t>(std::ldexp(x, -exp));
 
 } // end namespace mpfx
