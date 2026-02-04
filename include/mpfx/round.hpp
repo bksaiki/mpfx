@@ -87,23 +87,23 @@ double encode(bool s, exp_t e, T c) {
     // for encoding we need to ensure that we have 53 bits of precision
     // we cannot lose bits since we guarded against too much precision,
     // i.e., `c` has at most 63 bits of precision
+    uint64_t u;
     if constexpr (P > FP::P) {
         // `c` has more than 53 bits of precision
         static constexpr prec_t shift_p = P - FP::P;
         static constexpr T excess_mask = __bitmask<T, shift_p>::val;
         MPFX_DEBUG_ASSERT((c & excess_mask) == 0, "shifting off digits");
         c >>= shift_p;
+        u = static_cast<uint64_t>(c);
     } else if constexpr (P < FP::P) {
         // `c` has less than 53 bits of precision
         static constexpr prec_t shift_p = FP::P - P;
-        c <<= shift_p;
+        u = static_cast<uint64_t>(c);
+        u <<= shift_p;
+    } else {
+        // `c` has exactly 53 bits of precision
+        u = static_cast<uint64_t>(c);
     }
-
-    // significand should now have exactly 53 bits of precision
-    MPFX_DEBUG_ASSERT(c == 0 || std::bit_width(c) == FP::P, "invalid significand precision");
-
-    // cast significand to uint64_t for encoding
-    const uint64_t u = static_cast<uint64_t>(c);
 
     // encode exponent and mantissa
     uint64_t ebits, mbits;
