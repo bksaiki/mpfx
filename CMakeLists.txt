@@ -158,8 +158,8 @@ install(TARGETS ${PROJECT_NAME}
     RUNTIME DESTINATION bin
 )
 
-install(DIRECTORY include/mpfx
-    DESTINATION include
+install(DIRECTORY include/
+    DESTINATION include/
 )
 
 # Tests

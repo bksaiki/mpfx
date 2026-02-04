@@ -80,8 +80,8 @@ namespace {
 /// @brief Encodes the result of rounding as a double-precision
 /// floating-point number. This is an optimized version of `make_float<double>`
 /// which assumes that `c` is either 0 or has precision exactly `P`.
-template <prec_t P>
-double encode(bool s, exp_t e, mant_t c) {
+template <prec_t P, typename T>
+double encode(bool s, exp_t e, T c) {
     using FP = float_params<double>::params; // double precision
 
     // for encoding we need to ensure that we have 53 bits of precision
@@ -90,7 +90,7 @@ double encode(bool s, exp_t e, mant_t c) {
     if constexpr (P > FP::P) {
         // `c` has more than 53 bits of precision
         static constexpr prec_t shift_p = P - FP::P;
-        static constexpr mant_t excess_mask = __bitmask<mant_t, shift_p>::val;
+        static constexpr T excess_mask = __bitmask<T, shift_p>::val;
         MPFX_DEBUG_ASSERT((c & excess_mask) == 0, "shifting off digits");
         c >>= shift_p;
     } else if constexpr (P < FP::P) {
@@ -98,6 +98,12 @@ double encode(bool s, exp_t e, mant_t c) {
         static constexpr prec_t shift_p = FP::P - P;
         c <<= shift_p;
     }
+
+    // significand should now have exactly 53 bits of precision
+    MPFX_DEBUG_ASSERT(c == 0 || std::bit_width(c) == FP::P, "invalid significand precision");
+
+    // cast significand to uint64_t for encoding
+    const uint64_t u = static_cast<uint64_t>(c);
 
     // encode exponent and mantissa
     uint64_t ebits, mbits;
@@ -109,11 +115,11 @@ double encode(bool s, exp_t e, mant_t c) {
         // subnormal result
         const exp_t shift = FP::EMIN - e;
         ebits = 0;
-        mbits = c >> shift;
+        mbits = u >> shift;
     } else {
         // normal result - most common case
         ebits = e + FP::BIAS;
-        mbits = c & FP::MMASK;
+        mbits = u & FP::MMASK;
     }
 
     // repack the result
@@ -123,6 +129,7 @@ double encode(bool s, exp_t e, mant_t c) {
 }
 
 /// @brief Should we increment to round?
+/// @tparam T the type of the significand
 /// @param s sign
 /// @param c_kept current significand
 /// @param c_lost lost significand bits
@@ -130,7 +137,8 @@ double encode(bool s, exp_t e, mant_t c) {
 /// @param rm rounding mode
 /// @param overshiftp are we overshifting all digits?
 /// @return should we increment the significand?
-inline bool round_increment(bool s, mant_t c_kept, mant_t c_lost, prec_t p_lost, RM rm, bool overshiftp) {
+template <typename T>
+inline bool round_increment(bool s, T c_kept, T c_lost, prec_t p_lost, RM rm, bool overshiftp) {
     MPFX_DEBUG_ASSERT(p_lost > 0, "we must have lost precision");
 
     // case split on rounding mode
@@ -139,7 +147,7 @@ inline bool round_increment(bool s, mant_t c_kept, mant_t c_lost, prec_t p_lost,
         case RM::RNA: {
             // nearest rounding modes - factor out common logic
             // Compute rounding bit: -1 (below halfway), 0 (exactly halfway), 1 (above halfway)
-            const mant_t halfway = 1ULL << (p_lost - 1);
+            const T halfway = 1ULL << (p_lost - 1);
             if (overshiftp || c_lost != halfway) [[likely]] {
                 // increment if above halfway and not overshifting
                 return !overshiftp && c_lost > halfway;
@@ -189,10 +197,10 @@ inline bool round_increment(bool s, mant_t c_kept, mant_t c_lost, prec_t p_lost,
 /// @param n optional minimum normalized exponent for subnormalization
 /// @param rm rounding mode
 /// @return the correctly rounded result as a `double`
-template <prec_t P, flag_mask_t FlagMask = Flags::ALL_FLAGS>
-double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<exp_t>& n, RM rm) {
+template <prec_t P, std::unsigned_integral T, flag_mask_t FlagMask>
+double round_finalize(bool s, exp_t e, T c, prec_t p, const std::optional<exp_t>& n, RM rm) {
     using FP = float_params<double>::params; // double precision
-    static constexpr size_t MAX_C_WIDTH = 8 * sizeof(mant_t) - 1; // -1 to tolerate a carry
+    static constexpr size_t MAX_C_WIDTH = 8 * sizeof(T) - 1; // -1 to tolerate a carry
     MPFX_STATIC_ASSERT(P <= MAX_C_WIDTH, "mantissa is too large");
 
     // which flags to check
@@ -245,7 +253,7 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
                 // check for the easy case of tininess after rounding
 
                 // significand of the largest representable value in a binade
-                const mant_t cutoff = bitmask<mant_t>(p) << (P - p);
+                const T cutoff = bitmask<T>(p) << (P - p);
 
                 // tiny if we are below: 1.111...111 x 2^(emin-1)
                 // if not set, we are in the hard case and need to check
@@ -269,14 +277,14 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
 
     // extract the lost digits
     const prec_t p_lost = p_kept < P ? P - p_kept : 0;
-    const mant_t c_mask = bitmask<mant_t>(p_lost);
-    const mant_t c_lost = c & c_mask;
+    const T c_mask = bitmask<T>(p_lost);
+    const T c_lost = c & c_mask;
 
     // check if we rounded off any significant digits
     if (c_lost != 0) {
         // slow path: inexact result
         MPFX_DEBUG_ASSERT(p_lost > 0, "we must have lost precision");
-        mant_t c_kept = c & ~c_mask; // mask off lost digits
+        T c_kept = c & ~c_mask; // mask off lost digits
 
         // check the hard case for tiny after rounding
         if constexpr (CHECK_TINY_AFTER || CHECK_UNDERFLOW_AFTER) {
@@ -289,9 +297,9 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
 
                 // need to check if we round to 2^emin (unbounded exponent)
                 // by rounding with a split that is one digit lower
-                const mant_t one = 1ULL << (p_lost - 1); // dummy value to indicate oddness
-                const mant_t c_half_mask = bitmask<mant_t>(p_lost - 1);
-                const mant_t c_lost_half = c_lost & c_half_mask;
+                const T one = 1ULL << (p_lost - 1); // dummy value to indicate oddness
+                const T c_half_mask = bitmask<T>(p_lost - 1);
+                const T c_lost_half = c_lost & c_half_mask;
                 tiny_after = !round_increment(s, one, c_lost_half, p_lost - 1, rm, false);
 
                 // set tiny after rounding flag if tiny before
@@ -306,13 +314,13 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
         // should we increment?
         if (round_increment(s, c_kept, c_lost, p_lost, rm, overshiftp)) {
             // size of the increment
-            const mant_t one = 1ULL << p_lost;
+            const T one = 1ULL << p_lost;
 
             // apply increment
             c_kept += one;
 
             // check if we need to carry
-            static constexpr mant_t overflow_mask = 1ULL << P;
+            static constexpr T overflow_mask = 1ULL << P;
             if (c_kept >= overflow_mask) [[unlikely]] {
                 // increment caused carry
                 e += 1;
@@ -354,9 +362,6 @@ double round_finalize(bool s, exp_t e, mant_t c, prec_t p, const std::optional<e
 /// @brief Optimized rounding to round a double-precision floating-point number
 /// to a double-precision floating-point number with target precision `p`
 /// and first unrepresentable digit `n`.
-///
-/// Assumes that the argument has at least p + 2 bits of precision,
-/// where p is the target precision.
 template<flag_mask_t FlagMask = Flags::ALL_FLAGS>
 double round(double x, prec_t p, const std::optional<exp_t>& n, RM rm) {
     using FP = float_params<double>::params; // double precision
@@ -382,23 +387,21 @@ double round(double x, prec_t p, const std::optional<exp_t>& n, RM rm) {
     const exp_t e = exp + static_cast<exp_t>(FP::P - 1);
 
     // finalize rounding (mantissa has precision `FP::P`)
-    return round_finalize<FP::P, FlagMask>(s, e, c, p, n, rm);
+    return round_finalize<FP::P, mant_t, FlagMask>(s, e, c, p, n, rm);
 }
 
 /// @brief Optimized rounding to round `m * 2^exp`
 /// to a double-precision floating-point number with target precision `p`
 /// and first unrepresentable digit `n`.
-///
-/// Assumes that the argument has at least p + 2 bits of precision,
-/// where p is the target precision.
-template<flag_mask_t FlagMask = Flags::ALL_FLAGS>
-double round(int64_t m, exp_t exp, prec_t p, const std::optional<exp_t>& n, RM rm) {
-    static constexpr int64_t MIN_VAL = std::numeric_limits<int64_t>::min();
-    static constexpr prec_t PREC = 63;
+template<std::signed_integral T, flag_mask_t FlagMask = Flags::ALL_FLAGS>
+double round(T m, exp_t exp, prec_t p, const std::optional<exp_t>& n, RM rm) {
+    static constexpr T MIN_VAL = std::numeric_limits<T>::min();
+    static constexpr prec_t PREC = 8 * sizeof(T) - 1; // -1 due to conversion to unsigned
+    using U = std::make_unsigned_t<T>;
 
     // Decode `m` into sign-magnitude
     bool s;
-    mant_t c;
+    U c;
     if (m < 0) {
         s = true;
         if (m == MIN_VAL) {
@@ -407,15 +410,14 @@ double round(int64_t m, exp_t exp, prec_t p, const std::optional<exp_t>& n, RM r
             exp += 1;
         } else {
             // normal decode
-            c = static_cast<mant_t>(std::abs(m));
+            c = static_cast<U>(std::abs(m));
         }
     } else {
         s = false;
-        c = static_cast<mant_t>(m);
+        c = static_cast<U>(m);
     }
 
-    // we may have less precision than expected
-    // guaranteed to have at most 63 bits
+    // normalize the input
     const auto lz = PREC - std::bit_width(c);
     c <<= lz;
     exp -= lz;
@@ -424,7 +426,7 @@ double round(int64_t m, exp_t exp, prec_t p, const std::optional<exp_t>& n, RM r
     const exp_t e = exp + (PREC - 1);
 
     // finalize rounding (mantissa has precision 63)
-    return round_finalize<PREC, FlagMask>(s, e, c, p, n, rm);
+    return round_finalize<PREC, U, FlagMask>(s, e, c, p, n, rm);
 }
 
 } // namespace mpfx
