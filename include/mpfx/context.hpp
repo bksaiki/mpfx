@@ -140,7 +140,7 @@ public:
     /// @return the rounded number
     template <flag_mask_t FlagMask = Flags::ALL_FLAGS>
     double round(int64_t m, exp_t exp) const {
-        double x = mpfx::round<FlagMask>(m, exp, p_, n_, rm_);
+        double x = mpfx::round<int64_t, FlagMask>(m, exp, p_, n_, rm_);
         return round_overflow<FlagMask>(x);
     }
 };
