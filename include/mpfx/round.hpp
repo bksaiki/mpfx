@@ -91,7 +91,7 @@ double encode(bool s, exp_t e, T c) {
     if constexpr (P > FP::P) {
         // `c` has more than 53 bits of precision
         static constexpr prec_t shift_p = P - FP::P;
-        static constexpr T excess_mask = __bitmask<T, shift_p>::val;
+        static constexpr T excess_mask = bitmask<T>(shift_p);
         MPFX_DEBUG_ASSERT((c & excess_mask) == 0, "shifting off digits");
         c >>= shift_p;
         u = static_cast<uint64_t>(c);
