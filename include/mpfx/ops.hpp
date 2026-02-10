@@ -80,6 +80,11 @@ double add(double x, double y, const Context& ctx) {
         const double r = engine_fp::add(x, y, ctx.round_prec());
         // use context to round
         result = ctx.round<FlagMask>(r);
+    } else if constexpr (E == Engine::FP_EXACT) {
+        // compute result using exact engine
+        const double r = x + y;
+        // use context to round
+        result = ctx.round<FlagMask>(r);
     } else if constexpr (E == Engine::SOFTFLOAT) {
         // compute result using SoftFloat engine
         const double r = engine_sf::add(x, y, ctx.round_prec());
@@ -95,6 +100,8 @@ double add(double x, double y, const Context& ctx) {
         const double r = engine_eft::add(x, y, ctx.round_prec());
         // use context to round
         result = ctx.round<FlagMask>(r);
+    } else {
+        MPFX_STATIC_ASSERT(false, "Unsupported engine");
     }
 
     // check for special values to raise status flags
@@ -127,6 +134,11 @@ double sub(double x, double y, const Context& ctx) {
         const double r = engine_fp::sub(x, y, ctx.round_prec());
         // use context to round
         result = ctx.round<FlagMask>(r);
+    } else if constexpr (E == Engine::FP_EXACT) {
+        // compute result using exact engine
+        const double r = x - y;
+        // use context to round
+        result = ctx.round<FlagMask>(r);
     } else if constexpr (E == Engine::SOFTFLOAT) {
         // compute result using SoftFloat engine
         const double r = engine_sf::sub(x, y, ctx.round_prec());
@@ -142,6 +154,8 @@ double sub(double x, double y, const Context& ctx) {
         const double r = engine_eft::sub(x, y, ctx.round_prec());
         // use context to round
         result = ctx.round<FlagMask>(r);
+    } else {
+        MPFX_STATIC_ASSERT(false, "Unsupported engine");
     }
 
     // check for special values to raise status flags
@@ -208,6 +222,8 @@ double mul(double x, double y, const Context& ctx) {
         const double r = engine_eft::mul(x, y, p);
         // use context to round
         result = ctx.round<FlagMask>(r);
+    } else {
+        MPFX_STATIC_ASSERT(false, "Unsupported engine");
     }
 
     // check for special values to raise status flags
@@ -255,6 +271,8 @@ double div(double x, double y, const Context& ctx) {
         const double r = engine_eft::div(x, y, ctx.round_prec());
         // use context to round
         result = ctx.round<FlagMask>(r);
+    } else {
+        MPFX_STATIC_ASSERT(false, "Unsupported engine");
     }
 
     // check for special values to raise status flags
@@ -308,6 +326,8 @@ double sqrt(double x, const Context& ctx) {
         const double r = engine_eft::sqrt(x, ctx.round_prec());
         // use context to round
         result = ctx.round<FlagMask>(r);
+    } else {
+        MPFX_STATIC_ASSERT(false, "Unsupported engine");
     }
 
     // check for special values to raise status flags
@@ -356,6 +376,8 @@ double fma(double x, double y, double z, const Context& ctx) {
         const double r = engine_eft::fma(x, y, z, ctx.round_prec());
         // use context to round
         result = ctx.round<FlagMask>(r);
+    } else {
+        MPFX_STATIC_ASSERT(false, "Unsupported engine");
     }
 
     // check for special values to raise status flags
