@@ -23,7 +23,6 @@ ROWS = [
 ]
 
 COLUMNS = [
-    'native',
     'mpfr',
     'softfloat',
     'floppyfloat',
@@ -32,6 +31,9 @@ COLUMNS = [
     'mpfx_ffloat',
     'mpfx_eft'
 ]
+
+ROUNDING_MODES = ['rne', 'rtp', 'rtn', 'rtz']
+FORMATS = ['fp16', 'fp32']
 
 NAMES = {
     'mpfr': 'MPFR',
@@ -48,28 +50,36 @@ NAMES = {
 class TaskConfig:
     task_id: int
     cache_dir: Path
+    rounding_mode: str
+    format: str
 
 
 def benchmark_task(config: TaskConfig):
     # run benchmark and capture output to parse as CSV
-    print(f"Running benchmark task {config.task_id}...")
+    print(f"Running benchmark task {config.task_id} (rm={config.rounding_mode}, format={config.format})...")
     benchmark_path = BUILD_DIR / "benchmark" / "ops"
-    p = subprocess.run([str(benchmark_path)], capture_output=True, check=True)
+    p = subprocess.run(
+        [str(benchmark_path), "--rm", config.rounding_mode, "--format", config.format],
+        capture_output=True, check=True
+    )
     output = p.stdout.decode()
 
-    # parse data as CSV
+    # parse data as CSV, skipping comment lines
     data: list[list[str]] = []
-    for row in csv.reader(output.splitlines()):
+    for line in output.splitlines():
+        if line.startswith('#'):
+            continue
+        row = next(csv.reader([line]))
         data.append([datum.strip() for datum in row])
 
     # write raw output to cache
-    cache_file = config.cache_dir / f"raw_task_{config.task_id}.csv"
+    cache_file = config.cache_dir / f"raw_task_{config.task_id}_rm_{config.rounding_mode}_fmt_{config.format}.csv"
     with cache_file.open('w', newline='') as f:
         writer = csv.writer(f)
         writer.writerows(data)
 
-    print(f"Completed benchmark task {config.task_id}.")
-    return data
+    print(f"Completed benchmark task {config.task_id} (rm={config.rounding_mode}, format={config.format}).")
+    return (config.rounding_mode, config.format, data)
 
 
 def run_benchmarks(output_dir: Path, iterations: int, threads: int):
@@ -88,139 +98,164 @@ def run_benchmarks(output_dir: Path, iterations: int, threads: int):
     results = []
     with ProcessPoolExecutor(max_workers=threads) as executor:
         configs: list[TaskConfig] = []
-        for i in range(iterations):
-            configs.append(TaskConfig(i, cache_dir))
+        task_id = 0
+        for rm in ROUNDING_MODES:
+            for fmt in FORMATS:
+                for i in range(iterations):
+                    configs.append(TaskConfig(task_id, cache_dir, rm, fmt))
+                    task_id += 1
 
         futures = [executor.submit(benchmark_task, config) for config in configs]
         for future in futures:
             results.append(future.result())
 
-    # group first by operation, then by header1..N
+    # group first by (rounding_mode, format, operation), then by header
     # discard the header row
-    aggregated: dict[str, dict[str, list[float]]] = {}
-    for result in results:
+    aggregated: dict[tuple[str, str, str], dict[str, list[float]]] = {}
+    for rm, fmt, result in results:
         headers = result[0]
-        assert headers[1:] == COLUMNS, f"unexpected benchmark output columns: {headers[1:]} != {COLUMNS}"
+        assert headers == ['op'] + COLUMNS, f"unexpected benchmark output columns: {headers} != {['op'] + COLUMNS}"
         for row in result[1:]:
             op_name = row[0]
-            if op_name not in aggregated:
+            key = (rm, fmt, op_name)
+            if key not in aggregated:
                 table: dict[str, list[float]] = {}
                 for header, time in zip(headers[1:], row[1:]):
                     table[header] = [float(time)]
-                aggregated[op_name] = table
+                aggregated[key] = table
             else:
                 for header, time in zip(headers[1:], row[1:]):
-                    aggregated[op_name][header].append(float(time))
+                    aggregated[key][header].append(float(time))
 
     print("Aggregated benchmark results.")
 
     # compute average time
-    average_runtimes: dict[tuple[str, str], float] = {}
-    for op_name, table in aggregated.items():
+    average_runtimes: dict[tuple[str, str, str, str], float] = {}
+    for (rm, fmt, op_name), table in aggregated.items():
         for header, times in table.items():
             avg_time = sum(times) / len(times)
-            average_runtimes[(op_name, header)] = avg_time
+            average_runtimes[(rm, fmt, op_name, header)] = avg_time
 
     # write average runtimes to pickle
     avg_runtime_file = cache_dir / "average_runtimes.pkl"
     with avg_runtime_file.open('wb') as f:
         pickle.dump(average_runtimes, f)
 
-    # compute average overhead over native
-    average_overheads: dict[tuple[str, str], float] = {}
-    for op_name, table in aggregated.items():
-        baseline_times = table['native']
+    # compute average speedup relative to SoftFloat
+    average_speedups: dict[tuple[str, str, str, str], float] = {}
+    for (rm, fmt, op_name), table in aggregated.items():
+        baseline_times = table['softfloat']
         baseline = sum(baseline_times) / len(baseline_times)
         for header, times in table.items():
-            if header != 'native':
-                avg_time = sum(times) / len(times)
-                overhead = avg_time / baseline
-                average_overheads[(op_name, header)] = overhead
+            avg_time = sum(times) / len(times)
+            speedup = baseline / avg_time  # speedup, not overhead
+            average_speedups[(rm, fmt, op_name, header)] = speedup
 
-    # write average overheads to pickle
-    avg_overhead_file = cache_dir / "average_overheads.pkl"
-    with avg_overhead_file.open('wb') as f:
-        pickle.dump(average_overheads, f)
+    # write average speedups to pickle
+    avg_speedup_file = cache_dir / "average_speedups.pkl"
+    with avg_speedup_file.open('wb') as f:
+        pickle.dump(average_speedups, f)
 
 
-def report_overhead(output_dir: Path):
-    # load average overheads from pickle
-    avg_overhead_file = output_dir / "cache" / "average_overheads.pkl"
-    with avg_overhead_file.open('rb') as f:
-        average_overheads: dict[tuple[str, str], float] = pickle.load(f)
+def report_speedup(output_dir: Path):
+    # load average speedups from pickle
+    avg_speedup_file = output_dir / "cache" / "average_speedups.pkl"
+    with avg_speedup_file.open('rb') as f:
+        average_speedups: dict[tuple[str, str, str, str], float] = pickle.load(f)
 
-    print(f'{"op":<12}', end="")
-    for col in COLUMNS[1:]:
-        print(f"{col:>12}", end="")
+    # Create 2D table: rows are (implementation, format), columns are operations
+    # Each cell contains 4 numbers for the 4 rounding modes
+    
+    # Print header with operation names
+    print(f"\n{'Implementation':<25} {'Format':<8}", end="")
+    for op in ROWS:
+        print(f"{op:>28}", end="")
     print()
+    
+    # Print subheader with rounding mode labels
+    print(f"{'':>33}", end="")
+    for _ in ROWS:
+        print(f"{'rne':>7}{'rtp':>7}{'rtn':>7}{'rtz':>7}", end="")
+    print()
+    print("=" * (33 + 28 * len(ROWS)))
+    
+    # Print rows for each (implementation, format) combination
+    for col in COLUMNS:
+        for fmt in FORMATS:
+            # Get display name for implementation
+            display_name = NAMES.get(col, col)
+            print(f"{display_name:<25} {fmt:<8}", end="")
+            
+            # Print speedups for each operation and rounding mode
+            for op in ROWS:
+                for rm in ROUNDING_MODES:
+                    speedup = average_speedups[(rm, fmt, op, col)]
+                    print(f"{speedup:>7.2f}", end="")
+            print()
 
-    for row in ROWS:
-        print(f"{row:<12}", end="")
-        for col in COLUMNS[1:]:
-            overhead = average_overheads[(row, col)]
-            print(f'{overhead:>12.2f}', end="")
-        print()
-
-def plot_overhead(output_dir: Path):
-    # load average overheads from pickle
-    avg_overhead_file = output_dir / "cache" / "average_overheads.pkl"
-    with avg_overhead_file.open('rb') as f:
-        average_overheads: dict[tuple[str, str], float] = pickle.load(f)
+def plot_speedup(output_dir: Path):
+    # load average speedups from pickle
+    avg_speedup_file = output_dir / "cache" / "average_speedups.pkl"
+    with avg_speedup_file.open('rb') as f:
+        average_speedups: dict[tuple[str, str, str, str], float] = pickle.load(f)
 
     plot_dir = output_dir / "plots"
     plot_dir.mkdir(exist_ok=True)
 
     # Create a color gradient from light to dark blue
-    n_colors = len(COLUMNS[1:])
+    n_colors = len(COLUMNS)
     colors = plt.cm.Blues(np.linspace(0.4, 0.9, n_colors))
     
-    # Create a single figure with subplots for all operations
-    fig, axes = plt.subplots(2, 3, figsize=(18, 10))
-    axes = axes.flatten()
-    
-    # Create a bar chart for each operation
-    for idx, op in enumerate(ROWS):
-        ax: plt.Axes = axes[idx]
-        
-        # Get overheads for this operation
-        overheads = [average_overheads[(op, col)] for col in COLUMNS[1:]]
-        
-        # Create bar chart with gradient colors
-        x = np.arange(len(COLUMNS[1:]))
-        bars = ax.bar(x, overheads, color=colors, edgecolor='black', linewidth=0.5)
-        
-        # Customize plot
-        ax.set_title(f'{op.upper()}', fontsize=12)
-        ax.set_xticks([])  # Remove x-axis ticks and labels
-        ax.grid(axis='y', alpha=0.3, linestyle='--')
-        
-        # Add value labels on top of bars
-        for bar in bars:
-            height = bar.get_height()
-            ax.text(bar.get_x() + bar.get_width()/2., height,
-                   f'{height:.1f}x',
-                   ha='center', va='bottom', fontsize=10)
-    
-    # Add common y-label for all subplots
-    fig.supylabel('Overhead (relative to native)', fontsize=12)
-    
-    # Create legend with implementation names
-    legend_patches = [plt.Rectangle((0, 0), 1, 1, fc=colors[i], edgecolor='black', linewidth=0.5) 
-                     for i in range(len(COLUMNS[1:]))]
-    legend_labels = [NAMES[col] for col in COLUMNS[1:]]
-    fig.legend(legend_patches, legend_labels, loc='center', 
-              bbox_to_anchor=(0.5, -0.02), ncol=len(COLUMNS[1:]), frameon=True,
-              fontsize=12, edgecolor='black')
-    
-    plt.suptitle('Performance Overhead by Operation', fontsize=16)
-    plt.tight_layout(rect=[0.015, 0.03, 1, 0.96])
-    
-    # Save combined plot
-    plot_file = plot_dir / "overhead.png"
-    plt.savefig(plot_file, dpi=150, bbox_inches='tight')
-    plt.close()
-    
-    print(f"Saved plot: {plot_file}")
+    # Create separate plots for each configuration
+    for rm in ROUNDING_MODES:
+        for fmt in FORMATS:
+            fig, axes = plt.subplots(2, 3, figsize=(18, 10))
+            axes = axes.flatten()
+            
+            # Create a bar chart for each operation
+            for idx, op in enumerate(ROWS):
+                ax: plt.Axes = axes[idx]
+                
+                # Get speedups for this operation and configuration
+                speedups = [average_speedups[(rm, fmt, op, col)] for col in COLUMNS]
+                
+                # Create bar chart with gradient colors
+                x = np.arange(len(COLUMNS))
+                bars = ax.bar(x, speedups, color=colors, edgecolor='black', linewidth=0.5)
+                
+                # Customize plot
+                ax.set_title(f'{op.upper()}', fontsize=12)
+                ax.set_xticks([])  # Remove x-axis ticks and labels
+                ax.grid(axis='y', alpha=0.3, linestyle='--')
+                ax.axhline(y=1.0, color='r', linestyle='--', linewidth=1, alpha=0.7, label='SoftFloat baseline')
+                
+                # Add value labels on top of bars
+                for bar in bars:
+                    height = bar.get_height()
+                    ax.text(bar.get_x() + bar.get_width()/2., height,
+                           f'{height:.2f}x',
+                           ha='center', va='bottom', fontsize=9)
+            
+            # Add common y-label for all subplots
+            fig.supylabel('Speedup (relative to SoftFloat)', fontsize=12)
+            
+            # Create legend with implementation names
+            legend_patches = [plt.Rectangle((0, 0), 1, 1, fc=colors[i], edgecolor='black', linewidth=0.5) 
+                             for i in range(len(COLUMNS))]
+            legend_labels = [NAMES.get(col, col) for col in COLUMNS]
+            fig.legend(legend_patches, legend_labels, loc='center', 
+                      bbox_to_anchor=(0.5, -0.02), ncol=len(COLUMNS), frameon=True,
+                      fontsize=12, edgecolor='black')
+            
+            plt.suptitle(f'Performance Speedup by Operation (rm={rm}, format={fmt})', fontsize=16)
+            plt.tight_layout(rect=[0.015, 0.03, 1, 0.96])
+            
+            # Save plot for this configuration
+            plot_file = plot_dir / f"speedup_rm_{rm}_fmt_{fmt}.png"
+            plt.savefig(plot_file, dpi=150, bbox_inches='tight')
+            plt.close()
+            
+            print(f"Saved plot: {plot_file}")
 
 
 
@@ -257,8 +292,8 @@ if __name__ == "__main__":
         # Run benchmarks
         run_benchmarks(output_dir, iterations, threads)
 
-    # Report overheads
-    report_overhead(output_dir)
+    # Report speedups
+    report_speedup(output_dir)
 
-    # Plot overhead
-    plot_overhead(output_dir)
+    # Plot speedup
+    plot_speedup(output_dir)
