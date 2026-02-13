@@ -5,6 +5,7 @@
 
 #include <bit>
 #include <chrono>
+#include <cstring>
 #include <iomanip>
 #include <iostream>
 #include <concepts>
@@ -83,7 +84,6 @@ static void generate_inputs(std::vector<T>& vals, const mpfx::Context& ctx, doub
 
 static void report_header() {
     std::cout << "op"
-        << ", native"
         << ", mpfr"
         << ", softfloat"
         << ", floppyfloat"
@@ -96,7 +96,6 @@ static void report_header() {
 
 static void report_result(
     const std::string& op_name,
-    double duration_ref,
     double duration_mpfr,
     double duration_softfloat,
     double duration_floppyfloat,
@@ -106,7 +105,6 @@ static void report_result(
     double duration_mpfx_eft
 ) {
     std::cout << op_name
-        << ", " << static_cast<size_t>(duration_ref)
         << ", " << static_cast<size_t>(duration_mpfr)
         << ", " << static_cast<size_t>(duration_softfloat)
         << ", " << static_cast<size_t>(duration_floppyfloat)
@@ -115,97 +113,6 @@ static void report_result(
         << ", " << static_cast<size_t>(duration_mpfx_ffloat)
         << ", " << static_cast<size_t>(duration_mpfx_eft)
         << "\n";
-}
-
-///////////////////////////////////////////////////////////
-// Reference implementations
-
-template <OP1 O>
-double reference_op1(const std::vector<double>& x_vals, size_t N) {
-    // Quantize to FP32
-    std::vector<float> x_fl(N);
-    for (size_t i = 0; i < N; i++) {
-        x_fl[i] = static_cast<float>(x_vals[i]);
-    }
-
-    // Time and compute
-    auto start = std::chrono::steady_clock::now();
-
-    volatile float result = 0.0f;
-    for (size_t i = 0; i < x_vals.size(); i++) {
-        if constexpr (O == OP1::SQRT) {
-            result = std::sqrt(x_fl[i]);
-        } else {
-            MPFX_STATIC_ASSERT(false, "unsupported OP1");
-        }
-    }
-
-    auto end = std::chrono::steady_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
-    (void) result; // prevent unused variable warning
-    return duration;
-}
-
-template <OP2 O>
-double reference_op2(const std::vector<double>& x_vals, const std::vector<double>& y_vals, size_t N) {
-    // Quantize to FP32
-    std::vector<float> x_fl(N);
-    std::vector<float> y_fl(N);
-    for (size_t i = 0; i < N; i++) {
-        x_fl[i] = static_cast<float>(x_vals[i]);
-        y_fl[i] = static_cast<float>(y_vals[i]);
-    }
-
-    // Time and compute
-    auto start = std::chrono::steady_clock::now();
-    volatile float result = 0.0f;
-    for (size_t i = 0; i < x_vals.size(); i++) {
-        if constexpr (O == OP2::ADD) {
-            result = x_fl[i] + y_fl[i];
-        } else if constexpr (O == OP2::SUB) {
-            result = x_fl[i] - y_fl[i];
-        } else if constexpr (O == OP2::MUL) {
-            result = x_fl[i] * y_fl[i];
-        } else if constexpr (O == OP2::DIV) {
-            result = x_fl[i] / y_fl[i];
-        } else {
-            MPFX_STATIC_ASSERT(false, "unsupported OP2");
-        }
-    }
-
-    auto end = std::chrono::steady_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
-    (void) result; // prevent unused variable warning
-    return duration;
-}
-
-template <OP3 O>
-double reference_op3(const std::vector<double>& x_vals, const std::vector<double>& y_vals, const std::vector<double>& z_vals, size_t N) {
-    // Quantize to FP32
-    std::vector<float> x_fl(N);
-    std::vector<float> y_fl(N);
-    std::vector<float> z_fl(N);
-    for (size_t i = 0; i < N; i++) {
-        x_fl[i] = static_cast<float>(x_vals[i]);
-        y_fl[i] = static_cast<float>(y_vals[i]);
-        z_fl[i] = static_cast<float>(z_vals[i]);
-    }
-
-    // Time and compute
-    auto start = std::chrono::steady_clock::now();
-    volatile float result = 0.0f;
-    for (size_t i = 0; i < x_vals.size(); i++) {
-        if constexpr (O == OP3::FMA) {
-            result = std::fma(x_fl[i], y_fl[i], z_fl[i]);
-        } else {
-            MPFX_STATIC_ASSERT(false, "unsupported OP3");
-        }
-    }
-
-    auto end = std::chrono::steady_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
-    (void) result; // prevent unused variable warning
-    return duration;
 }
 
 ////////////////////////////////////////////////////////////
@@ -364,14 +271,14 @@ static uint8_t cvt_rm_softfloat(mpfx::RM rm) {
     switch (rm) {
         case mpfx::RM::RNE:
             return softfloat_round_near_even;
+        case mpfx::RM::RNA:
+            return softfloat_round_near_maxMag;
         case mpfx::RM::RTP:
             return softfloat_round_max;
         case mpfx::RM::RTN:
             return softfloat_round_min;
         case mpfx::RM::RTZ:
             return softfloat_round_minMag;
-        case mpfx::RM::RAZ:
-            return softfloat_round_near_maxMag;
         default:
             throw std::runtime_error("invalid rounding mode");
     }
@@ -495,14 +402,14 @@ static Vfpu::RoundingMode cvt_rm_floppyfloat(mpfx::RM rm) {
     switch (rm) {
         case mpfx::RM::RNE:
             return Vfpu::kRoundTiesToEven;
+        case mpfx::RM::RNA:
+            return Vfpu::kRoundTiesToAway;
         case mpfx::RM::RTP:
             return Vfpu::kRoundTowardPositive;
         case mpfx::RM::RTN:
             return Vfpu::kRoundTowardNegative;
         case mpfx::RM::RTZ:
             return Vfpu::kRoundTowardZero;
-        case mpfx::RM::RAZ:
-            return Vfpu::kRoundTiesToAway;
         default:
             throw std::runtime_error("invalid rounding mode");
     }
@@ -687,9 +594,6 @@ void benchmark_op1(
         generate_inputs(x_vals, input_ctx);
     }
 
-    // Run reference
-    const double duration_ref = reference_op1<O>(x_vals, num_inputs);
-
     // Run MPFR
     const double duration_mpfr = mpfr_op1<O>(x_vals, output_ctx, num_inputs);
 
@@ -708,7 +612,7 @@ void benchmark_op1(
     // Report result
     report_result(
         to_string(O),
-        duration_ref, duration_mpfr, duration_softfloat, duration_floppyfloat,
+        duration_mpfr, duration_softfloat, duration_floppyfloat,
         duration_mpfx_rto, duration_mpfx_softfloat, duration_mpfx_ffloat, duration_mpfx_eft
     );
 }
@@ -724,9 +628,6 @@ void benchmark_op2(
     std::vector<double> y_vals(num_inputs);
     generate_inputs(x_vals, input_ctx);
     generate_inputs(y_vals, input_ctx);
-
-    // Run reference
-    const double duration_ref = reference_op2<O>(x_vals, y_vals, num_inputs);
 
     // Run MPFR
     const double duration_mpfr = mpfr_op2<O>(x_vals, y_vals, output_ctx, num_inputs);
@@ -746,7 +647,7 @@ void benchmark_op2(
     // Report result
     report_result(
         to_string(O),
-        duration_ref, duration_mpfr, duration_softfloat, duration_floppyfloat,
+        duration_mpfr, duration_softfloat, duration_floppyfloat,
         duration_mpfx_rto, duration_mpfx_softfloat, duration_mpfx_ffloat, duration_mpfx_eft
     );
 }
@@ -764,9 +665,6 @@ void benchmark_op3(
     generate_inputs(x_vals, input_ctx);
     generate_inputs(y_vals, input_ctx);
     generate_inputs(z_vals, input_ctx);
-
-    // Run reference
-    const double duration_ref = reference_op3<O>(x_vals, y_vals, z_vals, num_inputs);
 
     // Run MPFR
     const double duration_mpfr = mpfr_op3<O>(x_vals, y_vals, z_vals, output_ctx, num_inputs);
@@ -786,17 +684,81 @@ void benchmark_op3(
     // Report result
     report_result(
         to_string(O),
-        duration_ref, duration_mpfr, duration_softfloat, duration_floppyfloat,
+        duration_mpfr, duration_softfloat, duration_floppyfloat,
         duration_mpfx_rto, duration_mpfx_softfloat, duration_mpfx_ffloat, duration_mpfx_eft
     );
 }
 
+static void print_usage(const char* prog_name) {
+    std::cerr << "Usage: " << prog_name << " [options]\n"
+              << "Options:\n"
+              << "  --rm <mode>      Rounding mode: rne, rtp, rtn, rtz (default: rne)\n"
+              << "  --format <fmt>   Output format: fp16, fp32 (default: fp16)\n"
+              << "  --help           Show this help message\n";
+}
 
-int main() {
-    const auto INPUT_CTX = mpfx::IEEE754Context(8, 32, mpfx::RM::RNE);
-    const auto OUTPUT_CTX = mpfx::IEEE754Context(8, 16, mpfx::RM::RNE);
+static mpfx::RM parse_rounding_mode(const char* rm_str) {
+    if (std::strcmp(rm_str, "rne") == 0) return mpfx::RM::RNE;
+    if (std::strcmp(rm_str, "rtp") == 0) return mpfx::RM::RTP;
+    if (std::strcmp(rm_str, "rtn") == 0) return mpfx::RM::RTN;
+    if (std::strcmp(rm_str, "rtz") == 0) return mpfx::RM::RTZ;
+    throw std::runtime_error(std::string("Invalid rounding mode: ") + rm_str);
+}
+
+int main(int argc, char** argv) {
+    // Default parameters
+    mpfx::RM rounding_mode = mpfx::RM::RNE;
+    bool use_fp32 = false;
+    
+    // Parse command line arguments
+    for (int i = 1; i < argc; ++i) {
+        if (std::strcmp(argv[i], "--rm") == 0) {
+            if (i + 1 >= argc) {
+                std::cerr << "Error: --rm requires an argument\n";
+                print_usage(argv[0]);
+                return 1;
+            }
+            try {
+                rounding_mode = parse_rounding_mode(argv[++i]);
+            } catch (const std::exception& e) {
+                std::cerr << "Error: " << e.what() << "\n";
+                print_usage(argv[0]);
+                return 1;
+            }
+        } else if (std::strcmp(argv[i], "--format") == 0) {
+            if (i + 1 >= argc) {
+                std::cerr << "Error: --format requires an argument\n";
+                print_usage(argv[0]);
+                return 1;
+            }
+            ++i;
+            if (std::strcmp(argv[i], "fp32") == 0) {
+                use_fp32 = true;
+            } else if (std::strcmp(argv[i], "fp16") == 0) {
+                use_fp32 = false;
+            } else {
+                std::cerr << "Error: Invalid format '" << argv[i] << "' (must be fp16 or fp32)\n";
+                print_usage(argv[0]);
+                return 1;
+            }
+        } else if (std::strcmp(argv[i], "--help") == 0) {
+            print_usage(argv[0]);
+            return 0;
+        } else {
+            std::cerr << "Error: Unknown option '" << argv[i] << "'\n";
+            print_usage(argv[0]);
+            return 1;
+        }
+    }
+
+    const auto INPUT_CTX = mpfx::IEEE754Context(8, 32, rounding_mode);
+    const auto OUTPUT_CTX = use_fp32 
+        ? mpfx::IEEE754Context(8, 32, rounding_mode)
+        : mpfx::IEEE754Context(5, 16, rounding_mode);
     constexpr size_t N = 10'000'000;
 
+    std::cout << "# Configuration: format=" << (use_fp32 ? "fp32" : "fp16") 
+              << ", rounding_mode=" << static_cast<int>(rounding_mode) << "\n";
     report_header();
     benchmark_op2<OP2::ADD>(INPUT_CTX, OUTPUT_CTX, N);
     benchmark_op2<OP2::SUB>(INPUT_CTX, OUTPUT_CTX, N);
