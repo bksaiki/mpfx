@@ -7,7 +7,6 @@
 #include "engine_ff.hpp"
 #include "flags.hpp"
 #include "engine_fp.hpp"
-#include "engine_fpe.hpp"
 #include "engine_fx.hpp"
 #include "engine_sf.hpp"
 #include "round.hpp"
@@ -191,7 +190,7 @@ double mul(double x, double y, const Context& ctx) {
         result = ctx.round<FlagMask>(r);
     } else if constexpr (E == Engine::FP_EXACT) {
         // compute result using exact engine
-        const double r = engine_fpe::mul(x, y, p);
+        const double r = x * y;
         // use context to round
         result = ctx.round<FlagMask>(r);
     } else if constexpr (E == Engine::FIXED) {
@@ -203,7 +202,7 @@ double mul(double x, double y, const Context& ctx) {
             result = ctx.round<FlagMask>(m, exp);
         } else {
             // special value so use exact engine
-            const double r = engine_fpe::mul(x, y, p);
+            const double r = x * y;
             // use context to round
             result = ctx.round<FlagMask>(r);
         }
