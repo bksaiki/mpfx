@@ -99,27 +99,36 @@ inline std::tuple<T, T> two_sum(T x, T y) {
     return fast_two_sum(a, b);
 }
 
-template <std::floating_point T>
+// Sorted: if true, assumes |a[0]| >= |a[1]| (uses fast_two_sum for first pair)
+template <bool Sorted = false, std::floating_point T>
 inline void distill3(std::array<T, 3>& a) {
-    const auto [s0, e0] = two_sum(a[0], a[1]);
+    const auto [s0, e0] = Sorted ? fast_two_sum(a[0], a[1]) : two_sum(a[0], a[1]);
     const auto [s1, e1] = two_sum(s0, a[2]);
     const auto [b1, b2] = two_sum(e0, e1);
-    a = { s1, b1, b2 };
+
+    // branchless conditional swap to ensure |a[0]| >= |a[1]|
+    const bool swap = std::fabs(s1) < std::fabs(b1);
+    const T hi = swap ? b1 : s1;
+    const T lo = swap ? s1 : b1;
+    a = { hi, lo, b2 };
 }
 
-template <std::floating_point T>
+// Sorted: if true, assumes |a[0]| >= |a[1]| and |a[2]| >= |a[3]| (uses fast_two_sum for both initial pairs)
+template <bool Sorted = false, std::floating_point T>
 inline void distill4(std::array<T, 4>& a) {
-    const auto [s0, e0] = two_sum(a[0], a[1]);
-    const auto [s1, e1] = two_sum(a[2], a[3]);
+    const auto [s0, e0] = Sorted ? fast_two_sum(a[0], a[1]) : two_sum(a[0], a[1]);
+    const auto [s1, e1] = Sorted ? fast_two_sum(a[2], a[3]) : two_sum(a[2], a[3]);
     const auto [s2, e2] = two_sum(s0, s1);
     const auto [t0, f0] = two_sum(e0, e1);
     const auto [t1, f1] = two_sum(t0, e2);
 
-    MPFX_ASSERT(std::fabs(s2) >= std::fabs(t1), "distill4: invariant 1 violated");
-    MPFX_ASSERT(std::fabs(t1) >= std::fabs(f1), "distill4: invariant 2 violated");
-    MPFX_ASSERT(std::fabs(f1) >= std::fabs(f0), "distill4: invariant 3 violated");
+    // branchless conditional swap to ensure |a[2]| >= |a[3]|
+    const bool swap = std::fabs(f1) < std::fabs(f0);
+    const T lo = swap ? f1 : f0;
+    const T hi = swap ? f0 : f1;
 
-    a = { s2, t1, f1, f0 };
+    // outputs are in sorted order: |s2| >= |t1| >= |hi| >= |lo|
+    a = { s2, t1, hi, lo };
 }
 
 // Computes the error-free transformation of the sum of three numbers.
@@ -128,8 +137,8 @@ template <std::floating_point T>
 std::tuple<T, T> eft_add3(T x0, T x1, T x2) {
     // perform 2 rounds of distillation
     std::array<T, 3> a = { x0, x1, x2 };
-    distill3(a);
-    distill3(a);
+    distill3<false>(a);
+    distill3<true>(a);
     return { a[0], a[1] };
 }
 
@@ -139,9 +148,9 @@ template <std::floating_point T>
 std::tuple<T, T> eft_add4(T x0, T x1, T x2, T x3) {
     // perform 3 rounds of distillation
     std::array<T, 4> a = { x0, x1, x2, x3 };
-    distill4(a);
-    distill4(a);
-    distill4(a);
+    distill4<false>(a);
+    distill4<true>(a);
+    distill4<true>(a);
     return { a[0], a[1] };
 }
 
