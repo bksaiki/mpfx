@@ -268,7 +268,6 @@ double mx_dot_prod_ref(const std::vector<mx_block_t>& a_blocks, const std::vecto
     return result;
 }
 
-template <int P = 24>
 double mx_dot_prod_sf(const std::vector<mx_block_t>& a_blocks, const std::vector<mx_block_t>& b_blocks) {
     MPFX_ASSERT(a_blocks.size() == b_blocks.size(), "block size mismatch");
 
@@ -337,17 +336,27 @@ double mx_dot_prod_impl(const std::vector<mx_block_t>& a_blocks, const std::vect
                 prod += a * b;
             }
 
-            // break up prod into 3 parts to convert to double without rounding
+            // break up prod into 3 parts so that we can convert to double without rounding
             // can only use at most 53 digits for each part
-            static constexpr mpfx::int128_t MASK = (mpfx::int128_t(1) << 53) - 1;
-            const mpfx::int128_t prod_hi = prod >> 106;
-            const mpfx::int128_t prod_md = prod >> 53 & MASK;
-            const mpfx::int128_t prod_lo = prod & MASK;
+            // decompose absolute value to avoid cancellation in EFT
+            const double sgn = prod < 0 ? -1.0 : 1.0;
+            const mpfx::uint128_t abs_prod = prod < 0
+                ? static_cast<mpfx::uint128_t>(-prod)
+                : static_cast<mpfx::uint128_t>(prod);
+            static constexpr mpfx::uint128_t MASK = (mpfx::uint128_t(1) << 53) - 1;
+            const mpfx::uint128_t prod_hi = abs_prod >> 106;
+            const mpfx::uint128_t prod_md = (abs_prod >> 53) & MASK;
+            const mpfx::uint128_t prod_lo = abs_prod & MASK;
+
+            // convert to double with scaling (apply sign to all parts uniformly)
+            double scaled_hi = sgn * static_cast<double>(prod_hi);
+            double scaled_md = sgn * static_cast<double>(prod_md);
+            double scaled_lo = sgn * static_cast<double>(prod_lo);
 
             // scale the product
-            const double scaled_hi = static_cast<double>(prod_hi) * std::ldexp(1.0, scale + A_EXPMIN + B_EXPMIN + 106);
-            const double scaled_md = static_cast<double>(prod_md) * std::ldexp(1.0, scale + A_EXPMIN + B_EXPMIN + 53);
-            const double scaled_lo = static_cast<double>(prod_lo) * std::ldexp(1.0, scale + A_EXPMIN + B_EXPMIN);
+            scaled_hi *= std::ldexp(1.0, scale + A_EXPMIN + B_EXPMIN + 106);
+            scaled_md *= std::ldexp(1.0, scale + A_EXPMIN + B_EXPMIN + 53);
+            scaled_lo *= std::ldexp(1.0, scale + A_EXPMIN + B_EXPMIN);
 
             // perform `scale * prod + result` using error-free transformations
             const auto [sum_hi, sum_md] = eft_add4(scaled_hi, scaled_md, scaled_lo, result);
@@ -361,13 +370,22 @@ double mx_dot_prod_impl(const std::vector<mx_block_t>& a_blocks, const std::vect
                 prod += a * b;
             }
 
-            // break up `prod` into high and low parts to convert to double without rounding
-            const int64_t prod_hi = prod >> 32;
-            const int64_t prod_lo = prod & 0xFFFFFFFF;
+            // break up prod into 2 parts so that we can convert to double without rounding
+            // decompose absolute value to avoid cancellation in EFT
+            const double sgn = prod < 0 ? -1.0 : 1.0;
+            const uint64_t abs_prod = prod < 0
+                ? static_cast<uint64_t>(-prod)
+                : static_cast<uint64_t>(prod);
+            const uint64_t prod_hi = abs_prod >> 32;
+            const uint64_t prod_lo = abs_prod & 0xFFFFFFFF;
+
+            // convert to double with scaling (apply sign to both parts uniformly)
+            double scaled_hi = sgn * static_cast<double>(prod_hi);
+            double scaled_lo = sgn * static_cast<double>(prod_lo);
 
             // scale the product
-            const double scaled_hi = static_cast<double>(prod_hi) * std::ldexp(1.0, scale + A_EXPMIN + B_EXPMIN + 32);
-            const double scaled_lo = static_cast<double>(prod_lo) * std::ldexp(1.0, scale + A_EXPMIN + B_EXPMIN);
+            scaled_hi *= std::ldexp(1.0, scale + A_EXPMIN + B_EXPMIN + 32);
+            scaled_lo *= std::ldexp(1.0, scale + A_EXPMIN + B_EXPMIN);
 
             // perform `scale * prod + result` using error-free transformations
             const auto [sum_hi, sum_lo] = eft_add3(scaled_hi, scaled_lo, result);
