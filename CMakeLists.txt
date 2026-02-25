@@ -71,7 +71,7 @@ set(FLOPPYFLOAT_BUILD_EXAMPLES OFF CACHE BOOL "Disable FloppyFloat examples" FOR
 FetchContent_Declare(
   floppyfloat
   GIT_REPOSITORY https://github.com/bksaiki/FloppyFloat.git
-  GIT_TAG        main
+  GIT_TAG        c++20
 )
 FetchContent_MakeAvailable(floppyfloat)
 

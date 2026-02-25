@@ -319,6 +319,7 @@ int main(int argc, char* argv[]) {
     time_dot_prod<MX::E5M2, MX::E5M2>(x_vals, y_vals);
     time_dot_prod<MX::E5M2, MX::E4M3>(x_vals, y_vals);
     time_dot_prod<MX::E4M3, MX::E4M3>(x_vals, y_vals);
+    time_dot_prod<MX::E3M2, MX::E3M2>(x_vals, y_vals);
     time_dot_prod<MX::E2M3, MX::E2M3>(x_vals, y_vals);
     time_dot_prod<MX::E2M1, MX::E2M1>(x_vals, y_vals);
 
