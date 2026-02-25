@@ -32,14 +32,14 @@ COLUMNS = [
     'mpfx_eft'
 ]
 
-ROUNDING_MODES = ['rne', 'rtp', 'rtn', 'rtz']
-FORMATS = ['fp16', 'fp32']
+ROUNDING_MODES = ['rne', 'rtp', 'rtz']
+FORMATS = ['fp32', 'fp16']
 
 NAMES = {
     'mpfr': 'MPFR',
     'softfloat': 'SoftFloat',
     'floppyfloat': 'FloppyFloat',
-    'mpfx_rto': 'MPFX (RTO)',
+    'mpfx_rto': 'MPFX (CPU)',
     'mpfx_sfloat': 'MPFX (SoftFloat)',
     'mpfx_ffloat': 'MPFX (FloppyFloat)',
     'mpfx_eft': 'MPFX (EFT)',
@@ -91,20 +91,23 @@ def run_benchmarks(output_dir: Path, iterations: int, threads: int):
     cache_dir.mkdir(exist_ok=True)
     plot_dir.mkdir(exist_ok=True)
 
+    # tasks
+    configs: list[TaskConfig] = []
+    task_id = 0
+    for rm in ROUNDING_MODES:
+        for fmt in FORMATS:
+            for _ in range(iterations):
+                configs.append(TaskConfig(task_id, cache_dir, rm, fmt))
+                task_id += 1
+
+    print(f"Running {len(configs)} benchmark tasks with {threads} parallel processes...")
+
     # run benchmarks in parallel
     # output is
     #  header0, header1, header2, ...
     #  op_name, time1, time2, ...
     results = []
     with ProcessPoolExecutor(max_workers=threads) as executor:
-        configs: list[TaskConfig] = []
-        task_id = 0
-        for rm in ROUNDING_MODES:
-            for fmt in FORMATS:
-                for i in range(iterations):
-                    configs.append(TaskConfig(task_id, cache_dir, rm, fmt))
-                    task_id += 1
-
         futures = [executor.submit(benchmark_task, config) for config in configs]
         for future in futures:
             results.append(future.result())
@@ -163,35 +166,89 @@ def report_speedup(output_dir: Path):
     with avg_speedup_file.open('rb') as f:
         average_speedups: dict[tuple[str, str, str, str], float] = pickle.load(f)
 
-    # Create 2D table: rows are (implementation, format), columns are operations
-    # Each cell contains 4 numbers for the 4 rounding modes
+    # Create 2D table: rows are (operation, format), columns are implementations
+    # Each cell contains 3 numbers for the 3 rounding modes formatted as "val1/val2/val3"
     
-    # Print header with operation names
-    print(f"\n{'Implementation':<25} {'Format':<8}", end="")
-    for op in ROWS:
-        print(f"{op:>28}", end="")
-    print()
+    # Print column suptitle
+    suptitle = "Implementations (RNE/RTP/RTZ)"
+    total_impl_width = 23 * len(COLUMNS)
+    title_padding = (total_impl_width - len(suptitle)) // 2
+    print(f"\n{'':>15}{' ' * title_padding}{suptitle}")
     
-    # Print subheader with rounding mode labels
-    print(f"{'':>33}", end="")
-    for _ in ROWS:
-        print(f"{'rne':>7}{'rtp':>7}{'rtn':>7}{'rtz':>7}", end="")
-    print()
-    print("=" * (33 + 28 * len(ROWS)))
-    
-    # Print rows for each (implementation, format) combination
+    # Print header with implementation names
+    print(f"{'Operation':<15}", end="")
     for col in COLUMNS:
-        for fmt in FORMATS:
-            # Get display name for implementation
-            display_name = NAMES.get(col, col)
-            print(f"{display_name:<25} {fmt:<8}", end="")
+        display_name = NAMES.get(col, col)
+        print(f"{display_name:>23}", end="")
+    print()
+    print("=" * (15 + 23 * len(COLUMNS)))
+    
+    # Print rows for each (format, operation) combination
+    for idx, fmt in enumerate(FORMATS):
+        for op in ROWS:
+            row_label = f"{op} ({fmt.upper()})"
+            print(f"{row_label:<15}", end="")
             
-            # Print speedups for each operation and rounding mode
-            for op in ROWS:
-                for rm in ROUNDING_MODES:
-                    speedup = average_speedups[(rm, fmt, op, col)]
-                    print(f"{speedup:>7.2f}", end="")
+            # Print speedups for each implementation
+            for col in COLUMNS:
+                speedup_values = [average_speedups[(rm, fmt, op, col)] for rm in ROUNDING_MODES]
+                speedup_str = "/".join(f"{v:.2f}" for v in speedup_values)
+                print(f"{speedup_str:>23}", end="")
             print()
+        
+        # Add separator line between formats (except after the last one)
+        if idx < len(FORMATS) - 1:
+            print("-" * (15 + 23 * len(COLUMNS)))
+
+def export_speedup_latex(output_dir: Path):
+    # load average speedups from pickle
+    avg_speedup_file = output_dir / "cache" / "average_speedups.pkl"
+    with avg_speedup_file.open('rb') as f:
+        average_speedups: dict[tuple[str, str, str, str], float] = pickle.load(f)
+    
+    # Find maximum speedup for each (op, format, rounding_mode) combination
+    max_speedups: dict[tuple[str, str, str], dict[str, float]] = {}
+    for op in ROWS:
+        for fmt in FORMATS:
+            for rm in ROUNDING_MODES:
+                key = (op, fmt, rm)
+                max_val = max(average_speedups[(rm, fmt, op, col)] for col in COLUMNS)
+                max_speedups[key] = {'max': max_val}
+    
+    # Write LaTeX table to file
+    latex_file = output_dir / "speedup_table.tex"
+    with latex_file.open('w') as f:
+        # Write table rows
+        for idx, fmt in enumerate(FORMATS):
+            for op in ROWS:
+                row_label = f"{op} ({fmt.upper()})"
+                f.write(f"{row_label}")
+                
+                # Write speedup values for each implementation
+                for col in COLUMNS:
+                    f.write(" & ")
+                    
+                    # Build cell content with bold formatting for maximum values
+                    cell_values = []
+                    for rm in ROUNDING_MODES:
+                        speedup = average_speedups[(rm, fmt, op, col)]
+                        max_val = max_speedups[(op, fmt, rm)]['max']
+
+                        # Bold if this is the maximum speedup
+                        if speedup == max_val:
+                            cell_values.append(f"\\textbf{{{speedup:.2f}}}")
+                        else:
+                            cell_values.append(f"{speedup:.2f}")
+                    
+                    f.write("/".join(cell_values))
+                
+                f.write(" \\\\\n")
+            
+            # Add separator between formats
+            if idx < len(FORMATS) - 1:
+                f.write("\\hline\n")
+    
+    print(f"Saved LaTeX table: {latex_file}")
 
 def plot_speedup(output_dir: Path):
     # load average speedups from pickle
@@ -291,9 +348,12 @@ if __name__ == "__main__":
 
         # Run benchmarks
         run_benchmarks(output_dir, iterations, threads)
-
+    
     # Report speedups
     report_speedup(output_dir)
+    
+    # Export speedup table to LaTeX
+    export_speedup_latex(output_dir)
 
     # Plot speedup
     plot_speedup(output_dir)

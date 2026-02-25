@@ -10,6 +10,7 @@
 #include <iostream>
 #include <concepts>
 #include <random>
+#include <stdfloat>
 #include <vector>
 
 #include <mpfr.h>
@@ -288,111 +289,205 @@ template <OP1 O>
 double softfloat_op1(const std::vector<double>& x_vals, const mpfx::Context& ctx, size_t N) {
     softfloat_roundingMode = cvt_rm_softfloat(ctx.rm());
 
-    // Quantize to FP32
-    std::vector<float> x_fl(N);
-    for (size_t i = 0; i < N; i++) {
-        x_fl[i] = static_cast<float>(x_vals[i]);
-    }
+    if (ctx.prec() == 24) {
+        // FP32
 
-    volatile float result = 0.0f;
-    auto start = std::chrono::steady_clock::now();
-    
-    for (size_t i = 0; i < N; i++) {
-        float32_t x;
-        x.v = std::bit_cast<uint32_t>(x_fl[i]);
-        
-        if constexpr (O == OP1::SQRT) {
-            float32_t r = f32_sqrt(x);
-            result = std::bit_cast<float>(r.v);
-        } else {
-            MPFX_STATIC_ASSERT(false, "unsupported OP1");
+        // quanize to FP32
+        std::vector<float> x_fl(N);
+        for (size_t i = 0; i < N; i++) {
+            x_fl[i] = static_cast<float>(x_vals[i]);
         }
+
+        volatile uint32_t result = 0;
+        auto start = std::chrono::steady_clock::now();
+
+        for (size_t i = 0; i < N; i++) {
+            if constexpr (O == OP1::SQRT) {
+                result = f32_sqrt({std::bit_cast<uint32_t>(x_fl[i])}).v;
+            } else {
+                MPFX_STATIC_ASSERT(false, "unsupported OP1");
+            }
+        }
+
+        auto end = std::chrono::steady_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+        (void) result;
+        return duration;
+    } else if (ctx.prec() == 11) {
+        // FP16
+
+        // quantize to FP16
+        std::vector<std::float16_t> x_fl(N);
+        for (size_t i = 0; i < N; i++) {
+            x_fl[i] = static_cast<std::float16_t>(x_vals[i]);
+        }
+
+        volatile uint16_t result = 0;
+        auto start = std::chrono::steady_clock::now();
+
+        for (size_t i = 0; i < N; i++) {
+            if constexpr (O == OP1::SQRT) {
+                result = f16_sqrt({static_cast<uint16_t>(x_fl[i])}).v;
+            } else {
+                MPFX_STATIC_ASSERT(false, "unsupported OP1");
+            }
+        }
+
+        auto end = std::chrono::steady_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+        (void) result;
+
+        return duration;
+    } else {
+        throw std::runtime_error("unsupported precision for SoftFloat");
     }
-    
-    auto end = std::chrono::steady_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
-    (void) result;
-    return duration;
 }
 
 template <OP2 O>
 double softfloat_op2(const std::vector<double>& x_vals, const std::vector<double>& y_vals, const mpfx::Context& ctx, size_t N) {
     softfloat_roundingMode = cvt_rm_softfloat(ctx.rm());
 
-    // Quantize to FP32
-    std::vector<float> x_fl(N);
-    std::vector<float> y_fl(N);
-    for (size_t i = 0; i < N; i++) {
-        x_fl[i] = static_cast<float>(x_vals[i]);
-        y_fl[i] = static_cast<float>(y_vals[i]);
-    }
+    if (ctx.prec() == 24) {
+        // FP32
 
-    volatile float result = 0.0f;
-    auto start = std::chrono::steady_clock::now();
-    
-    for (size_t i = 0; i < N; i++) {
-        float32_t x, y;
-        x.v = std::bit_cast<uint32_t>(x_fl[i]);
-        y.v = std::bit_cast<uint32_t>(y_fl[i]);
-        
-        if constexpr (O == OP2::ADD) {
-            float32_t r = f32_add(x, y);
-            result = std::bit_cast<float>(r.v);
-        } else if constexpr (O == OP2::SUB) {
-            float32_t r = f32_sub(x, y);
-            result = std::bit_cast<float>(r.v);
-        } else if constexpr (O == OP2::MUL) {
-            float32_t r = f32_mul(x, y);
-            result = std::bit_cast<float>(r.v);
-        } else if constexpr (O == OP2::DIV) {
-            float32_t r = f32_div(x, y);
-            result = std::bit_cast<float>(r.v);
-        } else {
-            MPFX_STATIC_ASSERT(false, "unsupported OP2");
+        // Quantize to FP32
+        std::vector<float> x_fl(N);
+        std::vector<float> y_fl(N);
+        for (size_t i = 0; i < N; i++) {
+            x_fl[i] = static_cast<float>(x_vals[i]);
+            y_fl[i] = static_cast<float>(y_vals[i]);
         }
+
+        volatile uint32_t result = 0;
+        auto start = std::chrono::steady_clock::now();
+
+        for (size_t i = 0; i < N; i++) {
+            float32_t x, y;
+            x.v = std::bit_cast<uint32_t>(x_fl[i]);
+            y.v = std::bit_cast<uint32_t>(y_fl[i]);
+
+            if constexpr (O == OP2::ADD) {
+                result = f32_add(x, y).v;
+            } else if constexpr (O == OP2::SUB) {
+                result = f32_sub(x, y).v;
+            } else if constexpr (O == OP2::MUL) {
+                result = f32_mul(x, y).v;
+            } else if constexpr (O == OP2::DIV) {
+                result = f32_div(x, y).v;
+            } else {
+                MPFX_STATIC_ASSERT(false, "unsupported OP2");
+            }
+        }
+        
+        auto end = std::chrono::steady_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+        (void) result;
+        return duration;
+    } else if (ctx.prec() == 11) {
+        // FP16
+
+        // Quantize to FP16
+        std::vector<std::float16_t> x_fl(N);
+        std::vector<std::float16_t> y_fl(N);
+        for (size_t i = 0; i < N; i++) {
+            x_fl[i] = static_cast<std::float16_t>(x_vals[i]);
+            y_fl[i] = static_cast<std::float16_t>(y_vals[i]);
+        }
+
+        volatile uint16_t result = 0;
+        auto start = std::chrono::steady_clock::now();
+        
+        for (size_t i = 0; i < N; i++) {
+            if constexpr (O == OP2::ADD) {
+                result = f16_add({static_cast<uint16_t>(x_fl[i])}, {static_cast<uint16_t>(y_fl[i])}).v;
+            } else if constexpr (O == OP2::SUB) {
+                result = f16_sub({static_cast<uint16_t>(x_fl[i])}, {static_cast<uint16_t>(y_fl[i])}).v;
+            } else if constexpr (O == OP2::MUL) {
+                result = f16_mul({static_cast<uint16_t>(x_fl[i])}, {static_cast<uint16_t>(y_fl[i])}).v;
+            } else if constexpr (O == OP2::DIV) {
+                result = f16_div({static_cast<uint16_t>(x_fl[i])}, {static_cast<uint16_t>(y_fl[i])}).v;
+            } else {
+                MPFX_STATIC_ASSERT(false, "unsupported OP2");
+            }
+        }
+        
+        auto end = std::chrono::steady_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+        (void) result;
+        return duration;
+    } else {
+        throw std::runtime_error("unsupported precision for SoftFloat");
     }
-    
-    auto end = std::chrono::steady_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
-    (void) result;
-    return duration;
 }
 
 template <OP3 O>
 double softfloat_op3(const std::vector<double>& x_vals, const std::vector<double>& y_vals, const std::vector<double>& z_vals, const mpfx::Context& ctx, size_t N) {
     softfloat_roundingMode = cvt_rm_softfloat(ctx.rm());
 
-    // Quantize to FP32
-    std::vector<float> x_fl(N);
-    std::vector<float> y_fl(N);
-    std::vector<float> z_fl(N);
-    for (size_t i = 0; i < N; i++) {
-        x_fl[i] = static_cast<float>(x_vals[i]);
-        y_fl[i] = static_cast<float>(y_vals[i]);
-        z_fl[i] = static_cast<float>(z_vals[i]);
-    }
+    if (ctx.prec() == 24) {
+        // FP32
 
-    volatile float result = 0.0f;
-    auto start = std::chrono::steady_clock::now();
-    
-    for (size_t i = 0; i < N; i++) {
-        float32_t x, y, z;
-        x.v = std::bit_cast<uint32_t>(x_fl[i]);
-        y.v = std::bit_cast<uint32_t>(y_fl[i]);
-        z.v = std::bit_cast<uint32_t>(z_fl[i]);
-        
-        if constexpr (O == OP3::FMA) {
-            float32_t r = f32_mulAdd(x, y, z);
-            result = std::bit_cast<float>(r.v);
-        } else {
-            MPFX_STATIC_ASSERT(false, "unsupported OP3");
+        // Quantize to FP32
+        std::vector<float> x_fl(N);
+        std::vector<float> y_fl(N);
+        std::vector<float> z_fl(N);
+        for (size_t i = 0; i < N; i++) {
+            x_fl[i] = static_cast<float>(x_vals[i]);
+            y_fl[i] = static_cast<float>(y_vals[i]);
+            z_fl[i] = static_cast<float>(z_vals[i]);
         }
+
+        volatile uint32_t result = 0;
+        auto start = std::chrono::steady_clock::now();
+        
+        for (size_t i = 0; i < N; i++) {
+            float32_t x, y, z;
+            x.v = std::bit_cast<uint32_t>(x_fl[i]);
+            y.v = std::bit_cast<uint32_t>(y_fl[i]);
+            z.v = std::bit_cast<uint32_t>(z_fl[i]);
+
+            if constexpr (O == OP3::FMA) {
+                result = f32_mulAdd(x, y, z).v;
+            } else {
+                MPFX_STATIC_ASSERT(false, "unsupported OP3");
+            }
+        }
+        
+        auto end = std::chrono::steady_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+        (void) result;
+        return duration;
+    } else if (ctx.prec() == 11) {
+        // FP16
+
+        // Quantize to FP16
+        std::vector<std::float16_t> x_fl(N);
+        std::vector<std::float16_t> y_fl(N);
+        std::vector<std::float16_t> z_fl(N);
+        for (size_t i = 0; i < N; i++) {
+            x_fl[i] = static_cast<std::float16_t>(x_vals[i]);
+            y_fl[i] = static_cast<std::float16_t>(y_vals[i]);
+            z_fl[i] = static_cast<std::float16_t>(z_vals[i]);
+        }
+
+        volatile uint16_t result = 0;
+        auto start = std::chrono::steady_clock::now();
+        
+        for (size_t i = 0; i < N; i++) {
+            if constexpr (O == OP3::FMA) {
+                result = f16_mulAdd({static_cast<uint16_t>(x_fl[i])}, {static_cast<uint16_t>(y_fl[i])}, {static_cast<uint16_t>(z_fl[i])}).v;
+            } else {
+                MPFX_STATIC_ASSERT(false, "unsupported OP3");
+            }
+        }
+        
+        auto end = std::chrono::steady_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+        (void) result;
+        return duration;
+    } else {
+        throw std::runtime_error("unsupported precision for SoftFloat");
     }
-    
-    auto end = std::chrono::steady_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
-    (void) result;
-    return duration;
 }
 
 ////////////////////////////////////////////////////////////
@@ -420,27 +515,57 @@ double floppyfloat_op1(const std::vector<double>& x_vals, const mpfx::Context& c
     FloppyFloat ff;
     ff.rounding_mode = cvt_rm_floppyfloat(ctx.rm());
 
-    // Quantize to FP32
-    std::vector<float> x_fl(N);
-    for (size_t i = 0; i < N; i++) {
-        x_fl[i] = static_cast<float>(x_vals[i]);
-    }
+    if (ctx.prec() == 24) {
+        // FP32
 
-    volatile float result = 0.0f;
-    auto start = std::chrono::steady_clock::now();
-    
-    for (size_t i = 0; i < N; i++) {
-        if constexpr (O == OP1::SQRT) {
-            result = ff.Sqrt(x_fl[i]);
-        } else {
-            MPFX_STATIC_ASSERT(false, "unsupported OP1");
+        // Quantize to FP32
+        std::vector<float> x_fl(N);
+        for (size_t i = 0; i < N; i++) {
+            x_fl[i] = static_cast<float>(x_vals[i]);
         }
+
+        volatile float result = 0.0f;
+        auto start = std::chrono::steady_clock::now();
+        
+        for (size_t i = 0; i < N; i++) {
+            if constexpr (O == OP1::SQRT) {
+                result = ff.Sqrt(x_fl[i]);
+            } else {
+                MPFX_STATIC_ASSERT(false, "unsupported OP1");
+            }
+        }
+        
+        auto end = std::chrono::steady_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+        (void) result;
+        return duration;
+    } else if (ctx.prec() == 11) {
+        // FP16
+
+        // Quantize to FP16
+        std::vector<std::float16_t> x_fl(N);
+        for (size_t i = 0; i < N; i++) {
+            x_fl[i] = static_cast<std::float16_t>(x_vals[i]);
+        }
+
+        volatile std::float16_t result = static_cast<std::float16_t>(0.0f);
+        auto start = std::chrono::steady_clock::now();
+        
+        for (size_t i = 0; i < N; i++) {
+            if constexpr (O == OP1::SQRT) {
+                result = ff.Sqrt(x_fl[i]);
+            } else {
+                MPFX_STATIC_ASSERT(false, "unsupported OP1");
+            }
+        }
+        
+        auto end = std::chrono::steady_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+        (void) result;
+        return duration;
+    } else {
+        throw std::runtime_error("unsupported precision for FloppyFloat");
     }
-    
-    auto end = std::chrono::steady_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
-    (void) result;
-    return duration;
 }
 
 template <OP2 O>
@@ -448,35 +573,73 @@ double floppyfloat_op2(const std::vector<double>& x_vals, const std::vector<doub
     FloppyFloat ff;
     ff.rounding_mode = cvt_rm_floppyfloat(ctx.rm());
 
-    // Quantize to FP32
-    std::vector<float> x_fl(N);
-    std::vector<float> y_fl(N);
-    for (size_t i = 0; i < N; i++) {
-        x_fl[i] = static_cast<float>(x_vals[i]);
-        y_fl[i] = static_cast<float>(y_vals[i]);
-    }
+    if (ctx.prec() == 24) {
+        // FP32
 
-    volatile float result = 0.0f;
-    auto start = std::chrono::steady_clock::now();
-    
-    for (size_t i = 0; i < N; i++) {
-        if constexpr (O == OP2::ADD) {
-            result = ff.Add(x_fl[i], y_fl[i]);
-        } else if constexpr (O == OP2::SUB) {
-            result = ff.Sub(x_fl[i], y_fl[i]);
-        } else if constexpr (O == OP2::MUL) {
-            result = ff.Mul(x_fl[i], y_fl[i]);
-        } else if constexpr (O == OP2::DIV) {
-            result = ff.Div(x_fl[i], y_fl[i]);
-        } else {
-            MPFX_STATIC_ASSERT(false, "unsupported OP2");
+        // Quantize to FP32
+        std::vector<float> x_fl(N);
+        std::vector<float> y_fl(N);
+        for (size_t i = 0; i < N; i++) {
+            x_fl[i] = static_cast<float>(x_vals[i]);
+            y_fl[i] = static_cast<float>(y_vals[i]);
         }
+
+        volatile float result = 0.0f;
+        auto start = std::chrono::steady_clock::now();
+        
+        for (size_t i = 0; i < N; i++) {
+            if constexpr (O == OP2::ADD) {
+                result = ff.Add(x_fl[i], y_fl[i]);
+            } else if constexpr (O == OP2::SUB) {
+                result = ff.Sub(x_fl[i], y_fl[i]);
+            } else if constexpr (O == OP2::MUL) {
+                result = ff.Mul(x_fl[i], y_fl[i]);
+            } else if constexpr (O == OP2::DIV) {
+                result = ff.Div(x_fl[i], y_fl[i]);
+            } else {
+                MPFX_STATIC_ASSERT(false, "unsupported OP2");
+            }
+        }
+        
+        auto end = std::chrono::steady_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+        (void) result;
+        return duration;
+    } else if (ctx.prec() == 11) {
+        // FP16
+
+        // Quantize to FP16
+        std::vector<std::float16_t> x_fl(N);
+        std::vector<std::float16_t> y_fl(N);
+        for (size_t i = 0; i < N; i++) {
+            x_fl[i] = static_cast<std::float16_t>(x_vals[i]);
+            y_fl[i] = static_cast<std::float16_t>(y_vals[i]);
+        }
+
+        volatile std::float16_t result = static_cast<std::float16_t>(0.0f);
+        auto start = std::chrono::steady_clock::now();
+        
+        for (size_t i = 0; i < N; i++) {
+            if constexpr (O == OP2::ADD) {
+                result = ff.Add(x_fl[i], y_fl[i]);
+            } else if constexpr (O == OP2::SUB) {
+                result = ff.Sub(x_fl[i], y_fl[i]);
+            } else if constexpr (O == OP2::MUL) {
+                result = ff.Mul(x_fl[i], y_fl[i]);
+            } else if constexpr (O == OP2::DIV) {
+                result = ff.Div(x_fl[i], y_fl[i]);
+            } else {
+                MPFX_STATIC_ASSERT(false, "unsupported OP2");
+            }
+        }
+        
+        auto end = std::chrono::steady_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+        (void) result;
+        return duration;
+    } else {
+        throw std::runtime_error("unsupported precision for FloppyFloat");
     }
-    
-    auto end = std::chrono::steady_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
-    (void) result;
-    return duration;
 }
 
 template <OP3 O>
@@ -484,31 +647,65 @@ double floppyfloat_op3(const std::vector<double>& x_vals, const std::vector<doub
     FloppyFloat ff;
     ff.rounding_mode = cvt_rm_floppyfloat(ctx.rm());
 
-    // Quantize to FP32
-    std::vector<float> x_fl(N);
-    std::vector<float> y_fl(N);
-    std::vector<float> z_fl(N);
-    for (size_t i = 0; i < N; i++) {
-        x_fl[i] = static_cast<float>(x_vals[i]);
-        y_fl[i] = static_cast<float>(y_vals[i]);
-        z_fl[i] = static_cast<float>(z_vals[i]);
-    }
+    if (ctx.prec() == 24) {
+        // FP32
 
-    volatile float result = 0.0f;
-    auto start = std::chrono::steady_clock::now();
-    
-    for (size_t i = 0; i < N; i++) {
-        if constexpr (O == OP3::FMA) {
-            result = ff.Fma(x_fl[i], y_fl[i], z_fl[i]);
-        } else {
-            MPFX_STATIC_ASSERT(false, "unsupported OP3");
+        // Quantize to FP32
+        std::vector<float> x_fl(N);
+        std::vector<float> y_fl(N);
+        std::vector<float> z_fl(N);
+        for (size_t i = 0; i < N; i++) {
+            x_fl[i] = static_cast<float>(x_vals[i]);
+            y_fl[i] = static_cast<float>(y_vals[i]);
+            z_fl[i] = static_cast<float>(z_vals[i]);
         }
+
+        volatile float result = 0.0f;
+        auto start = std::chrono::steady_clock::now();
+        
+        for (size_t i = 0; i < N; i++) {
+            if constexpr (O == OP3::FMA) {
+                result = ff.Fma(x_fl[i], y_fl[i], z_fl[i]);
+            } else {
+                MPFX_STATIC_ASSERT(false, "unsupported OP3");
+            }
+        }
+        
+        auto end = std::chrono::steady_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+        (void) result;
+        return duration;
+    } else if (ctx.prec() == 11) {
+        // FP16
+
+        // Quantize to FP16
+        std::vector<std::float16_t> x_fl(N);
+        std::vector<std::float16_t> y_fl(N);
+        std::vector<std::float16_t> z_fl(N);
+        for (size_t i = 0; i < N; i++) {
+            x_fl[i] = static_cast<std::float16_t>(x_vals[i]);
+            y_fl[i] = static_cast<std::float16_t>(y_vals[i]);
+            z_fl[i] = static_cast<std::float16_t>(z_vals[i]);
+        }
+
+        volatile std::float16_t result = static_cast<std::float16_t>(0.0f);
+        auto start = std::chrono::steady_clock::now();
+        
+        for (size_t i = 0; i < N; i++) {
+            if constexpr (O == OP3::FMA) {
+                result = ff.Fma(x_fl[i], y_fl[i], z_fl[i]);
+            } else {
+                MPFX_STATIC_ASSERT(false, "unsupported OP3");
+            }
+        }
+        
+        auto end = std::chrono::steady_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+        (void) result;
+        return duration;
+    } else {
+        throw std::runtime_error("unsupported precision for FloppyFloat");
     }
-    
-    auto end = std::chrono::steady_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
-    (void) result;
-    return duration;
 }
 
 ////////////////////////////////////////////////////////////
