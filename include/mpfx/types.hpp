@@ -60,16 +60,21 @@ constexpr T bitmask(uint64_t k) {
     return k < MAX_K ? static_cast<T>((static_cast<T>(1) << k) - 1) : ~static_cast<T>(0);
 }
 
+/// @brief Like `std::bit_width` but also supports `uint128_t`.
+/// @tparam T an unsigned integral type
+/// @param x an unsigned integer
+/// @return the smallest integer greater than the base-2 logarithm of `x`.
 template <unsigned_integral T>
 constexpr int bit_width(T x) {
-    if constexpr (std::is_same_v<T, uint128_t>) {
-        // compute bit width of 128-bit integer using two 64-bit widths
-        const uint64_t low = static_cast<uint64_t>(x);
-        const uint64_t high = static_cast<uint64_t>(x >> 64);
-        return high ? 64 + std::bit_width(high) : std::bit_width(low);
-    } else {
-        return std::bit_width(x);
-    }
+    return std::bit_width(x);
+}
+
+template <>
+constexpr int bit_width<uint128_t>(uint128_t x) {
+    // compute bit width of 128-bit integer using two 64-bit widths
+    const uint64_t low = static_cast<uint64_t>(x);
+    const uint64_t high = static_cast<uint64_t>(x >> 64);
+    return high ? 64 + std::bit_width(high) : std::bit_width(low);
 }
 
 } // namespace mpfx

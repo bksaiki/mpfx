@@ -393,7 +393,7 @@ double round(double x, prec_t p, const std::optional<exp_t>& n, RM rm) {
 /// @brief Optimized rounding to round `m * 2^exp`
 /// to a double-precision floating-point number with target precision `p`
 /// and first unrepresentable digit `n`.
-template<signed_integral T, flag_mask_t FlagMask = Flags::ALL_FLAGS>
+template<flag_mask_t FlagMask = Flags::ALL_FLAGS, signed_integral T>
 double round(T m, exp_t exp, prec_t p, const std::optional<exp_t>& n, RM rm) {
     static constexpr T MIN_VAL = std::numeric_limits<T>::min();
     static constexpr prec_t PREC = 8 * sizeof(T) - 1; // -1 due to conversion to unsigned
