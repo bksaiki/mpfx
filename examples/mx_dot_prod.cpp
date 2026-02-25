@@ -2,7 +2,10 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <iomanip>
 #include <random>
+#include <sstream>
+#include <string>
 #include <vector>
 #include <tuple>
 
@@ -62,6 +65,23 @@ struct mx_params<MX::E2M1> {
 
 using mx_block_t = std::tuple<int, std::array<double, 32>>;
 
+struct TimingResult {
+    std::string config;
+    double sf_time;
+    double mpfx_time;
+};
+
+constexpr const char* mx_name(MX m) {
+    switch (m) {
+        case MX::E5M2: return "E5M2";
+        case MX::E4M3: return "E4M3";
+        case MX::E3M2: return "E3M2";
+        case MX::E2M3: return "E2M3";
+        case MX::E2M1: return "E2M1";
+    }
+    return "???";
+}
+
 
 template <std::floating_point T>
 inline std::tuple<T, T> fast_two_sum(T x, T y) {
@@ -94,6 +114,11 @@ inline void distill4(std::array<T, 4>& a) {
     const auto [s2, e2] = two_sum(s0, s1);
     const auto [t0, f0] = two_sum(e0, e1);
     const auto [t1, f1] = two_sum(t0, e2);
+
+    MPFX_ASSERT(std::fabs(s2) >= std::fabs(t1), "distill4: invariant 1 violated");
+    MPFX_ASSERT(std::fabs(t1) >= std::fabs(f1), "distill4: invariant 2 violated");
+    MPFX_ASSERT(std::fabs(f1) >= std::fabs(f0), "distill4: invariant 3 violated");
+
     a = { s2, t1, f1, f0 };
 }
 
@@ -357,11 +382,13 @@ double mx_dot_prod_impl(const std::vector<mx_block_t>& a_blocks, const std::vect
 }
 
 template <MX FA, MX FB, size_t LEN>
-void time_dot_prod(
+TimingResult time_dot_prod(
     const std::vector<std::array<double, LEN>>& x_vals,
     const std::vector<std::array<double, LEN>>& y_vals
 ) {
     const size_t N = x_vals.size();
+    std::string config = std::string(mx_name(FA)) + "x" + mx_name(FB);
+    std::cout << "Timing dot product for config " << config << " with " << N << " inputs..." << std::endl;
 
     // Quantize data into blocks
     std::vector<std::vector<mx_block_t>> x_blocks(N);
@@ -372,6 +399,7 @@ void time_dot_prod(
     } 
 
     // Time softfloat reference implementation
+    double sf_time;
     {
         auto start = std::chrono::steady_clock::now();
         volatile double sf_result = 0.0;
@@ -381,11 +409,12 @@ void time_dot_prod(
 
         auto end = std::chrono::steady_clock::now();
         std::chrono::duration<double> sf_duration = end - start;
-        std::cout << "SoftFloat time: " << sf_duration.count() << " seconds" << std::endl;
+        sf_time = sf_duration.count();
         (void) sf_result; // suppress unused variable warning
     }
 
     // Time MPFX implementation
+    double mpfx_time;
     {
         auto start = std::chrono::steady_clock::now();
         volatile double result = 0.0;
@@ -395,9 +424,11 @@ void time_dot_prod(
 
         auto end = std::chrono::steady_clock::now();
         std::chrono::duration<double> duration = end - start;
-        std::cout << "MPFX time:      " << duration.count() << " seconds" << std::endl;
+        mpfx_time = duration.count();
         (void) result; // suppress unused variable warning
     }
+
+    return { config, sf_time, mpfx_time };
 }
 
 
@@ -429,12 +460,30 @@ int main(int argc, char* argv[]) {
     }
 
     // Time implementations
-    time_dot_prod<MX::E5M2, MX::E5M2>(x_vals, y_vals);
-    time_dot_prod<MX::E5M2, MX::E4M3>(x_vals, y_vals);
-    time_dot_prod<MX::E4M3, MX::E4M3>(x_vals, y_vals);
-    time_dot_prod<MX::E3M2, MX::E3M2>(x_vals, y_vals);
-    time_dot_prod<MX::E2M3, MX::E2M3>(x_vals, y_vals);
-    time_dot_prod<MX::E2M1, MX::E2M1>(x_vals, y_vals);
+    std::vector<TimingResult> results;
+    results.push_back(time_dot_prod<MX::E5M2, MX::E5M2>(x_vals, y_vals));
+    results.push_back(time_dot_prod<MX::E5M2, MX::E4M3>(x_vals, y_vals));
+    results.push_back(time_dot_prod<MX::E4M3, MX::E4M3>(x_vals, y_vals));
+    results.push_back(time_dot_prod<MX::E3M2, MX::E3M2>(x_vals, y_vals));
+    results.push_back(time_dot_prod<MX::E2M3, MX::E2M3>(x_vals, y_vals));
+    results.push_back(time_dot_prod<MX::E2M1, MX::E2M1>(x_vals, y_vals));
+
+    // Print table
+    const int cw = 14; // column width
+    std::cout << std::left << std::setw(cw) << "Config"
+              << "| " << std::setw(cw) << "SoftFloat"
+              << "| " << std::setw(cw) << "MPFX" << "|" << std::endl;
+    std::cout << std::string(cw, '-')
+              << "|" << std::string(cw + 1, '-')
+              << "|" << std::string(cw + 1, '-') << "|" << std::endl;
+    for (const auto& r : results) {
+        std::ostringstream sf_str, mpfx_str;
+        sf_str << std::fixed << std::setprecision(4) << r.sf_time << "s";
+        mpfx_str << std::fixed << std::setprecision(4) << r.mpfx_time << "s";
+        std::cout << std::left << std::setw(cw) << r.config
+                  << "| " << std::setw(cw) << sf_str.str()
+                  << "| " << std::setw(cw) << mpfx_str.str() << "|" << std::endl;
+    }
 
     return 0;
 }
