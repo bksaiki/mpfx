@@ -47,6 +47,26 @@ TEST(TestRound, TestRoundFixedExamples) {
     EXPECT_EQ(round(1, -2, 8, -1, RM::RTZ), 0.0);
 }
 
+TEST(TestRound, TestRoundFixed128Examples) {
+    EXPECT_EQ(round(static_cast<mpfx::int128_t>(0), 50, 1, std::nullopt, RM::RNE), 0.0);
+    EXPECT_EQ(round(static_cast<mpfx::int128_t>(1), 0, 1, std::nullopt, RM::RNE), 1.0);
+    EXPECT_EQ(round(static_cast<mpfx::int128_t>(3), 0, 1, std::nullopt, RM::RTZ), 2.0);
+    EXPECT_EQ(round(static_cast<mpfx::int128_t>(-1), 0, 1, std::nullopt, RM::RNE), -1.0);
+    EXPECT_EQ(round(static_cast<mpfx::int128_t>(-3), 0, 1, std::nullopt, RM::RTZ), -2.0);
+
+    EXPECT_EQ(round(static_cast<mpfx::int128_t>(3), -2, 8, -1, RM::RNE), 1.0);
+    EXPECT_EQ(round(static_cast<mpfx::int128_t>(3), -2, 8, -1, RM::RAZ), 1.0);
+    EXPECT_EQ(round(static_cast<mpfx::int128_t>(3), -2, 8, -1, RM::RTZ), 0.0);
+
+    EXPECT_EQ(round(static_cast<mpfx::int128_t>(2), -2, 8, -1, RM::RNE), 0.0);
+    EXPECT_EQ(round(static_cast<mpfx::int128_t>(2), -2, 8, -1, RM::RAZ), 1.0);
+    EXPECT_EQ(round(static_cast<mpfx::int128_t>(2), -2, 8, -1, RM::RTZ), 0.0);
+
+    EXPECT_EQ(round(static_cast<mpfx::int128_t>(1), -2, 8, -1, RM::RNE), 0.0);
+    EXPECT_EQ(round(static_cast<mpfx::int128_t>(1), -2, 8, -1, RM::RAZ), 1.0);
+    EXPECT_EQ(round(static_cast<mpfx::int128_t>(1), -2, 8, -1, RM::RTZ), 0.0);
+}
+
 
 TEST(TestRound, TestRoundWithPrec) {
     std::vector<round_test_t> inputs = {

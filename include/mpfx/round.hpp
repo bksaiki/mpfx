@@ -80,7 +80,7 @@ namespace {
 /// @brief Encodes the result of rounding as a double-precision
 /// floating-point number. This is an optimized version of `make_float<double>`
 /// which assumes that `c` is either 0 or has precision exactly `P`.
-template <prec_t P, std::unsigned_integral T>
+template <prec_t P, unsigned_integral T>
 double encode(bool s, exp_t e, T c) {
     using FP = float_params<double>::params; // double precision
 
@@ -137,7 +137,7 @@ double encode(bool s, exp_t e, T c) {
 /// @param rm rounding mode
 /// @param overshiftp are we overshifting all digits?
 /// @return should we increment the significand?
-template <std::unsigned_integral T>
+template <unsigned_integral T>
 inline bool round_increment(bool s, T c_kept, T c_lost, prec_t p_lost, RM rm, bool overshiftp) {
     MPFX_DEBUG_ASSERT(p_lost > 0, "we must have lost precision");
 
@@ -197,7 +197,7 @@ inline bool round_increment(bool s, T c_kept, T c_lost, prec_t p_lost, RM rm, bo
 /// @param n optional minimum normalized exponent for subnormalization
 /// @param rm rounding mode
 /// @return the correctly rounded result as a `double`
-template <prec_t P, std::unsigned_integral T, flag_mask_t FlagMask>
+template <prec_t P, unsigned_integral T, flag_mask_t FlagMask>
 double round_finalize(bool s, exp_t e, T c, prec_t p, const std::optional<exp_t>& n, RM rm) {
     using FP = float_params<double>::params; // double precision
     static constexpr size_t MAX_C_WIDTH = 8 * sizeof(T) - 1; // -1 to tolerate a carry
@@ -393,11 +393,11 @@ double round(double x, prec_t p, const std::optional<exp_t>& n, RM rm) {
 /// @brief Optimized rounding to round `m * 2^exp`
 /// to a double-precision floating-point number with target precision `p`
 /// and first unrepresentable digit `n`.
-template<std::signed_integral T, flag_mask_t FlagMask = Flags::ALL_FLAGS>
+template<signed_integral T, flag_mask_t FlagMask = Flags::ALL_FLAGS>
 double round(T m, exp_t exp, prec_t p, const std::optional<exp_t>& n, RM rm) {
     static constexpr T MIN_VAL = std::numeric_limits<T>::min();
     static constexpr prec_t PREC = 8 * sizeof(T) - 1; // -1 due to conversion to unsigned
-    using U = std::make_unsigned_t<T>;
+    using U = make_unsigned_t<T>;
 
     // Decode `m` into sign-magnitude
     bool s;
@@ -418,7 +418,7 @@ double round(T m, exp_t exp, prec_t p, const std::optional<exp_t>& n, RM rm) {
     }
 
     // normalize the input
-    const auto lz = PREC - std::bit_width(c);
+    const auto lz = PREC - bit_width(c);
     c <<= lz;
     exp -= lz;
 
