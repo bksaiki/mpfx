@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cmath>
@@ -62,9 +63,102 @@ struct mx_params<MX::E2M1> {
 using mx_block_t = std::tuple<int, std::array<double, 32>>;
 
 
+template <std::floating_point T>
+inline std::tuple<T, T> fast_two_sum(T x, T y) {
+    const T s = x + y;
+    const T yy = s - x;
+    const T t = y - yy;
+    return { s, t };
+}
+
+template <std::floating_point T>
+inline std::tuple<T, T> two_sum(T x, T y) {
+    const bool swap = std::fabs(x) < std::fabs(y);
+    const T a = swap ? y : x;
+    const T b = swap ? x : y;
+    return fast_two_sum(a, b);
+}
+
+template <std::floating_point T>
+inline void distill3(std::array<T, 3>& a) {
+    const auto [s0, e0] = two_sum(a[0], a[1]);
+    const auto [s1, e1] = two_sum(s0, a[2]);
+    const auto [b1, b2] = two_sum(e0, e1);
+    a = { s1, b1, b2 };
+}
+
+template <std::floating_point T>
+inline void distill4(std::array<T, 4>& a) {
+    const auto [s0, e0] = two_sum(a[0], a[1]);
+    const auto [s1, e1] = two_sum(a[2], a[3]);
+    const auto [s2, e2] = two_sum(s0, s1);
+    const auto [t0, f0] = two_sum(e0, e1);
+    const auto [t1, f1] = two_sum(t0, e2);
+    a = { s2, t1, f1, f0 };
+}
+
+// Computes the error-free transformation of the sum of three numbers.
+// Returns the rounded sum and the first-order error term.
+template <std::floating_point T>
+std::tuple<T, T> eft_add3(T x0, T x1, T x2) {
+    // perform 2 rounds of distillation
+    std::array<T, 3> a = { x0, x1, x2 };
+    distill3(a);
+    distill3(a);
+    return { a[0], a[1] };
+}
+
+// Computes the error-free transformation of the sum of four numbers.
+// Returns the rounded sum and the first-order error term.
+template <std::floating_point T>
+std::tuple<T, T> eft_add4(T x0, T x1, T x2, T x3) {
+    // perform 3 rounds of distillation
+    std::array<T, 4> a = { x0, x1, x2, x3 };
+    distill4(a);
+    distill4(a);
+    distill4(a);
+    return { a[0], a[1] };
+}
+
+/// @brief Finalizes the rounding of an EFT result to round-to-odd.
+/// Assumes `high` and `low` are both finite.
+template <std::floating_point T>
+inline T round_finalize(T high, T low) {
+    MPFX_DEBUG_ASSERT(std::isfinite(high), "round_finalize: high part is not finite");
+    MPFX_DEBUG_ASSERT(std::isfinite(low), "round_finalize: low part is not finite");
+    using FP = typename mpfx::float_params<T>::params;
+    using U = typename mpfx::float_params<T>::uint_t;
+    static constexpr auto SIGN_SHIFT = FP::N - 1;
+
+    // fast path: low part is zero
+    if (low == static_cast<T>(0)) {
+        return high; // exact result, no adjustment needed
+    }
+
+    // slow path: low part is non-zero (so is high part)
+    const U b_high = std::bit_cast<U>(high);
+    const U b_low = std::bit_cast<U>(low);
+
+    // compute sign difference
+    const int sign_high = b_high >> SIGN_SHIFT;
+    const int sign_low = b_low >> SIGN_SHIFT;
+    const int sign_diff = sign_high ^ sign_low;
+
+    // compute adjustment for RTZ: +1 for negative `high`, -1 for positive `high`
+    // only apply if the signs differ
+    const int adjust_mask = -static_cast<int>(sign_diff);
+    const int adjust = static_cast<int>((sign_high << 1) - 1) & adjust_mask;
+
+    // apply adjustment and jam sticky bit for RTO
+    U result = b_high + adjust;
+    result |= 1;
+
+    // reinterpret back to floating-point
+    return std::bit_cast<T>(result);
+}
+
 template <size_t K, MX F, size_t N>
 std::vector<mx_block_t> mx_block_quantize(const std::array<double, N>& vec) {
-    
     // number of blocks (last block may be smaller)
     constexpr size_t num_blocks = (N + K - 1) / K;
 
@@ -170,13 +264,11 @@ double mx_dot_prod_sf(const std::vector<mx_block_t>& a_blocks, const std::vector
         // scale the product
         f128M_mul(&prod, &scale, &prod);
 
-        // round result to P bits of precision with scaling
-        softfloat_roundingMode = softfloat_round_minMag;
-        const float32_t scaled = f128M_to_f32(&prod);
-
-        // add to result
-        softfloat_roundingMode = softfloat_round_minMag;
-        result = f32_add(result, scaled);
+        // add the result under FP128 and then re-round to FP32
+        float128_t sum;
+        f32_to_f128M(result, &sum);
+        f128M_add(&sum, &prod, &sum);
+        result = f128M_to_f32(&sum);
     }
 
     return static_cast<double>(std::bit_cast<float>(result));
@@ -189,8 +281,7 @@ double mx_dot_prod_impl(const std::vector<mx_block_t>& a_blocks, const std::vect
     MPFX_ASSERT(a_blocks.size() == b_blocks.size(), "block size mismatch");
 
     // rounding contexts
-    const mpfx::IEEE754Context scale_ctx(8, 32, mpfx::RM::RTZ);
-    const mpfx::IEEE754Context accum_ctx(8, 32, mpfx::RM::RTZ);
+    const mpfx::IEEE754Context accum_ctx(8, 32, mpfx::RM::RNE);
 
     double result = 0.0;
     for (size_t i = 0; i < a_blocks.size(); i++) {
@@ -212,8 +303,21 @@ double mx_dot_prod_impl(const std::vector<mx_block_t>& a_blocks, const std::vect
                 prod += a * b;
             }
 
-            // round to P bits of precision with scaling
-            scaled = scale_ctx.round(prod, scale + A_EXPMIN + B_EXPMIN);
+            // break up prod into 3 parts to convert to double without rounding
+            // can only use at most 53 digits for each part
+            static constexpr mpfx::int128_t MASK = (mpfx::int128_t(1) << 53) - 1;
+            const mpfx::int128_t prod_hi = prod >> 106;
+            const mpfx::int128_t prod_md = prod >> 53 & MASK;
+            const mpfx::int128_t prod_lo = prod & MASK;
+
+            // scale the product
+            const double scaled_hi = static_cast<double>(prod_hi) * std::ldexp(1.0, scale + A_EXPMIN + B_EXPMIN + 106);
+            const double scaled_md = static_cast<double>(prod_md) * std::ldexp(1.0, scale + A_EXPMIN + B_EXPMIN + 53);
+            const double scaled_lo = static_cast<double>(prod_lo) * std::ldexp(1.0, scale + A_EXPMIN + B_EXPMIN);
+
+            // perform `scale * prod + result` using error-free transformations
+            const auto [sum_hi, sum_md] = eft_add4(scaled_hi, scaled_md, scaled_lo, result);
+            result = mpfx::round(round_finalize(sum_hi, sum_md), accum_ctx);
         } else if constexpr ((FA == MX::E5M2 && FB == MX::E4M3) || (FA == MX::E4M3 && FB == MX::E5M2)) {
             // unscaled dot product should be performed with at least 2*P bits of precision
             int64_t prod = 0;
@@ -223,8 +327,17 @@ double mx_dot_prod_impl(const std::vector<mx_block_t>& a_blocks, const std::vect
                 prod += a * b;
             }
 
-            // round to P bits of precision with scaling
-            scaled = scale_ctx.round(prod, scale + A_EXPMIN + B_EXPMIN);
+            // break up `prod` into high and low parts to convert to double without rounding
+            const int64_t prod_hi = prod >> 32;
+            const int64_t prod_lo = prod & 0xFFFFFFFF;
+
+            // scale the product
+            const double scaled_hi = static_cast<double>(prod_hi) * std::ldexp(1.0, scale + A_EXPMIN + B_EXPMIN + 32);
+            const double scaled_lo = static_cast<double>(prod_lo) * std::ldexp(1.0, scale + A_EXPMIN + B_EXPMIN);
+
+            // perform `scale * prod + result` using error-free transformations
+            const auto [sum_hi, sum_lo] = eft_add3(scaled_hi, scaled_lo, result);
+            result = mpfx::round(round_finalize(sum_hi, sum_lo), accum_ctx);
         } else {
             // compute unscaled dot product using FP128
             double prod = 0.0;
@@ -234,10 +347,10 @@ double mx_dot_prod_impl(const std::vector<mx_block_t>& a_blocks, const std::vect
 
             // scale the product
             scaled = std::ldexp(prod, scale);
-        }
 
-        // add to result with rounding
-        result = mpfx::add<mpfx::Engine::EFT>(result, scaled, accum_ctx);
+            // add to result with rounding
+            result = mpfx::add<mpfx::Engine::EFT>(result, scaled, accum_ctx);
+        }
     }
 
     return result;
