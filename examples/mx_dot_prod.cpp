@@ -62,9 +62,6 @@ struct mx_params<MX::E2M1> {
     static constexpr double MAX = 6.0;
 };
 
-
-using mx_block_t = std::tuple<int, std::array<double, 32>>;
-
 struct TimingResult {
     std::string config;
     double sf_time;
@@ -191,6 +188,9 @@ inline T round_finalize(T high, T low) {
     return std::bit_cast<T>(result);
 }
 
+
+using mx_block_t = std::tuple<double, std::array<double, 32>>;
+
 template <size_t K, MX F, size_t N>
 std::vector<mx_block_t> mx_block_quantize(const std::array<double, N>& vec) {
     // number of blocks (last block may be smaller)
@@ -225,7 +225,7 @@ std::vector<mx_block_t> mx_block_quantize(const std::array<double, N>& vec) {
         }
 
         // scale factor is 2 ** max_e
-        const int scale = max_e - EMAX;
+        const double scale = std::ldexp(1.0, max_e - EMAX);
 
         // divide by scale and quantize
         std::array<double, K> block{};
@@ -268,40 +268,60 @@ double mx_dot_prod_ref(const std::vector<mx_block_t>& a_blocks, const std::vecto
     return result;
 }
 
+template <MX FA, MX FB>
 double mx_dot_prod_sf(const std::vector<mx_block_t>& a_blocks, const std::vector<mx_block_t>& b_blocks) {
     MPFX_ASSERT(a_blocks.size() == b_blocks.size(), "block size mismatch");
 
-    float32_t result = { 0 };
+    float32_t result;
     for (size_t i = 0; i < a_blocks.size(); i++) {
         // unpack blocks
         const auto [a_scale, a_elts] = a_blocks[i];
         const auto [b_scale, b_elts] = b_blocks[i];
 
         // multiply scales
-        float128_t scale;
-        f64_to_f128M(std::bit_cast<float64_t>(std::ldexp(1.0, a_scale + b_scale)), &scale);
+        const double scale = a_scale * b_scale;
 
-        // compute unscaled dot product using FP128
-        float128_t prod = { 0 };
-        for (size_t j = 0; j < a_elts.size(); j++) {
-            float64_t a_f64 = std::bit_cast<float64_t>(a_elts[j]);
-            float64_t b_f64 = std::bit_cast<float64_t>(b_elts[j]);
+        // compute inner dot product
+        float128_t scaled_prod;
+        if constexpr (FA == MX::E5M2 || FB == MX::E5M2) {
+            // need to use FP128 uniformly
 
-            float128_t a, b, p;
-            f64_to_f128M(a_f64, &a);
-            f64_to_f128M(b_f64, &b);
-            f128M_mul(&a, &b, &p);
-            f128M_add(&prod, &p, &prod);
+            // compute unscaled dot product using FP128
+            float128_t prod, p128;
+            for (size_t j = 0; j < a_elts.size(); j++) {
+                const double p = a_elts[j] * b_elts[j];
+                f64_to_f128M(std::bit_cast<float64_t>(p), &p128);
+                f128M_add(&prod, &p128, &prod);
+            }
+
+            // apply scale
+            float128_t scale128;
+            f64_to_f128M(std::bit_cast<float64_t>(scale), &scale128);
+            f128M_mul(&prod, &scale128, &scaled_prod);
+        } else {
+            // can use double-precision uniformly
+            double prod = 0.0;
+            for (size_t j = 0; j < a_elts.size(); j++) {
+                prod += a_elts[j] * b_elts[j];
+            }
+
+            // apply scale
+            prod *= scale;
+
+            // convert to FP128 for final accumulation
+            f64_to_f128M(std::bit_cast<float64_t>(prod), &scaled_prod);
         }
 
-        // scale the product
-        f128M_mul(&prod, &scale, &prod);
+        float128_t result128, sum128;
+        f32_to_f128M(result, &result128);
 
-        // add the result under FP128 and then re-round to FP32
-        float128_t sum;
-        f32_to_f128M(result, &sum);
-        f128M_add(&sum, &prod, &sum);
-        result = f128M_to_f32(&sum);
+        // perform the addition by double rounding
+        softfloat_roundingMode = softfloat_round_odd;
+        f128M_add(&result128, &scaled_prod, &sum128);
+
+        // round to nearest with ties to even to get final result
+        softfloat_roundingMode = softfloat_round_near_even;
+        result = f128M_to_f32(&sum128);
     }
 
     return static_cast<double>(std::bit_cast<float>(result));
@@ -323,69 +343,64 @@ double mx_dot_prod_impl(const std::vector<mx_block_t>& a_blocks, const std::vect
         const auto [b_scale, b_elts] = b_blocks[i];
 
         // multiply scales
-        const int scale = a_scale + b_scale;
+        const double scale = a_scale * b_scale;
 
         // compute scaled dot product
-        double scaled;
         if constexpr (FA == MX::E5M2 && FB == MX::E5M2) {
             // unscaled dot product should be performed exactly
             mpfx::int128_t prod = 0;
             for (size_t j = 0; j < a_elts.size(); j++) {
-                const mpfx::int128_t a = mpfx::to_fixed(a_elts[j], A_EXPMIN);
-                const mpfx::int128_t b = mpfx::to_fixed(b_elts[j], B_EXPMIN);
-                prod += a * b;
+                const double p = a_elts[j] * b_elts[j];
+                prod += mpfx::to_fixed(p, A_EXPMIN + B_EXPMIN);
             }
 
-            // break up prod into 3 parts so that we can convert to double without rounding
-            // can only use at most 53 digits for each part
-            // decompose absolute value to avoid cancellation in EFT
+            // break up prod into 2 parts of 40 and 29 digits
+            static constexpr int SPLIT = 40;
+            static constexpr mpfx::uint128_t MASK = (mpfx::uint128_t(1) << SPLIT) - 1;
+
+            // decompose
             const double sgn = prod < 0 ? -1.0 : 1.0;
-            const mpfx::uint128_t abs_prod = prod < 0
-                ? static_cast<mpfx::uint128_t>(-prod)
-                : static_cast<mpfx::uint128_t>(prod);
-            static constexpr mpfx::uint128_t MASK = (mpfx::uint128_t(1) << 53) - 1;
-            const mpfx::uint128_t prod_hi = abs_prod >> 106;
-            const mpfx::uint128_t prod_md = (abs_prod >> 53) & MASK;
+            const mpfx::uint128_t abs_prod = prod < 0 ? static_cast<mpfx::uint128_t>(-prod) : static_cast<mpfx::uint128_t>(prod);
+            const mpfx::uint128_t prod_hi = abs_prod >> SPLIT;
             const mpfx::uint128_t prod_lo = abs_prod & MASK;
 
             // convert to double with scaling (apply sign to all parts uniformly)
-            double scaled_hi = sgn * static_cast<double>(prod_hi);
-            double scaled_md = sgn * static_cast<double>(prod_md);
-            double scaled_lo = sgn * static_cast<double>(prod_lo);
+            double scaled_hi = sgn * static_cast<double>(prod_hi) * std::ldexp(1.0, A_EXPMIN + B_EXPMIN + SPLIT);
+            double scaled_lo = sgn * static_cast<double>(prod_lo) * std::ldexp(1.0, A_EXPMIN + B_EXPMIN);
 
             // scale the product
-            scaled_hi *= std::ldexp(1.0, scale + A_EXPMIN + B_EXPMIN + 106);
-            scaled_md *= std::ldexp(1.0, scale + A_EXPMIN + B_EXPMIN + 53);
-            scaled_lo *= std::ldexp(1.0, scale + A_EXPMIN + B_EXPMIN);
+            scaled_hi *= scale;
+            scaled_lo *= scale;
 
             // perform `scale * prod + result` using error-free transformations
-            const auto [sum_hi, sum_md] = eft_add4(scaled_hi, scaled_md, scaled_lo, result);
-            result = mpfx::round(round_finalize(sum_hi, sum_md), accum_ctx);
+            const auto [sum_hi, sum_lo] = eft_add3(scaled_hi, scaled_lo, result);
+            result = mpfx::round(round_finalize(sum_hi, sum_lo), accum_ctx);
         } else if constexpr ((FA == MX::E5M2 && FB == MX::E4M3) || (FA == MX::E4M3 && FB == MX::E5M2)) {
             // unscaled dot product should be performed with at least 2*P bits of precision
             int64_t prod = 0;
             for (size_t j = 0; j < a_elts.size(); j++) {
-                const int64_t a = mpfx::to_fixed(a_elts[j], A_EXPMIN);
-                const int64_t b = mpfx::to_fixed(b_elts[j], B_EXPMIN);
-                prod += a * b;
+                const double p = a_elts[j] * b_elts[j];
+                prod += mpfx::to_fixed(p, A_EXPMIN + B_EXPMIN);
             }
+
+            // break up prod into 2 parts of 32 digits each
+            static constexpr int SPLIT = 40;
+            static constexpr mpfx::uint128_t MASK = (mpfx::uint128_t(1) << SPLIT) - 1;
 
             // break up prod into 2 parts so that we can convert to double without rounding
             // decompose absolute value to avoid cancellation in EFT
             const double sgn = prod < 0 ? -1.0 : 1.0;
-            const uint64_t abs_prod = prod < 0
-                ? static_cast<uint64_t>(-prod)
-                : static_cast<uint64_t>(prod);
-            const uint64_t prod_hi = abs_prod >> 32;
-            const uint64_t prod_lo = abs_prod & 0xFFFFFFFF;
+            const uint64_t abs_prod = prod < 0 ? static_cast<uint64_t>(-prod) : static_cast<uint64_t>(prod);
+            const uint64_t prod_hi = abs_prod >> SPLIT;
+            const uint64_t prod_lo = abs_prod & MASK;
 
             // convert to double with scaling (apply sign to both parts uniformly)
-            double scaled_hi = sgn * static_cast<double>(prod_hi);
-            double scaled_lo = sgn * static_cast<double>(prod_lo);
+            double scaled_hi = sgn * static_cast<double>(prod_hi) * std::ldexp(1.0, A_EXPMIN + B_EXPMIN + SPLIT);
+            double scaled_lo = sgn * static_cast<double>(prod_lo) * std::ldexp(1.0, A_EXPMIN + B_EXPMIN);
 
             // scale the product
-            scaled_hi *= std::ldexp(1.0, scale + A_EXPMIN + B_EXPMIN + 32);
-            scaled_lo *= std::ldexp(1.0, scale + A_EXPMIN + B_EXPMIN);
+            scaled_hi *= scale;
+            scaled_lo *= scale;
 
             // perform `scale * prod + result` using error-free transformations
             const auto [sum_hi, sum_lo] = eft_add3(scaled_hi, scaled_lo, result);
@@ -397,11 +412,8 @@ double mx_dot_prod_impl(const std::vector<mx_block_t>& a_blocks, const std::vect
                 prod += a_elts[j] * b_elts[j];
             }
 
-            // scale the product
-            scaled = std::ldexp(prod, scale);
-
-            // add to result with rounding
-            result = mpfx::add<mpfx::Engine::EFT>(result, scaled, accum_ctx);
+            // scale the dot product and add to the result
+            result = mpfx::fma<mpfx::Engine::EFT>(scale, prod, result, accum_ctx);
         }
     }
 
@@ -431,7 +443,7 @@ TimingResult time_dot_prod(
         auto start = std::chrono::steady_clock::now();
         volatile double sf_result = 0.0;
         for (size_t i = 0; i < N; i++) {
-            sf_result = mx_dot_prod_sf(x_blocks[i], y_blocks[i]);
+            sf_result = mx_dot_prod_sf<FA, FB>(x_blocks[i], y_blocks[i]);
         }
 
         auto end = std::chrono::steady_clock::now();
@@ -491,25 +503,30 @@ int main(int argc, char* argv[]) {
     results.push_back(time_dot_prod<MX::E5M2, MX::E5M2>(x_vals, y_vals));
     results.push_back(time_dot_prod<MX::E5M2, MX::E4M3>(x_vals, y_vals));
     results.push_back(time_dot_prod<MX::E4M3, MX::E4M3>(x_vals, y_vals));
-    results.push_back(time_dot_prod<MX::E3M2, MX::E3M2>(x_vals, y_vals));
-    results.push_back(time_dot_prod<MX::E2M3, MX::E2M3>(x_vals, y_vals));
-    results.push_back(time_dot_prod<MX::E2M1, MX::E2M1>(x_vals, y_vals));
+    // results.push_back(time_dot_prod<MX::E3M2, MX::E3M2>(x_vals, y_vals));
+    // results.push_back(time_dot_prod<MX::E2M3, MX::E2M3>(x_vals, y_vals));
+    // results.push_back(time_dot_prod<MX::E2M1, MX::E2M1>(x_vals, y_vals));
 
     // Print table
     const int cw = 14; // column width
     std::cout << std::left << std::setw(cw) << "Config"
               << "| " << std::setw(cw) << "SoftFloat"
-              << "| " << std::setw(cw) << "MPFX" << "|" << std::endl;
+              << "| " << std::setw(cw) << "MPFX"
+              << "| " << std::setw(cw) << "Speedup" << "|" << std::endl;
     std::cout << std::string(cw, '-')
+              << "|" << std::string(cw + 1, '-')
               << "|" << std::string(cw + 1, '-')
               << "|" << std::string(cw + 1, '-') << "|" << std::endl;
     for (const auto& r : results) {
-        std::ostringstream sf_str, mpfx_str;
+        const double speedup = r.sf_time / r.mpfx_time;
+        std::ostringstream sf_str, mpfx_str, speedup_str;
         sf_str << std::fixed << std::setprecision(4) << r.sf_time << "s";
         mpfx_str << std::fixed << std::setprecision(4) << r.mpfx_time << "s";
+        speedup_str << std::fixed << std::setprecision(2) << speedup << "x";
         std::cout << std::left << std::setw(cw) << r.config
                   << "| " << std::setw(cw) << sf_str.str()
-                  << "| " << std::setw(cw) << mpfx_str.str() << "|" << std::endl;
+                  << "| " << std::setw(cw) << mpfx_str.str()
+                  << "| " << std::setw(cw) << speedup_str.str() << "|" << std::endl;
     }
 
     return 0;
