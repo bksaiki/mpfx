@@ -27,6 +27,7 @@ COLUMNS = [
     'softfloat',
     'floppyfloat',
     'mpfx_rto',
+    'mpfx_exact',
     'mpfx_sfloat',
     'mpfx_ffloat',
     'mpfx_eft'
@@ -40,6 +41,7 @@ NAMES = {
     'softfloat': 'SoftFloat',
     'floppyfloat': 'FloppyFloat',
     'mpfx_rto': 'MPFX (CPU)',
+    'mpfx_exact': 'MPFX (Exact)',
     'mpfx_sfloat': 'MPFX (SoftFloat)',
     'mpfx_ffloat': 'MPFX (FloppyFloat)',
     'mpfx_eft': 'MPFX (EFT)',
@@ -124,11 +126,13 @@ def run_benchmarks(output_dir: Path, iterations: int, threads: int):
             if key not in aggregated:
                 table: dict[str, list[float]] = {}
                 for header, time in zip(headers[1:], row[1:]):
-                    table[header] = [float(time)]
+                    val = float('nan') if time == 'nan' else float(time)
+                    table[header] = [val]
                 aggregated[key] = table
             else:
                 for header, time in zip(headers[1:], row[1:]):
-                    aggregated[key][header].append(float(time))
+                    val = float('nan') if time == 'nan' else float(time)
+                    aggregated[key][header].append(val)
 
     print("Aggregated benchmark results.")
 
@@ -136,7 +140,8 @@ def run_benchmarks(output_dir: Path, iterations: int, threads: int):
     average_runtimes: dict[tuple[str, str, str, str], float] = {}
     for (rm, fmt, op_name), table in aggregated.items():
         for header, times in table.items():
-            avg_time = sum(times) / len(times)
+            valid = [t for t in times if not np.isnan(t)]
+            avg_time = sum(valid) / len(valid) if valid else float('nan')
             average_runtimes[(rm, fmt, op_name, header)] = avg_time
 
     # write average runtimes to pickle
@@ -148,10 +153,12 @@ def run_benchmarks(output_dir: Path, iterations: int, threads: int):
     average_speedups: dict[tuple[str, str, str, str], float] = {}
     for (rm, fmt, op_name), table in aggregated.items():
         baseline_times = table['softfloat']
-        baseline = sum(baseline_times) / len(baseline_times)
+        valid_baseline = [t for t in baseline_times if not np.isnan(t)]
+        baseline = sum(valid_baseline) / len(valid_baseline) if valid_baseline else float('nan')
         for header, times in table.items():
-            avg_time = sum(times) / len(times)
-            speedup = baseline / avg_time  # speedup, not overhead
+            valid = [t for t in times if not np.isnan(t)]
+            avg_time = sum(valid) / len(valid) if valid else float('nan')
+            speedup = baseline / avg_time if (not np.isnan(baseline) and not np.isnan(avg_time) and avg_time != 0) else float('nan')
             average_speedups[(rm, fmt, op_name, header)] = speedup
 
     # write average speedups to pickle
@@ -212,7 +219,8 @@ def export_speedup_latex(output_dir: Path):
         for fmt in FORMATS:
             for rm in ROUNDING_MODES:
                 key = (op, fmt, rm)
-                max_val = max(average_speedups[(rm, fmt, op, col)] for col in COLUMNS)
+                valid_vals = [average_speedups[(rm, fmt, op, col)] for col in COLUMNS if not np.isnan(average_speedups[(rm, fmt, op, col)])]
+                max_val = max(valid_vals) if valid_vals else float('nan')
                 max_speedups[key] = {'max': max_val}
     
     # Write LaTeX table to file
@@ -235,8 +243,10 @@ def export_speedup_latex(output_dir: Path):
                         max_val = max_speedups[(op, fmt, rm)]['max']
 
                         # Bold if this is the maximum speedup
-                        if speedup == max_val:
+                        if not np.isnan(speedup) and speedup == max_val:
                             cell_values.append(f"\\textbf{{{speedup:.2f}}}")
+                        elif np.isnan(speedup):
+                            cell_values.append("--")
                         else:
                             cell_values.append(f"{speedup:.2f}")
                     
@@ -276,9 +286,9 @@ def plot_speedup(output_dir: Path):
                 # Get speedups for this operation and configuration
                 speedups = [average_speedups[(rm, fmt, op, col)] for col in COLUMNS]
                 
-                # Create bar chart with gradient colors
+                # Create bar chart with gradient colors, skipping NaN
                 x = np.arange(len(COLUMNS))
-                bars = ax.bar(x, speedups, color=colors, edgecolor='black', linewidth=0.5)
+                bars = ax.bar(x, [s if not np.isnan(s) else 0 for s in speedups], color=colors, edgecolor='black', linewidth=0.5)
                 
                 # Customize plot
                 ax.set_title(f'{op.upper()}', fontsize=12)
@@ -287,10 +297,11 @@ def plot_speedup(output_dir: Path):
                 ax.axhline(y=1.0, color='r', linestyle='--', linewidth=1, alpha=0.7, label='SoftFloat baseline')
                 
                 # Add value labels on top of bars
-                for bar in bars:
+                for bar, speedup in zip(bars, speedups):
                     height = bar.get_height()
+                    label = f'{speedup:.2f}x' if not np.isnan(speedup) else 'nan'
                     ax.text(bar.get_x() + bar.get_width()/2., height,
-                           f'{height:.2f}x',
+                           label,
                            ha='center', va='bottom', fontsize=9)
             
             # Add common y-label for all subplots

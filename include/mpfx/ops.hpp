@@ -255,6 +255,11 @@ double div(double x, double y, const Context& ctx) {
         const double r = engine_fp::div(x, y, ctx.round_prec());
         // use context to round
         result = ctx.round<FlagMask>(r);
+    } else if constexpr (E == Engine::FP_EXACT) {
+        // compute result using exact engine
+        const double r = x / y;
+        // use context to round
+        result = ctx.round<FlagMask>(r);
     } else if constexpr (E == Engine::SOFTFLOAT) {
         // compute result using SoftFloat engine
         const double r = engine_sf::div(x, y, ctx.round_prec());
@@ -310,6 +315,11 @@ double sqrt(double x, const Context& ctx) {
         const double r = engine_fp::sqrt(x, ctx.round_prec());
         // use context to round
         result = ctx.round<FlagMask>(r);
+    } else if constexpr (E == Engine::FP_EXACT) {
+        // compute result using exact engine
+        const double r = std::sqrt(x);
+        // use context to round
+        result = ctx.round<FlagMask>(r);
     } else if constexpr (E == Engine::SOFTFLOAT) {
         // compute result using SoftFloat engine
         const double r = engine_sf::sqrt(x, ctx.round_prec());
@@ -358,6 +368,11 @@ double fma(double x, double y, double z, const Context& ctx) {
     if constexpr (E == Engine::FP_RTO) {
         // compute result using RTO engine
         const double r = engine_fp::fma(x, y, z, ctx.round_prec());
+        // use context to round
+        result = ctx.round<FlagMask>(r);
+    } else if constexpr (E == Engine::FP_EXACT) {
+        // compute result using exact engine
+        const double r = std::fma(x, y, z);
         // use context to round
         result = ctx.round<FlagMask>(r);
     } else if constexpr (E == Engine::SOFTFLOAT) {

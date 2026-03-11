@@ -1,0 +1,13 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index bcae27dd..6b6776c8 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -59,7 +59,7 @@ set(TEST_MATRIX_DATA_DIR "${CMAKE_SOURCE_DIR}/data/matrices")
+ # Configure a header file that will contain the data directory path
+ 
+ configure_file(
+-    "${CMAKE_SOURCE_DIR}/config/TestMatrixDataDirConfig.hpp.in"
++    "${CMAKE_CURRENT_SOURCE_DIR}/config/TestMatrixDataDirConfig.hpp.in"
+     "${CMAKE_BINARY_DIR}/generated/TestMatrixDataDirConfig.hpp"
+ )
+ 
