@@ -207,6 +207,70 @@ def report_speedup(output_dir: Path):
         if idx < len(FORMATS) - 1:
             print("-" * (15 + 23 * len(COLUMNS)))
 
+def report_speedup_merged(output_dir: Path):
+    """Like report_speedup, but merges mpfx_rto/sfloat/ffloat/eft into one column.
+
+    Each merged cell shows the best speedup per rounding mode annotated with
+    the first letter of the winning variant's qualifier: C(PU), S(oftFloat),
+    F(loppyFloat), E(FT).  Format per cell: "bestRNE_X/bestRTP_Y/bestRTZ_Z".
+    """
+    avg_speedup_file = output_dir / "cache" / "average_speedups.pkl"
+    with avg_speedup_file.open('rb') as f:
+        average_speedups: dict[tuple[str, str, str, str], float] = pickle.load(f)
+
+    MPFX_MERGE_COLS = ['mpfx_rto', 'mpfx_sfloat', 'mpfx_ffloat', 'mpfx_eft']
+    MPFX_MERGE_LETTERS = {'mpfx_rto': 'C', 'mpfx_sfloat': 'S', 'mpfx_ffloat': 'F', 'mpfx_eft': 'E'}
+    MERGED_COLUMNS = ['mpfr', 'softfloat', 'floppyfloat', 'mpfx_best', 'mpfx_exact']
+    MERGED_NAMES = {
+        'mpfr': 'MPFR',
+        'softfloat': 'SoftFloat',
+        'floppyfloat': 'FloppyFloat',
+        'mpfx_best': 'MPFX (Best)',
+        'mpfx_exact': 'MPFX (Exact)',
+    }
+    COL_WIDTH = 25
+
+    suptitle = "Implementations (RNE/RTP/RTZ)"
+    total_impl_width = COL_WIDTH * len(MERGED_COLUMNS)
+    title_padding = (total_impl_width - len(suptitle)) // 2
+    print(f"\n{'':>15}{' ' * title_padding}{suptitle}")
+
+    print(f"{'Operation':<15}", end="")
+    for col in MERGED_COLUMNS:
+        print(f"{MERGED_NAMES[col]:>{COL_WIDTH}}", end="")
+    print()
+    print("=" * (15 + COL_WIDTH * len(MERGED_COLUMNS)))
+
+    for idx, fmt in enumerate(FORMATS):
+        for op in ROWS:
+            row_label = f"{op} ({fmt.upper()})"
+            print(f"{row_label:<15}", end="")
+            for col in MERGED_COLUMNS:
+                if col == 'mpfx_best':
+                    cell_parts = []
+                    for rm in ROUNDING_MODES:
+                        best_val = float('nan')
+                        best_letter = '?'
+                        for mc in MPFX_MERGE_COLS:
+                            val = average_speedups[(rm, fmt, op, mc)]
+                            if np.isnan(best_val) or (not np.isnan(val) and val > best_val):
+                                best_val = val
+                                best_letter = MPFX_MERGE_LETTERS[mc]
+                        if np.isnan(best_val):
+                            cell_parts.append("nan")
+                        else:
+                            cell_parts.append(f"{best_val:.2f}_{best_letter}")
+                    speedup_str = "/".join(cell_parts)
+                else:
+                    speedup_values = [average_speedups[(rm, fmt, op, col)] for rm in ROUNDING_MODES]
+                    speedup_str = "/".join(f"{v:.2f}" for v in speedup_values)
+                print(f"{speedup_str:>{COL_WIDTH}}", end="")
+            print()
+
+        if idx < len(FORMATS) - 1:
+            print("-" * (15 + COL_WIDTH * len(MERGED_COLUMNS)))
+
+
 def export_speedup_latex(output_dir: Path):
     # load average speedups from pickle
     avg_speedup_file = output_dir / "cache" / "average_speedups.pkl"
@@ -259,6 +323,86 @@ def export_speedup_latex(output_dir: Path):
                 f.write("\\hline\n")
     
     print(f"Saved LaTeX table: {latex_file}")
+
+
+def export_speedup_latex_merged(output_dir: Path):
+    """Like export_speedup_latex, but merges mpfx_rto/sfloat/ffloat/eft into one column.
+
+    The merged cell shows the best speedup per rounding mode with a LaTeX
+    subscript letter: C(PU), S(oftFloat), F(loppyFloat), E(FT).
+    Bold formatting is applied to the overall best cell in each row as usual.
+    """
+    avg_speedup_file = output_dir / "cache" / "average_speedups.pkl"
+    with avg_speedup_file.open('rb') as f:
+        average_speedups: dict[tuple[str, str, str, str], float] = pickle.load(f)
+
+    MPFX_MERGE_COLS = ['mpfx_rto', 'mpfx_sfloat', 'mpfx_ffloat', 'mpfx_eft']
+    MPFX_MERGE_LETTERS = {'mpfx_rto': 'C', 'mpfx_sfloat': 'S', 'mpfx_ffloat': 'F', 'mpfx_eft': 'E'}
+    MERGED_COLUMNS = ['mpfr', 'softfloat', 'floppyfloat', 'mpfx_best', 'mpfx_exact']
+
+    # Find maximum speedup across all merged columns for bold highlighting
+    max_speedups: dict[tuple[str, str, str], float] = {}
+    for op in ROWS:
+        for fmt in FORMATS:
+            for rm in ROUNDING_MODES:
+                candidates = []
+                for col in MERGED_COLUMNS:
+                    if col == 'mpfx_best':
+                        for mc in MPFX_MERGE_COLS:
+                            val = average_speedups[(rm, fmt, op, mc)]
+                            if not np.isnan(val):
+                                candidates.append(val)
+                    else:
+                        val = average_speedups[(rm, fmt, op, col)]
+                        if not np.isnan(val):
+                            candidates.append(val)
+                max_speedups[(op, fmt, rm)] = max(candidates) if candidates else float('nan')
+
+    latex_file = output_dir / "speedup_table_merged.tex"
+    with latex_file.open('w') as f:
+        for idx, fmt in enumerate(FORMATS):
+            for op in ROWS:
+                row_label = f"{op} ({fmt.upper()})"
+                f.write(row_label)
+
+                for col in MERGED_COLUMNS:
+                    f.write(" & ")
+                    cell_values = []
+                    for rm in ROUNDING_MODES:
+                        max_val = max_speedups[(op, fmt, rm)]
+                        if col == 'mpfx_best':
+                            best_val = float('nan')
+                            best_letter = '?'
+                            for mc in MPFX_MERGE_COLS:
+                                val = average_speedups[(rm, fmt, op, mc)]
+                                if np.isnan(best_val) or (not np.isnan(val) and val > best_val):
+                                    best_val = val
+                                    best_letter = MPFX_MERGE_LETTERS[mc]
+                            if np.isnan(best_val):
+                                cell_values.append("--")
+                            else:
+                                subscripted = f"${best_val:.2f}_{{\\text{{{best_letter}}}}}$"
+                                if not np.isnan(max_val) and best_val == max_val:
+                                    cell_values.append(f"\\textbf{{{subscripted}}}")
+                                else:
+                                    cell_values.append(subscripted)
+                        else:
+                            speedup = average_speedups[(rm, fmt, op, col)]
+                            if np.isnan(speedup):
+                                cell_values.append("--")
+                            elif not np.isnan(max_val) and speedup == max_val:
+                                cell_values.append(f"\\textbf{{{speedup:.2f}}}")
+                            else:
+                                cell_values.append(f"{speedup:.2f}")
+                    f.write("/".join(cell_values))
+
+                f.write(" \\\\\n")
+
+            if idx < len(FORMATS) - 1:
+                f.write("\\hline\n")
+
+    print(f"Saved merged LaTeX table: {latex_file}")
+
 
 def plot_speedup(output_dir: Path):
     # load average speedups from pickle
@@ -362,9 +506,11 @@ if __name__ == "__main__":
     
     # Report speedups
     report_speedup(output_dir)
-    
+    report_speedup_merged(output_dir)
+
     # Export speedup table to LaTeX
     export_speedup_latex(output_dir)
+    export_speedup_latex_merged(output_dir)
 
     # Plot speedup
     plot_speedup(output_dir)
