@@ -5,4 +5,5 @@ target_link_libraries(ops
     ${MPFR_LIBRARY}
     ${SOFTFLOAT_LIBRARY}
     floppy_float_static
+    universal
 )
