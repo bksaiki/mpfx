@@ -549,28 +549,26 @@ double floppyfloat_op1(const std::vector<double>& x_vals, const mpfx::Context& c
         // FP16
 
         // Quantize to FP16
-        // std::vector<std::float16_t> x_fl(N);
-        // for (size_t i = 0; i < N; i++) {
-        //     x_fl[i] = static_cast<std::float16_t>(x_vals[i]);
-        // }
+        std::vector<std::float16_t> x_fl(N);
+        for (size_t i = 0; i < N; i++) {
+            x_fl[i] = static_cast<std::float16_t>(x_vals[i]);
+        }
 
-        // volatile std::float16_t result = static_cast<std::float16_t>(0.0f);
-        // auto start = std::chrono::steady_clock::now();
+        volatile std::float16_t result = static_cast<std::float16_t>(0.0f);
+        auto start = std::chrono::steady_clock::now();
         
-        // for (size_t i = 0; i < N; i++) {
-        //     if constexpr (O == OP1::SQRT) {
-        //         result = ff.Sqrt(x_fl[i]);
-        //     } else {
-        //         MPFX_STATIC_ASSERT(false, "unsupported OP1");
-        //     }
-        // }
+        for (size_t i = 0; i < N; i++) {
+            if constexpr (O == OP1::SQRT) {
+                result = ff.Sqrt(x_fl[i]);
+            } else {
+                MPFX_STATIC_ASSERT(false, "unsupported OP1");
+            }
+        }
         
-        // auto end = std::chrono::steady_clock::now();
-        // auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
-        // (void) result;
-        // return duration;
-
-        return NAN;
+        auto end = std::chrono::steady_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+        (void) result;
+        return duration;
     } else {
         throw std::runtime_error("unsupported precision for FloppyFloat");
     }
@@ -617,35 +615,34 @@ double floppyfloat_op2(const std::vector<double>& x_vals, const std::vector<doub
         // FP16
 
         // Quantize to FP16
-        // std::vector<std::float16_t> x_fl(N);
-        // std::vector<std::float16_t> y_fl(N);
-        // for (size_t i = 0; i < N; i++) {
-        //     x_fl[i] = static_cast<std::float16_t>(x_vals[i]);
-        //     y_fl[i] = static_cast<std::float16_t>(y_vals[i]);
-        // }
+        std::vector<std::float16_t> x_fl(N);
+        std::vector<std::float16_t> y_fl(N);
+        for (size_t i = 0; i < N; i++) {
+            x_fl[i] = static_cast<std::float16_t>(x_vals[i]);
+            y_fl[i] = static_cast<std::float16_t>(y_vals[i]);
+        }
 
-        // volatile std::float16_t result = static_cast<std::float16_t>(0.0f);
-        // auto start = std::chrono::steady_clock::now();
+        volatile std::float16_t result = static_cast<std::float16_t>(0.0f);
+        auto start = std::chrono::steady_clock::now();
         
-        // for (size_t i = 0; i < N; i++) {
-        //     if constexpr (O == OP2::ADD) {
-        //         result = ff.Add(x_fl[i], y_fl[i]);
-        //     } else if constexpr (O == OP2::SUB) {
-        //         result = ff.Sub(x_fl[i], y_fl[i]);
-        //     } else if constexpr (O == OP2::MUL) {
-        //         result = ff.Mul(x_fl[i], y_fl[i]);
-        //     } else if constexpr (O == OP2::DIV) {
-        //         result = ff.Div(x_fl[i], y_fl[i]);
-        //     } else {
-        //         MPFX_STATIC_ASSERT(false, "unsupported OP2");
-        //     }
-        // }
+        for (size_t i = 0; i < N; i++) {
+            if constexpr (O == OP2::ADD) {
+                result = ff.Add(x_fl[i], y_fl[i]);
+            } else if constexpr (O == OP2::SUB) {
+                result = ff.Sub(x_fl[i], y_fl[i]);
+            } else if constexpr (O == OP2::MUL) {
+                result = ff.Mul(x_fl[i], y_fl[i]);
+            } else if constexpr (O == OP2::DIV) {
+                result = ff.Div(x_fl[i], y_fl[i]);
+            } else {
+                MPFX_STATIC_ASSERT(false, "unsupported OP2");
+            }
+        }
         
-        // auto end = std::chrono::steady_clock::now();
-        // auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
-        // (void) result;
-        // return duration;
-        return std::numeric_limits<double>::quiet_NaN();
+        auto end = std::chrono::steady_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+        (void) result;
+        return duration;
     } else {
         throw std::runtime_error("unsupported precision for FloppyFloat");
     }
@@ -688,31 +685,30 @@ double floppyfloat_op3(const std::vector<double>& x_vals, const std::vector<doub
         // FP16
 
         // Quantize to FP16
-        // std::vector<std::float16_t> x_fl(N);
-        // std::vector<std::float16_t> y_fl(N);
-        // std::vector<std::float16_t> z_fl(N);
-        // for (size_t i = 0; i < N; i++) {
-        //     x_fl[i] = static_cast<std::float16_t>(x_vals[i]);
-        //     y_fl[i] = static_cast<std::float16_t>(y_vals[i]);
-        //     z_fl[i] = static_cast<std::float16_t>(z_vals[i]);
-        // }
+        std::vector<std::float16_t> x_fl(N);
+        std::vector<std::float16_t> y_fl(N);
+        std::vector<std::float16_t> z_fl(N);
+        for (size_t i = 0; i < N; i++) {
+            x_fl[i] = static_cast<std::float16_t>(x_vals[i]);
+            y_fl[i] = static_cast<std::float16_t>(y_vals[i]);
+            z_fl[i] = static_cast<std::float16_t>(z_vals[i]);
+        }
 
-        // volatile std::float16_t result = static_cast<std::float16_t>(0.0f);
-        // auto start = std::chrono::steady_clock::now();
+        volatile std::float16_t result = static_cast<std::float16_t>(0.0f);
+        auto start = std::chrono::steady_clock::now();
         
-        // for (size_t i = 0; i < N; i++) {
-        //     if constexpr (O == OP3::FMA) {
-        //         result = ff.Fma(x_fl[i], y_fl[i], z_fl[i]);
-        //     } else {
-        //         MPFX_STATIC_ASSERT(false, "unsupported OP3");
-        //     }
-        // }
+        for (size_t i = 0; i < N; i++) {
+            if constexpr (O == OP3::FMA) {
+                result = ff.Fma(x_fl[i], y_fl[i], z_fl[i]);
+            } else {
+                MPFX_STATIC_ASSERT(false, "unsupported OP3");
+            }
+        }
         
-        // auto end = std::chrono::steady_clock::now();
-        // auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
-        // (void) result;
-        // return duration;
-        return NAN;
+        auto end = std::chrono::steady_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+        (void) result;
+        return duration;
     } else {
         throw std::runtime_error("unsupported precision for FloppyFloat");
     }

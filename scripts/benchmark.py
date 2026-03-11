@@ -471,6 +471,48 @@ def plot_speedup(output_dir: Path):
 
 
 
+def report_mpfx_speedups(output_dir: Path):
+    """For every (op, format, rounding mode): print MPFX(exact)/MPFR and MPFX(exact)/SoftFloat speedups."""
+    avg_speedup_file = output_dir / "cache" / "average_speedups.pkl"
+    with avg_speedup_file.open('rb') as f:
+        average_speedups: dict[tuple[str, str, str, str], float] = pickle.load(f)
+
+    COL_WIDTH = 22
+
+    print(f"\nMPFX (Exact) Speedups: vs. MPFR and vs. SoftFloat")
+    print(f"{'':>18}", end="")
+    for rm in ROUNDING_MODES:
+        header = f"[{rm.upper()}] exact/MPFR  exact/SF"
+        print(f"{header:>{COL_WIDTH * 2}}", end="")
+    print()
+    print("=" * (18 + COL_WIDTH * 2 * len(ROUNDING_MODES)))
+
+    for idx, fmt in enumerate(FORMATS):
+        for op in ROWS:
+            row_label = f"{op} ({fmt.upper()})"
+            print(f"{row_label:<18}", end="")
+            for rm in ROUNDING_MODES:
+                sf_over_exact = average_speedups[(rm, fmt, op, 'mpfx_exact')]
+                sf_over_mpfr  = average_speedups[(rm, fmt, op, 'mpfr')]
+
+                # MPFX (exact) speedup over MPFR
+                if not np.isnan(sf_over_exact) and not np.isnan(sf_over_mpfr) and sf_over_mpfr != 0:
+                    exact_over_mpfr = sf_over_exact / sf_over_mpfr
+                    mpfr_str = f"{exact_over_mpfr:.2f}x"
+                else:
+                    mpfr_str = "nan"
+
+                # MPFX (exact) speedup over SoftFloat (already relative to SF in the cache)
+                sf_str = f"{sf_over_exact:.2f}x" if not np.isnan(sf_over_exact) else "nan"
+
+                cell = f"{mpfr_str:>10}  {sf_str:<10}"
+                print(f"{cell:>{COL_WIDTH * 2}}", end="")
+            print()
+
+        if idx < len(FORMATS) - 1:
+            print("-" * (18 + COL_WIDTH * 2 * len(ROUNDING_MODES)))
+
+
 def build_benchmarks():
     # Navigate to build directory and build benchmarks
     subprocess.run(["cmake", "-DBUILD_BENCHMARKS=ON", ".."], cwd=BUILD_DIR, check=True)
@@ -507,6 +549,7 @@ if __name__ == "__main__":
     # Report speedups
     report_speedup(output_dir)
     report_speedup_merged(output_dir)
+    report_mpfx_speedups(output_dir)
 
     # Export speedup table to LaTeX
     export_speedup_latex(output_dir)

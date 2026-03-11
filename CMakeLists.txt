@@ -71,7 +71,7 @@ set(FLOPPYFLOAT_BUILD_EXAMPLES OFF CACHE BOOL "Disable FloppyFloat examples" FOR
 FetchContent_Declare(
   floppyfloat
   GIT_REPOSITORY https://github.com/bksaiki/FloppyFloat.git
-  GIT_TAG        c++20
+  GIT_TAG        main
 )
 FetchContent_MakeAvailable(floppyfloat)
 
@@ -80,15 +80,15 @@ include_directories(${floppyfloat_SOURCE_DIR}/src)
 add_definitions(-DUSE_FLOPPYFLOAT)
 
 # Universal number library (header-only)
-FetchContent_Declare(
-  universal
-  GIT_REPOSITORY https://github.com/stillwater-sc/universal.git
-  GIT_TAG        v3.104
-  PATCH_COMMAND  git apply --ignore-whitespace ${CMAKE_SOURCE_DIR}/patches/universal-cmake-source-dir.patch || true
-  UPDATE_DISCONNECTED TRUE
-)
-FetchContent_MakeAvailable(universal)
-include_directories(${universal_SOURCE_DIR}/include/sw)
+# FetchContent_Declare(
+#   universal
+#   GIT_REPOSITORY https://github.com/stillwater-sc/universal.git
+#   GIT_TAG        v3.104
+#   PATCH_COMMAND  git apply --ignore-whitespace ${CMAKE_SOURCE_DIR}/patches/universal-cmake-source-dir.patch || true
+#   UPDATE_DISCONNECTED TRUE
+# )
+# FetchContent_MakeAvailable(universal)
+# include_directories(${universal_SOURCE_DIR}/include/sw)
 
 # SoftFloat
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
