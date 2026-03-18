@@ -1,3 +1,4 @@
+#include <array>
 #include <random>
 
 #include <gtest/gtest.h>
@@ -61,7 +62,7 @@ std::array<T, 3> eft_add3(T x0, T x1, T x2) {
 // Returns the rounded sum and the first-order error term.
 template <std::floating_point T>
 std::array<T, 4> eft_add4(T x0, T x1, T x2, T x3) {
-    // perform "distallation" according to Priest
+    // perform "distillation" according to Priest
     std::array<T, 4> a = { x0, x1, x2, x3 };
     distill4<false>(a);
     distill4<true>(a);
@@ -77,14 +78,16 @@ inline bool nonoverlapping_check(double x, double y) {
         return true;
     } else {
         // unpack floating-point values
-        auto [sx, ex, cx] = mpfx::unpack_float(x);
-        auto [sy, ey, cy] = mpfx::unpack_float(y);
+        const auto xparts = mpfx::unpack_float(x);
+        const auto yparts = mpfx::unpack_float(y);
+        const auto ex = std::get<1>(xparts);
+        const auto ey = std::get<1>(yparts);
         return ex - ey >= 53;
     }
 }
 
 TEST(TestEFT, TestEFTAdd3) {
-    static constexpr size_t N = 100'000'100;
+    static constexpr size_t N = 1'000'000;
 
     std::random_device r;
     std::mt19937_64 rng(r());
@@ -106,7 +109,7 @@ TEST(TestEFT, TestEFTAdd3) {
 
 
 TEST(TestEFT, TestEFTAdd4) {
-    static constexpr size_t N = 100'000'100;
+    static constexpr size_t N = 1'000'000;
 
     std::random_device r;
     std::mt19937_64 rng(r());

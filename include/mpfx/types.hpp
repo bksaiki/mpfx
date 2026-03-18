@@ -1,7 +1,9 @@
 #pragma once
 
+#include <bit>
 #include <concepts>
 #include <cstdint>
+#include <type_traits>
 
 #include "utils.hpp"
 

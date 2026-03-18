@@ -251,7 +251,7 @@ double mx_dot_prod_ref(const std::vector<mx_block_t>& a_blocks, const std::vecto
         const auto [b_scale, b_elts] = b_blocks[i];
 
         // multiply scales
-        const int scale = a_scale + b_scale;
+        const double scale = a_scale + b_scale;
 
         // compute unscaled dot product
         double prod = 0.0;
@@ -260,7 +260,7 @@ double mx_dot_prod_ref(const std::vector<mx_block_t>& a_blocks, const std::vecto
         }
 
         // scale the product
-        const double scaled = std::ldexp(prod, scale);
+        const double scaled = scale * prod;
 
         // add to result
         result += scaled;
@@ -273,7 +273,7 @@ template <MX FA, MX FB>
 double mx_dot_prod_sf(const std::vector<mx_block_t>& a_blocks, const std::vector<mx_block_t>& b_blocks) {
     MPFX_ASSERT(a_blocks.size() == b_blocks.size(), "block size mismatch");
 
-    float32_t result;
+    float32_t result {};
     for (size_t i = 0; i < a_blocks.size(); i++) {
         // unpack blocks
         const auto [a_scale, a_elts] = a_blocks[i];
@@ -288,9 +288,11 @@ double mx_dot_prod_sf(const std::vector<mx_block_t>& a_blocks, const std::vector
             // need to use FP128 uniformly
 
             // compute unscaled dot product using FP128
-            float128_t prod, p128;
+            float128_t prod {};
             for (size_t j = 0; j < a_elts.size(); j++) {
                 const double p = a_elts[j] * b_elts[j];
+
+                float128_t p128;
                 f64_to_f128M(std::bit_cast<float64_t>(p), &p128);
                 f128M_add(&prod, &p128, &prod);
             }
