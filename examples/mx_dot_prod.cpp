@@ -376,8 +376,7 @@ double mx_dot_prod_impl(const std::vector<mx_block_t>& a_blocks, const std::vect
             scaled_lo *= scale;
 
             // perform `scale * prod + result` using error-free transformations
-            const auto [sum_hi, sum_lo] = eft_add3(scaled_hi, scaled_lo, result);
-            result = mpfx::round(round_finalize(sum_hi, sum_lo), accum_ctx);
+            result = mpfx::add3(scaled_hi, scaled_lo, result, accum_ctx);
         } else if constexpr ((FA == MX::E5M2 && FB == MX::E4M3) || (FA == MX::E4M3 && FB == MX::E5M2)) {
             // unscaled dot product should be performed with at least 2*P bits of precision
             int64_t prod = 0;
@@ -406,8 +405,7 @@ double mx_dot_prod_impl(const std::vector<mx_block_t>& a_blocks, const std::vect
             scaled_lo *= scale;
 
             // perform `scale * prod + result` using error-free transformations
-            const auto [sum_hi, sum_lo] = eft_add3(scaled_hi, scaled_lo, result);
-            result = mpfx::round(round_finalize(sum_hi, sum_lo), accum_ctx);
+            result = mpfx::add3(scaled_hi, scaled_lo, result, accum_ctx);
         } else {
             // compute unscaled dot product using FP128
             double prod = 0.0;
