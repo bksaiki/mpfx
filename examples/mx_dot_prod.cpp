@@ -200,7 +200,8 @@ std::vector<mx_block_t> mx_block_quantize(const std::array<double, N>& vec) {
     constexpr int P = mx_params<F>::P;
     constexpr int NMIN = mx_params<F>::NMIN;
     constexpr int MAX = mx_params<F>::MAX;
-    constexpr int EMAX = std::ilogb(MAX);
+    int EMAX = std::ilogb(MAX);
+
     const mpfx::Context ctx(P, NMIN, MAX, mpfx::RM::RNE);
 
     // quantize vector into blocks
