@@ -106,13 +106,7 @@ inline std::tuple<bool, exp_t, typename float_params<T>::uint_t> unpack_float(T 
 /// NOTE: does not check if `x` is representable in `int64_t`.
 inline int64_t to_fixed(double x, exp_t exp) {
     MPFX_DEBUG_ASSERT(std::isfinite(x), "to_fixed: input must be finite");
-
-    // fast path: handle zero
-    if (x == 0.0) {
-        return 0;
-    }
-
-    return static_cast<int64_t>(std::ldexp(x, -exp));
+    return x == 0.0 ? static_cast<int64_t>(0) : static_cast<int64_t>(std::ldexp(x, -exp));
 }
 
 } // end namespace mpfx
