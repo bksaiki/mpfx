@@ -13,6 +13,7 @@
 #include <concepts>
 #include <tuple>
 
+#include "params.hpp"
 #include "types.hpp"
 
 namespace mpfx {
@@ -59,15 +60,19 @@ inline T round_finalize(T high, T low) {
 }
 
 template <std::floating_point T>
+inline std::tuple<T, T> fast_two_sum(T x, T y) {
+    const T s = x + y;
+    const T yy = s - x;
+    const T t = y - yy;
+    return { s, t };
+}
+
+template <std::floating_point T>
 inline std::tuple<T, T> two_sum(T x, T y) {
     const bool swap = std::fabs(x) < std::fabs(y);
     const T a = swap ? y : x;
     const T b = swap ? x : y;
-
-    const T s = a + b;
-    const T yy = s - a;
-    const T t = b - yy;
-    return { s, t };
+    return fast_two_sum(a, b);
 }
 
 template <std::floating_point T>
@@ -80,8 +85,7 @@ inline std::tuple<T, T> two_prod(T x, T y) {
 /// @brief Error-free transformation of division.
 ///
 /// Computes `x / y = q + r` such that `q` is the
-/// round-to-nearest result of `x / y`, and `r` is
-/// the error term.
+/// round-to-nearest result of `x / y`, and `r` is the error term.
 template <std::floating_point T>
 inline std::tuple<T, T> two_div(T x, T y) {
     const T q = x / y;
@@ -89,11 +93,10 @@ inline std::tuple<T, T> two_div(T x, T y) {
     return { q, r };
 }
 
-/// @brief Error-free transformation of square root
+/// @brief Error-free transformation of square root.
 ///
 /// Computes `sqrt(x) = q + r` such that `q` is the
-/// round-to-nearest result of `sqrt(x)`, and `r` is
-/// the error term.
+/// round-to-nearest result of `sqrt(x)`, and `r` is the error term.
 template <std::floating_point T>
 inline std::tuple<T, T> two_sqrt(T x) {
     const T r1 = std::sqrt(x);
@@ -106,8 +109,7 @@ inline std::tuple<T, T> two_sqrt(T x) {
 /// @brief Error-free transformation of FMA.
 ///
 /// Computes `x * y + z = r1 + r2` such that `r1` is the
-/// round-to-nearest result of `x * y + z`, and `r2` is
-/// the error term.
+/// round-to-nearest result of `x * y + z`, and `r2` is the error term.
 template <std::floating_point T>
 inline std::tuple<T, T> eft_fma(T x, T y, T z) {
     const auto r1 = std::fma(x, y, z);
@@ -119,6 +121,63 @@ inline std::tuple<T, T> eft_fma(T x, T y, T z) {
     // return { r1, r2, r3 };
     const auto r2 = g + a2;
     return { r1, r2 };
+}
+
+/// @brief Performs a round of distillation of 3 numbers
+/// @tparam Sorted if true, assumes |a[0]| >= |a[1]| >= |a[2]|
+template <bool Sorted = false, std::floating_point T>
+inline void distill3(std::array<T, 3>& a) {
+    const auto [s0, e0] = Sorted ? fast_two_sum(a[0], a[1]) : two_sum(a[0], a[1]);
+    const auto [s1, e1] = two_sum(s0, a[2]);
+    const auto [b1, b2] = two_sum(e0, e1);
+
+    // branchless conditional swap to ensure |a[0]| >= |a[1]|
+    const bool swap = std::fabs(s1) < std::fabs(b1);
+    const T hi = swap ? b1 : s1;
+    const T lo = swap ? s1 : b1;
+    a = { hi, lo, b2 };
+}
+
+// Computes the error-free transformation of the sum of three numbers.
+// Returns the rounded sum and the first-order error term.
+template <std::floating_point T>
+std::tuple<T, T, T> eft_add3(T x0, T x1, T x2) {
+    // perform 2 rounds of distillation
+    std::array<T, 3> a = { x0, x1, x2 };
+    distill3<false>(a);
+    distill3<true>(a);
+    return { a[0], a[1], a[2] };
+}
+
+/// @brief Performs a round of distillation of 4 numbers
+/// @tparam Sorted if true, assumes |a[0]| >= |a[1]| >= |a[2]| >= |a[3]|
+template <bool Sorted = false, std::floating_point T>
+inline void distill4(std::array<T, 4>& a) {
+    const auto [s0, e0] = Sorted ? fast_two_sum(a[0], a[1]) : two_sum(a[0], a[1]);
+    const auto [s1, e1] = Sorted ? fast_two_sum(a[2], a[3]) : two_sum(a[2], a[3]);
+    const auto [s2, e2] = two_sum(s0, s1);
+    const auto [t0, f0] = two_sum(e0, e1);
+    const auto [t1, f1] = two_sum(t0, e2);
+
+    // branchless conditional swap to ensure |a[2]| >= |a[3]|
+    const bool swap = std::fabs(f1) < std::fabs(f0);
+    const T lo = swap ? f1 : f0;
+    const T hi = swap ? f0 : f1;
+
+    // outputs are in sorted order: |s2| >= |t1| >= |hi| >= |lo|
+    a = { s2, t1, hi, lo };
+}
+
+// Computes the error-free transformation of the sum of four numbers.
+// Returns the rounded sum and the first-order error term.
+template <std::floating_point T>
+std::tuple<T, T, T, T> eft_add4(T x0, T x1, T x2, T x3) {
+    // perform 3 rounds of distillation
+    std::array<T, 4> a = { x0, x1, x2, x3 };
+    distill4<false>(a);
+    distill4<true>(a);
+    distill4<true>(a);
+    return { a[0], a[1], a[2], a[3] };
 }
 
 } // end anonymous namespace
@@ -260,6 +319,52 @@ inline double fma(double x, double y, double z, prec_t p) {
 
     // finalize the rounding to round-to-odd
     return round_finalize(r1, r2);
+}
+
+/// @brief Computes `x + y + z` using error-free transformation.
+///
+/// Ensures the result has at least `p` bits of precision.
+/// Otherwise, an exception is thrown.
+inline double add3(double x, double y, double z, prec_t p) {
+    // double-precision only guarantees 53 bits of precision
+    MPFX_DEBUG_ASSERT(
+        p <= 53,
+        "add3: requested precision exceeds double-precision capability"
+    );
+
+    if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) [[unlikely]] {
+        // handle special values using standard addition
+        return x + y + z;
+    }
+
+    // perform EFT addition
+    const auto [s, t, u_] = eft_add3(x, y, z);
+
+    // finalize rounding to round-to-odd
+    return round_finalize(s, t);
+}
+
+/// @brief Computes `x + y + z + w` using error-free transformation.
+///
+/// Ensures the result has at least `p` bits of precision.
+/// Otherwise, an exception is thrown.
+inline double add4(double x, double y, double z, double w, prec_t p) {
+    // double-precision only guarantees 53 bits of precision
+    MPFX_DEBUG_ASSERT(
+        p <= 53,
+        "add4: requested precision exceeds double-precision capability"
+    ); 
+
+    if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z) || !std::isfinite(w)) [[unlikely]] {
+        // handle special values using standard addition
+        return x + y + z + w;
+    }
+
+    // perform EFT addition
+    const auto [s, t, u_, v_] = eft_add4(x, y, z, w);
+
+    // finalize rounding to round-to-odd
+    return round_finalize(s, t);
 }
 
 } // end namespace engine_eft

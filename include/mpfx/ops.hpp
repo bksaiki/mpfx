@@ -405,4 +405,94 @@ double fma(double x, double y, double z, const Context& ctx) {
     return result;
 }
 
+/// @brief Computes `x + y + z` using the given context.
+/// Must be the case that `ctx.round_prec() <= 53`.
+/// @tparam E engine to use for computation
+/// @tparam FlagMask mask to indicate the status flags to check during rounding.
+/// @param x first operand
+/// @param y second operand
+/// @param z third operand
+/// @param ctx rounding context
+/// @return the sum
+template<Engine E = Engine::EFT, flag_mask_t FlagMask = Flags::ALL_FLAGS>
+double add3(double x, double y, double z, const Context& ctx) {
+    double result;
+    if constexpr (E == Engine::EFT) {
+        // compute result using error-free transformations
+        const double r = engine_eft::add3(x, y, z, ctx.round_prec());
+        // use context to round
+        result = ctx.round<FlagMask>(r);
+    } else {
+        MPFX_STATIC_ASSERT(false, "Unsupported engine");
+    }
+
+    // check for special values to raise status flags
+    if constexpr (FlagMask & Flags::INVALID_FLAG) {
+        if (std::isnan(result)) [[unlikely]] {
+            // check for invalid operation: inf + -inf = NaN
+            const bool x_inf = std::isinf(x);
+            const bool y_inf = std::isinf(y);
+            const bool z_inf = std::isinf(z);
+            const bool x_sign = std::signbit(x);
+            const bool y_sign = std::signbit(y);
+            const bool z_sign = std::signbit(z);
+            if ((x_inf && y_inf && (x_sign != y_sign)) ||
+                (x_inf && z_inf && (x_sign != z_sign)) ||
+                (y_inf && z_inf && (y_sign != z_sign))) {
+                flags.set_invalid();
+            }
+        }
+    }
+
+    return result;
+}
+
+/// @brief Computes `x + y + z + w` using the given context.
+/// Must be the case that `ctx.round_prec() <= 53`.
+/// @tparam E engine to use for computation
+/// @tparam FlagMask mask to indicate the status flags to check during rounding.
+/// @param x first operand
+/// @param y second operand
+/// @param z third operand
+/// @param w fourth operand
+/// @param ctx rounding context
+/// @return the sum
+template<Engine E = Engine::EFT, flag_mask_t FlagMask = Flags::ALL_FLAGS>
+double add4(double x, double y, double z, double w, const Context& ctx) {
+    double result;
+    if constexpr (E == Engine::EFT) {
+        // compute result using error-free transformations
+        const double r = engine_eft::add4(x, y, z, w, ctx.round_prec());
+        // use context to round
+        result = ctx.round<FlagMask>(r);
+    } else {
+        MPFX_STATIC_ASSERT(false, "Unsupported engine");
+    }
+
+    // check for special values to raise status flags
+    if constexpr (FlagMask & Flags::INVALID_FLAG) {
+        if (std::isnan(result)) [[unlikely]] {
+            // check for invalid operation: inf + -inf = NaN
+            const bool x_inf = std::isinf(x);
+            const bool y_inf = std::isinf(y);
+            const bool z_inf = std::isinf(z);
+            const bool w_inf = std::isinf(w);
+            const bool x_sign = std::signbit(x);
+            const bool y_sign = std::signbit(y);
+            const bool z_sign = std::signbit(z);
+            const bool w_sign = std::signbit(w);
+            if ((x_inf && y_inf && (x_sign != y_sign)) ||
+                (x_inf && z_inf && (x_sign != z_sign)) ||
+                (x_inf && w_inf && (x_sign != w_sign)) ||
+                (y_inf && z_inf && (y_sign != z_sign)) ||
+                (y_inf && w_inf && (y_sign != w_sign)) ||
+                (z_inf && w_inf && (z_sign != w_sign))) {
+                flags.set_invalid();
+            }
+        }
+    }
+
+    return result;
+}
+
 } // end namespace mpfx
