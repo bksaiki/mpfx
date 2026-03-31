@@ -1,36 +1,38 @@
+#include <random>
+
 #include <gtest/gtest.h>
 #include <mpfx.hpp>
 #include <mpfx/float.hpp>
 
 TEST(TestBitFloat, TestF32Construct) {
     mpfx::bit_float<float> bf1; // default constructor
-    EXPECT_EQ(bf1.bits(), 0u);
+    EXPECT_EQ(bf1.to_bits(), 0u);
     EXPECT_EQ(bf1.to_float(), 0.0f);
 
     float value = 3.14f;
     mpfx::bit_float<float> bf2(value); // construct from float
-    EXPECT_EQ(bf2.bits(), std::bit_cast<uint32_t>(value));
+    EXPECT_EQ(bf2.to_bits(), std::bit_cast<uint32_t>(value));
     EXPECT_EQ(bf2.to_float(), value);
 
     mpfx::bit_float<float>::uint_t raw_bits = 0x4048f5c3; // raw bits for 3.14f
     mpfx::bit_float<float> bf3(raw_bits); // construct from raw bits
-    EXPECT_EQ(bf3.bits(), raw_bits);
+    EXPECT_EQ(bf3.to_bits(), raw_bits);
     EXPECT_EQ(bf3.to_float(), value);
 }
 
 TEST(TestBitFloat, TestF64Construct) {
     mpfx::bit_float<double> bf1; // default constructor
-    EXPECT_EQ(bf1.bits(), 0ull);
+    EXPECT_EQ(bf1.to_bits(), 0ull);
     EXPECT_EQ(bf1.to_float(), 0.0);
 
     double value = 3.14;
     mpfx::bit_float<double> bf2(value); // construct from double
-    EXPECT_EQ(bf2.bits(), std::bit_cast<uint64_t>(value));
+    EXPECT_EQ(bf2.to_bits(), std::bit_cast<uint64_t>(value));
     EXPECT_EQ(bf2.to_float(), value);
 
     mpfx::bit_float<double>::uint_t raw_bits = 0x40091eb851eb851full; // raw bits for 3.14
     mpfx::bit_float<double> bf3(raw_bits); // construct from raw bits
-    EXPECT_EQ(bf3.bits(), raw_bits);
+    EXPECT_EQ(bf3.to_bits(), raw_bits);
     EXPECT_EQ(bf3.to_float(), value);
 }
 
@@ -86,4 +88,34 @@ TEST(TestBitFloat, TestExp) {
     bf = mpfx::bit_float<float>(raw_bits);
     exp = bf.exp();
     EXPECT_EQ(exp, -149); // smallest subnormal has unnormalized exponent -149
+}
+
+TEST(TestBitFloat, TestSplit) {
+    static constexpr size_t N = 1'000'000;
+
+    using FP32 = typename mpfx::float_params<float>::params;
+
+    // random number generator
+    std::random_device r;
+    std::mt19937_64 rng(6);
+
+    for (size_t i = 0; i < N; i++) {
+        // generate a random bitstring
+        std::uniform_int_distribution<uint32_t> dist(0, 0xffffffff);
+        uint32_t raw_bits = dist(rng);
+        mpfx::bit_float<float> bf(raw_bits);
+
+        // check if the value is NaN or Inf
+        if (bf.is_nar()) {
+            continue; // skip NaN and Inf values
+        }
+
+        // generate a random digit position
+        std::uniform_int_distribution<mpfx::exp_t> n_dist(FP32::EXPMIN, FP32::EMAX);
+        mpfx::exp_t n = n_dist(rng);
+
+        // split the bit_float at position n
+        auto [high, low] = bf.split(n);
+        EXPECT_EQ(bf.to_float(), high.to_float() + low.to_float());
+    }
 }
