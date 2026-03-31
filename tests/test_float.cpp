@@ -90,6 +90,15 @@ TEST(TestBitFloat, TestExp) {
     EXPECT_EQ(exp, -149); // smallest subnormal has unnormalized exponent -149
 }
 
+TEST(TestBitFloat, TestUnpack) {
+    float value = 3.14f;
+    mpfx::bit_float<float> bf(value);
+    auto [s, exp, c] = bf.unpack();
+    EXPECT_EQ(s, 0); // 3.14 is positive
+    EXPECT_EQ(exp, -22); // 3.14 has unnormalized exponent -22
+    EXPECT_EQ(c, 0xc8f5c3); // significand bits for 3.14f
+}
+
 TEST(TestBitFloat, TestSplit) {
     static constexpr size_t N = 1'000'000;
 

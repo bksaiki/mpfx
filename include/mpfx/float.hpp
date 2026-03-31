@@ -55,27 +55,20 @@ public:
 
     /// @brief Returns the raw bits of the `bit_float`.
     /// @return the raw bits as an unsigned integer
-    constexpr uint_t to_bits() const { return bits_; }
+    constexpr uint_t to_bits() const {
+        return bits_;
+    }
 
     /// @brief Converts the `bit_float` back to a floating-point value.
     /// @return the floating-point value represented by the bits
-    constexpr T to_float() const { return std::bit_cast<T>(bits_); }
+    constexpr T to_float() const {
+        return std::bit_cast<T>(bits_);
+    }
 
-    /// @brief Returns the (true) precision of the `bit_float`.
-    /// @return the precision as an integer
-    constexpr prec_t p() const {
-        const uint_t ebits = bits_ & params_t::EMASK;
-        if (ebits == 0) {
-            // subnormal number
-            constexpr size_t min_lz = W - params_t::P;
-            const uint_t m = static_cast<uint_t>(bits_ & params_t::MMASK);
-            const size_t lz = std::countl_zero(m) - min_lz;
-            return params_t::P - static_cast<prec_t>(lz);
-        } else {
-            // normal number (ignoring Inf and NaN cases)
-            MPFX_DEBUG_ASSERT(!is_nar(), "cannot compute precision for NaN or Inf");
-            return params_t::P;
-        }
+    /// @brief Returns the sign bit of the `bit_float`.
+    /// @return the sign bit as an unsigned integer (0 for positive, 1 for negative)
+    constexpr bool s() const {
+        return bits_ & params_t::SMASK;
     }
 
     /// @brief Returns the normalized exponent of the `bit_float`.
@@ -96,6 +89,46 @@ public:
     /// @return the unnormalized exponent as an integer
     constexpr exp_t exp() const {
         return this->e() - static_cast<exp_t>(params_t::P - 1);
+    }
+
+    /// @brief Returns the integer significand of the `bit_float`,
+    /// including the implicit leading bit for normal numbers.
+    /// @return the significand as an unsigned integer
+    constexpr uint_t c() const {
+        const uint_t ebits = bits_ & params_t::EMASK;
+        const uint_t m = bits_ & params_t::MMASK;
+        if (ebits == 0) {
+            // subnormal number
+            return m;
+        } else {
+            // normal number (ignoring Inf and NaN cases)
+            MPFX_DEBUG_ASSERT(!is_nar(), "cannot compute significand for NaN or Inf");
+            return m | params_t::IMPLICIT1; // add implicit leading bit
+        }
+    }
+
+    /// @brief Returns the (true) precision of the `bit_float`.
+    /// @return the precision as an integer
+    constexpr prec_t p() const {
+        const uint_t ebits = bits_ & params_t::EMASK;
+        if (ebits == 0) {
+            // subnormal number
+            constexpr size_t min_lz = W - params_t::P;
+            const uint_t m = static_cast<uint_t>(bits_ & params_t::MMASK);
+            const size_t lz = std::countl_zero(m) - min_lz;
+            return params_t::P - static_cast<prec_t>(lz);
+        } else {
+            // normal number (ignoring Inf and NaN cases)
+            MPFX_DEBUG_ASSERT(!is_nar(), "cannot compute precision for NaN or Inf");
+            return params_t::P;
+        }
+    }
+
+    /// @brief Return a triple (s, exp, c) representing
+    /// the sign, exponent, and significand of the `bit_float`.
+    /// @return a tuple containing the sign bit, exponent, and significand
+    constexpr std::tuple<bool, exp_t, uint_t> unpack() const {
+        return { s(), exp(), c() };
     }
 
     /// @brief Splits this `bit_float` at digit position `n`.
