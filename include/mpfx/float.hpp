@@ -230,23 +230,25 @@ public:
             return { bit_float(high), bit_float() };
         }
 
-        // normalize the low part
+        // normalize the low part (bound by precision)
         constexpr size_t min_lz = W - params_t::P;
         const size_t lz = std::countl_zero(c_low) - min_lz;
         const exp_t e_low = e - static_cast<exp_t>(lz);
-        c_low <<= lz;
 
         // case split on exponent
-        if (e_low < params_t::EMIN) {
+        const exp_t offset = params_t::EMIN - e_low;
+        if (offset > 0) {
             // subnormal number
-            const size_t offset = static_cast<size_t>(params_t::EMIN - e_low);
-            c_low >>= offset;
+            MPFX_DEBUG_ASSERT(static_cast<size_t>(offset) <= lz, "offset <= leading zeros");
+            c_low <<= (lz - static_cast<size_t>(offset));
 
             const uint_t mbits_low = static_cast<uint_t>(c_low & params_t::MMASK);
             const uint_t low = sbits | mbits_low;
             return { bit_float(high), bit_float(low) };
         } else {
             // normal
+            c_low <<= lz;
+
             const uint_t ebits_low = static_cast<uint_t>(e_low + params_t::BIAS);
             const uint_t mbits_low = static_cast<uint_t>(c_low & params_t::MMASK);
             const uint_t low = sbits | (ebits_low << params_t::M) | mbits_low;

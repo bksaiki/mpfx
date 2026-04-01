@@ -100,6 +100,20 @@ TEST(TestBitFloat, TestUnpack) {
 }
 
 TEST(TestBitFloat, TestSplit) {
+    float value = 1.5f;
+    mpfx::bit_float<float> bf(value);
+    auto split = bf.split(-1); // split at the subnormal
+    EXPECT_EQ(split.first.to_float(), 1.0f); // high part should be 1.0
+    EXPECT_EQ(split.second.to_float(), 0.5f); // low part should be 0.5
+
+    mpfx::bit_float<float>::uint_t raw_bits = 0x00000003; // small subnormal number
+    bf = mpfx::bit_float<float>(raw_bits);
+    split = bf.split(-149);
+    EXPECT_EQ(split.first.to_bits(), 0x00000002); // high part
+    EXPECT_EQ(split.second.to_bits(), 0x00000001); // low part
+}
+
+TEST(TestBitFloat, TestSplitRandom) {
     static constexpr size_t N = 1'000'000;
 
     using FP32 = typename mpfx::float_params<float>::params;
