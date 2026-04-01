@@ -6,6 +6,7 @@
 #include <bit>
 #include <concepts>
 #include <tuple>
+#include <utility>
 
 #include "params.hpp"
 
@@ -203,7 +204,6 @@ public:
         // if split point is at or above `e`, then all digits
         // are in the low part, and the high part is zero
         if (n >= e) {
-            // preseve the sign
             return { bit_float(sbits), *this };
         }
 
@@ -344,7 +344,6 @@ public:
         // if split point is at or above `e`, then all digits
         // are in the low part, and the high part is zero
         if (n >= e) {
-            // preseve the sign
             return { bit_float(sbits), true };
         }
 
