@@ -272,9 +272,117 @@ TEST(TestRound, TestRoundBitFloat) {
     );
 }
 
-TEST(TestRound, TestRoundBitFloatCompare) {
+TEST(TestRound, TestRoundBitFloatCompareRNE) {
     static constexpr size_t N = 1'000'000;
     static constexpr RM rm = RM::RNE;
+
+    // random number generator
+    std::random_device r;
+    std::mt19937_64 rng(r());
+
+    std::uniform_int_distribution<uint32_t> bits_dist(0, 0xffffffff);
+    std::uniform_int_distribution<prec_t> prec_dist(1, 24);
+    std::uniform_int_distribution<exp_t> n_dist(-149, 0);
+
+    for (size_t i = 0; i < N; i++) {
+        // generate a random bitstring
+        uint32_t raw_bits = bits_dist(rng);
+        bit_float<float> bf(raw_bits);
+        float v = bf.to_float();
+
+        // skip NaN
+        if (std::isnan(v)) {
+            continue;
+        }
+
+        // generate a precision [1, 24]
+        prec_t prec = prec_dist(rng);
+
+        // generate a subnormalization point [-149, 0]
+        exp_t n = n_dist(rng);
+
+        // round via both methods and compare results
+        float y_expect = round(v, prec, n, rm);
+        float y = experimental::round<rm>(bf, prec, n).to_float();
+        EXPECT_EQ(y, y_expect);
+    }
+}
+
+TEST(TestRound, TestRoundBitFloatCompareRTZ) {
+    static constexpr size_t N = 1'000'000;
+    static constexpr RM rm = RM::RTZ;
+
+    // random number generator
+    std::random_device r;
+    std::mt19937_64 rng(r());
+
+    std::uniform_int_distribution<uint32_t> bits_dist(0, 0xffffffff);
+    std::uniform_int_distribution<prec_t> prec_dist(1, 24);
+    std::uniform_int_distribution<exp_t> n_dist(-149, 0);
+
+    for (size_t i = 0; i < N; i++) {
+        // generate a random bitstring
+        uint32_t raw_bits = bits_dist(rng);
+        bit_float<float> bf(raw_bits);
+        float v = bf.to_float();
+
+        // skip NaN
+        if (std::isnan(v)) {
+            continue;
+        }
+
+        // generate a precision [1, 24]
+        prec_t prec = prec_dist(rng);
+
+        // generate a subnormalization point [-149, 0]
+        exp_t n = n_dist(rng);
+
+        // round via both methods and compare results
+        float y_expect = round(v, prec, n, rm);
+        float y = experimental::round<rm>(bf, prec, n).to_float();
+        EXPECT_EQ(y, y_expect);
+    }
+}
+
+TEST(TestRound, TestRoundBitFloatCompareRAZ) {
+    static constexpr size_t N = 1'000'000;
+    static constexpr RM rm = RM::RAZ;
+
+    // random number generator
+    std::random_device r;
+    std::mt19937_64 rng(r());
+
+    std::uniform_int_distribution<uint32_t> bits_dist(0, 0xffffffff);
+    std::uniform_int_distribution<prec_t> prec_dist(1, 24);
+    std::uniform_int_distribution<exp_t> n_dist(-149, 0);
+
+    for (size_t i = 0; i < N; i++) {
+        // generate a random bitstring
+        uint32_t raw_bits = bits_dist(rng);
+        bit_float<float> bf(raw_bits);
+        float v = bf.to_float();
+
+        // skip NaN
+        if (std::isnan(v)) {
+            continue;
+        }
+
+        // generate a precision [1, 24]
+        prec_t prec = prec_dist(rng);
+
+        // generate a subnormalization point [-149, 0]
+        exp_t n = n_dist(rng);
+
+        // round via both methods and compare results
+        float y_expect = round(v, prec, n, rm);
+        float y = experimental::round<rm>(bf, prec, n).to_float();
+        EXPECT_EQ(y, y_expect);
+    }
+}
+
+TEST(TestRound, TestRoundBitFloatCompareRTO) {
+    static constexpr size_t N = 1'000'000;
+    static constexpr RM rm = RM::RTO;
 
     // random number generator
     std::random_device r;
