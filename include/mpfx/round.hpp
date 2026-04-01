@@ -495,15 +495,13 @@ template <std::floating_point T>
 inline bit_float<T> round_finalize(bit_float<T> hi, exp_t exp, bool increment) {
     if (increment) {
         // increment the high part by adding "1" relative to the split point `n`
-        const T one = bit_float<T>::make_pow2(exp).to_float();
-        const T incr = hi.s() ? -one : one;
+        const T incr = bit_float<T>::make_pow2(exp, hi.s()).to_float();
         return bit_float<T>(hi.to_float() + incr);
     } else {
         // no increment, just return the high part
         return hi;
     }
 }
-
 
 /// @brief Optimized rounding of a `bit_float` type.
 /// @tparam RM the rounding mode
@@ -542,16 +540,47 @@ bit_float<T> round(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
         // directed rounding mode - only need to check if `low == 0`
 
         // split the `bit_float` at the actual split point
-        const auto [hi, lo] = x.split_sticky(n_act);
+        const auto [hi, sticky] = x.split_sticky(n_act);
 
         // fast path: low is zero
-        if (!lo) {
+        if (!sticky) {
             return hi;
         }
 
         // should we increment?
         bool increment = round_increment_directed<rm>(hi, n_act);
         return round_finalize(hi, n_act + 1, increment);
+    }
+}
+
+/// @brief Optimized rounding of a `bit_float` type.
+/// @tparam RM the rounding mode
+/// @tparam FlagMask the mask of flags to set
+/// @param x the `bit_float` value to round
+/// @param p the target precision to round to
+/// @param n optional minimum normalized exponent for subnormalization
+template <flag_mask_t FlagMask = Flags::ALL_FLAGS, std::floating_point T>
+bit_float<T> round(bit_float<T> x, prec_t p, std::optional<exp_t> n, RM rm) {
+    switch (rm) {
+    case RM::RNE:
+        return round<RM::RNE, FlagMask>(x, p, n);
+    case RM::RNA:
+        return round<RM::RNA, FlagMask>(x, p, n);
+    case RM::RTP:
+        return round<RM::RTP, FlagMask>(x, p, n);
+    case RM::RTN:
+        return round<RM::RTN, FlagMask>(x, p, n);
+    case RM::RTZ:
+        return round<RM::RTZ, FlagMask>(x, p, n);
+    case RM::RAZ:
+        return round<RM::RAZ, FlagMask>(x, p, n);
+    case RM::RTO:
+        return round<RM::RTO, FlagMask>(x, p, n);
+    case RM::RTE:
+        return round<RM::RTE, FlagMask>(x, p, n);
+    default:
+        MPFX_DEBUG_ASSERT(false, "round: invalid rounding mode");
+        return x; // default return to avoid warnings
     }
 }
 

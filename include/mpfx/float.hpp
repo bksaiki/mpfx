@@ -33,19 +33,20 @@ public:
 
     /// @brief Constructs a `bit_float` encoding `2^exp`.
     /// @param exp the exponent
-    static constexpr bit_float make_pow2(exp_t exp) {
+    static constexpr bit_float make_pow2(exp_t exp, bool s = false) {
         MPFX_DEBUG_ASSERT(exp >= params_t::EXPMIN, "exponent is too small");
         MPFX_DEBUG_ASSERT(exp <= params_t::EMAX, "exponent is too large");
 
+        const uint_t sbits = s ? params_t::SMASK : 0;
         if (exp < params_t::EMIN) {
             // subnormal result
             const exp_t shift = params_t::EMIN - exp;
             const uint_t mbits = params_t::IMPLICIT1 >> shift;
-            return bit_float(mbits);
+            return bit_float(sbits | mbits);
         } else {
             // normal result
             const uint_t ebits = static_cast<uint_t>(exp + params_t::BIAS);
-            return bit_float(ebits << params_t::M);
+            return bit_float(sbits | (ebits << params_t::M));
         }
     }
 
