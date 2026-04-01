@@ -440,25 +440,45 @@ namespace experimental {
 /// @param n the split point
 /// @return should we increment the significand?
 template <RM rm, std::floating_point T>
-inline bool round_increment(const bit_float<T>& hi, const bit_float<T>& lo, exp_t n) {
+inline bool round_increment_nearest(bit_float<T> hi, bit_float<T> lo, exp_t n) {
+    using uint_t = typename bit_float<T>::uint_t;
+    constexpr auto SMASK = bit_float<T>::params_t::SMASK;
+
+    // halfway bits for tie-breaking
+    const uint_t halfway_bits = bit_float<T>::make_pow2(n).to_bits();
+    // abs(x) on the bitstring
+    const uint_t lo_abs_bits = lo.to_bits() & ~SMASK;
+
     // case split on rounding mode
     if constexpr (rm == RM::RNE) {
-        // nearest rounding, ties to even
-        const T halfway = bit_float<T>::make_pow2(n).to_float();
-        const T lo_abs = std::abs(lo.to_float());
-        if (lo_abs != halfway) {
-            // increment if above halfway
-            return lo_abs > halfway;
+        // do numerical comparison using on bit patterns
+        if (lo_abs_bits != halfway_bits) {
+            // not exactly at halfway - increment if above halfway
+            return lo_abs_bits > halfway_bits;
         } else {
-            // exactly at halfway - tie-breaking: increment if LSB is odd
+            // exactly at halfway - tie-breaking
             return hi.bit(n + 1);
         }
     } else if constexpr (rm == RM::RNA) {
-        // nearest rounding, ties away from zero
-        const T halfway = bit_float<T>::make_pow2(n).to_float();
-        const T lo_abs = std::abs(lo.to_float());
-        return lo_abs >= halfway; // increment if above or at halfway
-    } else if constexpr (rm == RM::RTP) {
+        // do numerical comparison using on bit patterns
+        return lo_abs_bits >= halfway_bits; // increment if above or at halfway
+    } else {
+        MPFX_DEBUG_ASSERT(false, "unreachable");
+        return false;
+    }
+}
+
+/// @brief Should we increment to round?
+/// @tparam RM the rounding mode
+/// @tparam T the type of the significand
+/// @param hi the high part of the split significand
+/// @param lo the low part of the split significand
+/// @param n the split point
+/// @return should we increment the significand?
+template <RM rm, std::floating_point T>
+inline bool round_increment_directed(bit_float<T> hi, exp_t n) {
+    // case split on rounding mode
+    if constexpr (rm == RM::RTP) {
         // round toward +infinity
         return !hi.s();
     } else if constexpr (rm == RM::RTN) {
@@ -482,9 +502,30 @@ inline bool round_increment(const bit_float<T>& hi, const bit_float<T>& lo, exp_
     }
 }
 
+/// @brief Finalizes the rounding procedure.
+/// @tparam T the floating-point type
+template <std::floating_point T>
+inline bit_float<T> round_finalize(bit_float<T> hi, exp_t exp, bool increment) {
+    if (increment) {
+        // increment the high part by adding "1" relative to the split point `n`
+        const T one = bit_float<T>::make_pow2(exp).to_float();
+        const T incr = hi.s() ? -one : one;
+        return bit_float<T>(hi.to_float() + incr);
+    } else {
+        // no increment, just return the high part
+        return hi;
+    }
+}
+
+
 /// @brief Optimized rounding of a `bit_float` type.
+/// @tparam RM the rounding mode
+/// @tparam FlagMask the mask of flags to set
+/// @param x the `bit_float` value to round
+/// @param p the target precision to round to
+/// @param n optional minimum normalized exponent for subnormalization
 template <RM rm, flag_mask_t FlagMask = Flags::ALL_FLAGS, std::floating_point T>
-bit_float<T> round(const bit_float<T>& x, prec_t p, const std::optional<exp_t>& n) {
+bit_float<T> round(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
     // fast path: special values (infinity, NaN, 0)
     if (x.is_nar() || x.is_zero()) {
         return x;
@@ -495,23 +536,35 @@ bit_float<T> round(const bit_float<T>& x, prec_t p, const std::optional<exp_t>& 
     const exp_t n_min = e - static_cast<exp_t>(p);
     const exp_t n_act = n.has_value() ? std::max(n_min, *n) : n_min;
 
-    // split the `bit_float` at the actual split point
-    const auto [hi, lo] = x.split(n_act);
+    // case split on rounding mode
+    if constexpr (rm == RM::RNE || rm == RM::RNA) {
+        // nearest rounding modes - need to recover lower part for tie-breaking
 
-    // fast path: low is zero
-    if (lo.is_zero()) {
-        return hi;
-    }
+        // split the `bit_float` at the actual split point
+        const auto [hi, lo] = x.split(n_act);
 
-    // should we increment?
-    if (round_increment<rm>(hi, lo, n_act)) {
-        // increment the high part by adding "1" relative to the split point `n`
-        const T one = bit_float<T>::make_pow2(n_act + 1).to_float();
-        const T incr = hi.s() ? -one : one;
-        return bit_float<T>(hi.to_float() + incr);
+        // fast path: low is zero
+        if (lo.is_zero()) {
+            return hi;
+        }
+
+        // should we increment?
+        bool increment = round_increment_nearest<rm>(hi, lo, n_act);
+        return round_finalize(hi, n_act + 1, increment);
     } else {
-        // no increment, just return the high part
-        return hi;
+        // directed rounding mode - only need to check if `low == 0`
+
+        // split the `bit_float` at the actual split point
+        const auto [hi, lo] = x.split_sticky(n_act);
+
+        // fast path: low is zero
+        if (!lo) {
+            return hi;
+        }
+
+        // should we increment?
+        bool increment = round_increment_directed<rm>(hi, n_act);
+        return round_finalize(hi, n_act + 1, increment);
     }
 }
 

@@ -14,8 +14,10 @@ namespace mpfx {
 template <std::floating_point T>
 class bit_float {
 public:
+
     using params_t = float_params<T>::params;
     using uint_t = typename float_params<T>::uint_t;
+    using int_t = std::make_signed_t<uint_t>;
     static constexpr size_t W = 8 * sizeof(uint_t);
 
     /// @brief Constructs a default `bit_float` with all bits set to zero.
@@ -167,12 +169,7 @@ public:
     constexpr bool bit(exp_t n) const {
         MPFX_DEBUG_ASSERT(!is_nar(), "cannot compute significand for NaN or Inf");
 
-        // fast path: out of range
-        if (n < params_t::EXPMIN || n > params_t::EMAX) {
-            return false;
-        }
-
-        // compute the range of the mantissa bits
+        // check if the bit is out of range
         const exp_t exp = this->exp();
         if (n < exp || n >= exp + static_cast<exp_t>(params_t::P)) {
             return false;
@@ -194,17 +191,18 @@ public:
             return { *this, bit_float() };
         }
 
-        // compute the normalized exponent
+        // extract the fields
+        const uint_t sbits = bits_ & params_t::SMASK;
         const uint_t ebits = bits_ & params_t::EMASK;
-        const exp_t e = (ebits == 0)
-            ? params_t::EMIN
-            : (static_cast<exp_t>(ebits >> params_t::M) - params_t::BIAS);
+        const uint_t mbits = bits_ & params_t::MMASK;
+
+        // extract the normalized exponent and integer significand
+        const auto [e, c] = decode(ebits, mbits);
 
         // if split point is at or above `e`, then all digits
         // are in the low part, and the high part is zero
         if (n >= e) {
             // preseve the sign
-            const uint_t sbits = bits_ & params_t::SMASK;
             return { bit_float(sbits), *this };
         }
 
@@ -221,14 +219,11 @@ public:
         const prec_t p_mask = bitmask<uint_t>(p_low);
 
         // split the mantissa bits into high and low parts
-        const uint_t se = bits_ & ~params_t::MMASK;
-        const uint_t m = bits_ & params_t::MMASK;
-        const uint_t c = (ebits == 0) ? m : (m | params_t::IMPLICIT1); // add implicit leading bit for normal numbers
         const uint_t c_high = c & ~p_mask;
         uint_t c_low = c & p_mask;
 
         // reform the high part
-        const uint_t high = se | (c_high & params_t::MMASK);
+        const uint_t high = sbits | ebits | (c_high & params_t::MMASK);
 
         // fast path: low == 0
         if (c_low == 0) {
@@ -242,28 +237,92 @@ public:
         c_low <<= lz;
 
         // case split on exponent
-        uint_t low;
         if (e_low < params_t::EMIN) {
             // subnormal number
             const size_t offset = static_cast<size_t>(params_t::EMIN - e_low);
             c_low >>= offset;
 
-            const uint_t sbits_low = bits_ & params_t::SMASK;
             const uint_t mbits_low = static_cast<uint_t>(c_low & params_t::MMASK);
-            low = sbits_low | mbits_low;
+            const uint_t low = sbits | mbits_low;
+            return { bit_float(high), bit_float(low) };
         } else {
             // normal
-            const uint_t sbits_low = bits_ & params_t::SMASK;
             const uint_t ebits_low = static_cast<uint_t>(e_low + params_t::BIAS);
             const uint_t mbits_low = static_cast<uint_t>(c_low & params_t::MMASK);
-            low = sbits_low | (ebits_low << params_t::M) | mbits_low;
+            const uint_t low = sbits | (ebits_low << params_t::M) | mbits_low;
+            return { bit_float(high), bit_float(low) };
         }
-
-        return { bit_float(high), bit_float(low) };
     }
 
-    private:
-        uint_t bits_;
+    /// @brief Splits this `bit_float` at digit position `n`.
+    /// @param n the digit position to split at
+    /// @return a `bit_float` representing the high part of the split
+    /// and a boolean indicating whether the low part is zero
+    constexpr std::pair<bit_float, bool> split_sticky(exp_t n) const {
+        MPFX_DEBUG_ASSERT(!is_nar(), "cannot compute exponent for NaN or Inf");
+
+        // fast path: zero
+        if (is_zero()) {
+            return { *this, false };
+        }
+
+        // extract the fields
+        const uint_t sbits = bits_ & params_t::SMASK;
+        const uint_t ebits = bits_ & params_t::EMASK;
+        const uint_t mbits = bits_ & params_t::MMASK;
+
+        // extract the normalized exponent and integer significand
+        const auto [e, c] = decode(ebits, mbits);
+
+        // if split point is at or above `e`, then all digits
+        // are in the low part, and the high part is zero
+        if (n >= e) {
+            // preseve the sign
+            return { bit_float(sbits), true };
+        }
+
+        // if the split point is at or below `e - P`, then all digits
+        // are in the high part, and the low part is zero
+        const exp_t exp = e - static_cast<exp_t>(params_t::P);
+        if (exp > n) {
+            return { *this, false };
+        };
+
+        // otherwise, we need to split the bits
+        const prec_t p_high = static_cast<prec_t>(e - n);
+        const prec_t p_low = params_t::P - p_high;
+        const prec_t p_mask = bitmask<uint_t>(p_low);
+
+        // split the mantissa bits into high and low parts
+        const uint_t c_high = c & ~p_mask;
+        uint_t c_low = c & p_mask;
+
+        // reform the high part
+        const uint_t high = sbits | ebits | (c_high & params_t::MMASK);
+
+        return { bit_float(high), c_low != 0 };
+    }
+
+private:
+
+    /// @brief Decodes the normalized exponent and integer significand
+    /// from raw exponent and mantissa bits.
+    /// @param ebits the raw exponent bits
+    /// @param mbits the raw mantissa bits
+    /// @return a pair containing the normalized exponent and integer significand
+    static constexpr std::pair<exp_t, uint_t> decode(uint_t ebits, uint_t mbits) {
+        if (ebits == 0) {
+            // subnormal number
+            return { params_t::EMIN, mbits };
+        } else {
+            // normal number
+            const exp_t e = static_cast<exp_t>(ebits >> params_t::M) - params_t::BIAS;
+            const uint_t c = mbits | params_t::IMPLICIT1; // add implicit leading bit
+            return { e, c };
+        }
+    }
+
+    uint_t bits_;
 };
 
 } // end namespace mpfx
