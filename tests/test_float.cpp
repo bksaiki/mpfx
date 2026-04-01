@@ -122,6 +122,7 @@ TEST(TestBitFloat, TestSplitRandom) {
     std::random_device r;
     std::mt19937_64 rng(r());
     std::uniform_int_distribution<uint32_t> dist(0, 0xffffffff);
+    std::uniform_int_distribution<mpfx::exp_t> n_dist(FP32::EXPMIN, FP32::EMAX);
 
     for (size_t i = 0; i < N; i++) {
         // generate a random bitstring
@@ -134,7 +135,6 @@ TEST(TestBitFloat, TestSplitRandom) {
         }
 
         // generate a random digit position
-        std::uniform_int_distribution<mpfx::exp_t> n_dist(FP32::EXPMIN, FP32::EMAX);
         mpfx::exp_t n = n_dist(rng);
 
         // split the bit_float at position n
@@ -143,5 +143,60 @@ TEST(TestBitFloat, TestSplitRandom) {
         // check properties
         EXPECT_EQ(high.s(), bf.s()); // sign should be the same
         EXPECT_EQ(bf.to_float(), high.to_float() + low.to_float());
+    }
+}
+
+TEST(TestBitFloat, TestSplitRSRandom) {
+    static constexpr size_t N = 1'000'000;
+
+    using FP32 = typename mpfx::float_params<float>::params;
+
+    // random number generator
+    std::random_device r;
+    std::mt19937_64 rng(r());
+    std::uniform_int_distribution<uint32_t> dist(0, 0xffffffff);
+    std::uniform_int_distribution<mpfx::exp_t> n_dist(FP32::EXPMIN, FP32::EMAX);
+
+    for (size_t i = 0; i < N; i++) {
+        // generate a random bitstring
+        uint32_t raw_bits = dist(rng);
+        mpfx::bit_float<float> bf(raw_bits);
+
+        // check if the value is NaN or Inf
+        if (bf.is_nar()) {
+            continue; // skip NaN and Inf values
+        }
+
+        // generate a random digit position
+        mpfx::exp_t n = n_dist(rng);
+
+        // split the bit_float at position n
+        auto [high_ref, low_ref] = bf.split(n);
+        auto [high, halfway, sticky] = bf.split_rs(n);
+
+        // recompute reference rounding bits
+        bool halfway_ref;
+        bool sticky_ref;
+        if (low_ref.is_zero()) {
+            halfway_ref = false;
+            sticky_ref = false;
+        } else {
+            const float halfway_val = mpfx::bit_float<float>::make_pow2(n).to_float();
+            const float abs_low_val = std::abs(low_ref.to_float());
+            if (abs_low_val == halfway_val) {
+                // exact halfway
+                halfway_ref = true;
+                sticky_ref = false;
+            } else {
+                // not exactly halfway
+                halfway_ref = abs_low_val > halfway_val;
+                sticky_ref = true;
+            }
+        }
+
+        // check properties
+        EXPECT_EQ(high.to_float(), high_ref.to_float());
+        EXPECT_EQ(halfway, halfway_ref);
+        EXPECT_EQ(sticky, sticky_ref);
     }
 }

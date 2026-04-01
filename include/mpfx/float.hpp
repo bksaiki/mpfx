@@ -258,6 +258,81 @@ public:
 
     /// @brief Splits this `bit_float` at digit position `n`.
     /// @param n the digit position to split at
+    /// @return a `bit_float` representing the high part of the split,
+    /// a boolean indicating the halfway bit, and a boolean indicating
+    /// the sticky bit, whether there are any bits below the halfway bit.
+    constexpr std::tuple<bit_float, bool, bool> split_rs(exp_t n) const {
+        MPFX_DEBUG_ASSERT(!is_nar(), "cannot compute exponent for NaN or Inf");
+
+        // fast path: zero
+        if (is_zero()) {
+            return { *this, false, false };
+        }
+
+        // extract the fields
+        const uint_t sbits = bits_ & params_t::SMASK;
+        const uint_t ebits = bits_ & params_t::EMASK;
+        const uint_t mbits = bits_ & params_t::MMASK;
+
+        // extract the normalized exponent and integer significand
+        const auto [e, c] = decode(ebits, mbits);
+
+        // if split point is at or above `e`, then all digits
+        // are in the low part, and the high part is zero
+        if (n == e) {
+            // the MSB is the halfway bit; all lower bits forms the sticky bit
+            if (ebits == 0) {
+                // subnormal (the leading digit is 0)
+                return { bit_float(sbits), false, true };
+            } else {
+                // normal (the leading digit is 1)
+                const bool sticky = mbits != 0;
+                return { bit_float(sbits), true, sticky };
+            }
+        } else if (n > e) {
+            // all digits are definitely below the halfway bit
+            return { bit_float(sbits), false, true };
+        }
+
+        // if the split point is at or below `e - P`, then all digits
+        // are in the high part, and the low part is zero
+        const exp_t exp = e - static_cast<exp_t>(params_t::P);
+        if (exp > n) {
+            return { *this, false, false };
+        };
+
+        // otherwise, we need to split the bits
+        const prec_t p_high = static_cast<prec_t>(e - n);
+        const prec_t p_low = params_t::P - p_high;
+        const prec_t p_mask = bitmask<uint_t>(p_low);
+
+        // split the mantissa bits into high and low parts
+        const uint_t c_high = c & ~p_mask;
+        uint_t c_low = c & p_mask;
+
+        // reform the high part
+        const uint_t high = sbits | ebits | (c_high & params_t::MMASK);
+
+        // fast path: low == 0
+        if (c_low == 0) {
+            return { bit_float(high), false, false };
+        }
+
+        // extract rounding bits
+        if (p_low == 1) {
+            // if the low part is only 1 bit, then the halfway bit is set
+            return { bit_float(high), true, false };
+        } else {
+            // otherwise, the halfway bit is the highest low bit, and
+            // the sticky bit is whether any other low bits are set
+            const bool halfway = (c_low & (1 << (p_low - 1))) != 0;
+            const bool sticky = (c_low & bitmask<uint_t>(p_low - 1)) != 0;
+            return { bit_float(high), halfway, sticky };
+        }
+    }
+
+    /// @brief Splits this `bit_float` at digit position `n`.
+    /// @param n the digit position to split at
     /// @return a `bit_float` representing the high part of the split
     /// and a boolean indicating whether the low part is zero
     constexpr std::pair<bit_float, bool> split_sticky(exp_t n) const {
