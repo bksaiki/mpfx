@@ -118,8 +118,6 @@ set(HEADERS
 
 # Source files for compiled library
 set(SOURCES
-    src/context.cpp
-    src/context_mpb.cpp
     src/engine_ff.cpp
     src/engine_sf.cpp
     src/flags.cpp

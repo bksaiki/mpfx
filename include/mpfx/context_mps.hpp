@@ -11,18 +11,20 @@ namespace mpfx {
 /// a minimum exponent bound, and a specified rounding mode. Subnormalization
 /// is computed as n = emin - p.
 class MPSContext : public Context {
-private:
-    /// @brief The minimum (normalized) exponent.
-    exp_t emin_;
-
 public:
-    MPSContext(prec_t prec, exp_t emin, RM rm)
+
+    constexpr MPSContext(prec_t prec, exp_t emin, RM rm)
         : Context(prec, emin - static_cast<exp_t>(prec), std::nullopt, rm), emin_(emin) {}
 
     /// @brief Gets the minimum exponent of this context.
-    inline exp_t emin() const {
+    constexpr exp_t emin() const {
         return emin_;
     }
+
+private:
+
+    /// @brief The minimum (normalized) exponent.
+    exp_t emin_;
 };
 
 } // namespace mpfx

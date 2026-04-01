@@ -11,7 +11,8 @@ namespace mpfx {
 /// no exponent bounds, and a specified rounding mode.
 class MPContext : public Context {
 public:
-    MPContext(prec_t prec, RM rm) : Context(prec, std::nullopt, std::nullopt, rm) {}
+    constexpr MPContext(prec_t prec, RM rm)
+        : Context(prec, std::nullopt, std::nullopt, rm) {}
 };
 
 } // namespace mpfx

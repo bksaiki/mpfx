@@ -8,19 +8,19 @@ namespace mpfx {
 
 namespace {
 
-inline prec_t ieee754_prec(prec_t es, prec_t nbits) {
+constexpr prec_t ieee754_prec(prec_t es, prec_t nbits) {
     return nbits - es;
 }
 
-inline exp_t ieee754_emax(prec_t es) {
+constexpr exp_t ieee754_emax(prec_t es) {
     return static_cast<exp_t>(bitmask<uint32_t>(es - 1));
 }
 
-inline exp_t ieee754_emin(prec_t es) {
+constexpr exp_t ieee754_emin(prec_t es) {
     return 1 - ieee754_emax(es);
 }
 
-inline double ieee754_max_value(prec_t es, prec_t nbits) {
+constexpr double ieee754_max_value(prec_t es, prec_t nbits) {
     using FP64 = float_params<double>::params; // IEEE 754 double precision
 
     // format parameters
@@ -41,18 +41,13 @@ inline double ieee754_max_value(prec_t es, prec_t nbits) {
 /// This context implements the usual IEEE 754 semantics for floating-point
 /// arithmetic, including exponent bounds and overflow handling.
 class IEEE754Context : public Context {
-private:
-    /// @brief Number of exponent bits.
-    prec_t es_;
-    /// @brief Total number of bits (including sign bit).
-    prec_t nbits_;
-
 public:
+
     /// @brief Constructs an IEEE 754 context.
     /// @param es number of exponent bits
     /// @param nbits total number of bits (including sign bit)
     /// @param rm rounding mode
-    inline IEEE754Context(prec_t es, prec_t nbits, RM rm)
+    constexpr IEEE754Context(prec_t es, prec_t nbits, RM rm)
         : Context(
             ieee754_prec(es, nbits),
             ieee754_emin(es) - static_cast<exp_t>(ieee754_prec(es, nbits)),
@@ -61,24 +56,31 @@ public:
         es_(es), nbits_(nbits) {}
 
     /// @brief Gets the number of exponent bits.
-    inline prec_t es() const {
+    constexpr prec_t es() const {
         return es_;
     }
 
     /// @brief Gets the total number of bits (including sign bit).
-    inline prec_t nbits() const {
+    constexpr prec_t nbits() const {
         return nbits_;
     }
 
     /// @brief Gets the minimum exponent of this context.
-    inline exp_t emin() const {
+    constexpr exp_t emin() const {
         return ieee754_emin(es_);
     }
 
     /// @brief Gets the maximum exponent of this context.
-    inline exp_t emax() const {
+    constexpr exp_t emax() const {
         return ieee754_emax(es_);
     }
+
+private:
+
+    /// @brief Number of exponent bits.
+    prec_t es_;
+    /// @brief Total number of bits (including sign bit).
+    prec_t nbits_;
 };
 
 } // namespace mpfx
