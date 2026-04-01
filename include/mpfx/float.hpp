@@ -216,7 +216,7 @@ public:
         // otherwise, we need to split the bits
         const prec_t p_high = static_cast<prec_t>(e - n);
         const prec_t p_low = params_t::P - p_high;
-        const prec_t p_mask = bitmask<uint_t>(p_low);
+        const uint_t p_mask = bitmask<uint_t>(p_low);
 
         // split the mantissa bits into high and low parts
         const uint_t c_high = c & ~p_mask;
@@ -279,19 +279,14 @@ public:
 
         // if split point is at or above `e`, then all digits
         // are in the low part, and the high part is zero
-        if (n == e) {
-            // the MSB is the halfway bit; all lower bits forms the sticky bit
-            if (ebits == 0) {
-                // subnormal (the leading digit is 0)
+        if (n >= e) {
+            if (n > e || ebits == 0) {
+                // n > e or subnormal: no halfway bit, all bits are sticky
                 return { bit_float(sbits), false, true };
             } else {
-                // normal (the leading digit is 1)
-                const bool sticky = mbits != 0;
-                return { bit_float(sbits), true, sticky };
+                // n == e, normal: implicit 1 becomes the halfway bit
+                return { bit_float(sbits), true, mbits != 0 };
             }
-        } else if (n > e) {
-            // all digits are definitely below the halfway bit
-            return { bit_float(sbits), false, true };
         }
 
         // if the split point is at or below `e - P`, then all digits
@@ -304,7 +299,7 @@ public:
         // otherwise, we need to split the bits
         const prec_t p_high = static_cast<prec_t>(e - n);
         const prec_t p_low = params_t::P - p_high;
-        const prec_t p_mask = bitmask<uint_t>(p_low);
+        const uint_t p_mask = bitmask<uint_t>(p_low);
 
         // split the mantissa bits into high and low parts
         const uint_t c_high = c & ~p_mask;
@@ -319,16 +314,10 @@ public:
         }
 
         // extract rounding bits
-        if (p_low == 1) {
-            // if the low part is only 1 bit, then the halfway bit is set
-            return { bit_float(high), true, false };
-        } else {
-            // otherwise, the halfway bit is the highest low bit, and
-            // the sticky bit is whether any other low bits are set
-            const bool halfway = (c_low & (1 << (p_low - 1))) != 0;
-            const bool sticky = (c_low & bitmask<uint_t>(p_low - 1)) != 0;
-            return { bit_float(high), halfway, sticky };
-        }
+        const uint_t halfway_mask = static_cast<uint_t>(1) << (p_low - 1);
+        const bool halfway = (c_low & halfway_mask) != 0;
+        const bool sticky = (c_low & (halfway_mask - 1)) != 0;
+        return { bit_float(high), halfway, sticky };
     }
 
     /// @brief Splits this `bit_float` at digit position `n`.
@@ -368,7 +357,7 @@ public:
         // otherwise, we need to split the bits
         const prec_t p_high = static_cast<prec_t>(e - n);
         const prec_t p_low = params_t::P - p_high;
-        const prec_t p_mask = bitmask<uint_t>(p_low);
+        const uint_t p_mask = bitmask<uint_t>(p_low);
 
         // split the mantissa bits into high and low parts
         const uint_t c_high = c & ~p_mask;

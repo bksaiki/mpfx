@@ -436,32 +436,19 @@ namespace experimental {
 /// @tparam RM the rounding mode
 /// @tparam T the type of the significand
 /// @param hi the high part of the split significand
-/// @param lo the low part of the split significand
 /// @param n the split point
+/// @param halfway whether the low part is exactly at the halfway point
+/// @param sticky whether the low part has any nonzero bits below the halfway point
 /// @return should we increment the significand?
 template <RM rm, std::floating_point T>
-inline bool round_increment_nearest(bit_float<T> hi, bit_float<T> lo, exp_t n) {
-    using uint_t = typename bit_float<T>::uint_t;
-    constexpr auto SMASK = bit_float<T>::params_t::SMASK;
-
-    // halfway bits for tie-breaking
-    const uint_t halfway_bits = bit_float<T>::make_pow2(n).to_bits();
-    // abs(x) on the bitstring
-    const uint_t lo_abs_bits = lo.to_bits() & ~SMASK;
-
+inline bool round_increment_nearest(bit_float<T> hi, exp_t n, bool halfway, bool sticky) {
     // case split on rounding mode
     if constexpr (rm == RM::RNE) {
-        // do numerical comparison using on bit patterns
-        if (lo_abs_bits != halfway_bits) {
-            // not exactly at halfway - increment if above halfway
-            return lo_abs_bits > halfway_bits;
-        } else {
-            // exactly at halfway - tie-breaking
-            return hi.bit(n + 1);
-        }
+        // above halfway or exact halfway (increment if tie-breaking bit is odd)
+        return halfway && (sticky || hi.bit(n + 1));
     } else if constexpr (rm == RM::RNA) {
-        // do numerical comparison using on bit patterns
-        return lo_abs_bits >= halfway_bits; // increment if above or at halfway
+        // above or exactly at halfway - increment
+        return halfway || sticky;
     } else {
         MPFX_DEBUG_ASSERT(false, "unreachable");
         return false;
@@ -541,15 +528,15 @@ bit_float<T> round(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
         // nearest rounding modes - need to recover lower part for tie-breaking
 
         // split the `bit_float` at the actual split point
-        const auto [hi, lo] = x.split(n_act);
+        const auto [hi, halfway, sticky] = x.split_rs(n_act);
 
         // fast path: low is zero
-        if (lo.is_zero()) {
+        if (!halfway && !sticky) {
             return hi;
         }
 
         // should we increment?
-        bool increment = round_increment_nearest<rm>(hi, lo, n_act);
+        bool increment = round_increment_nearest<rm>(hi, n_act, halfway, sticky);
         return round_finalize(hi, n_act + 1, increment);
     } else {
         // directed rounding mode - only need to check if `low == 0`
