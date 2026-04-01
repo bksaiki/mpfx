@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "context.hpp"
+#include "params.hpp"
 #include "types.hpp"
 
 namespace mpfx {
@@ -13,25 +14,26 @@ namespace mpfx {
 /// a minimum exponent bound, a specified rounding mode, and a maximum representable
 /// magnitude. When a value exceeds this maximum magnitude, it is treated as an overflow.
 class MPBContext : public Context {
-private:
-    /// @brief The minimum (normalized) exponent.
-    exp_t emin_;
-
-    /// @brief The maximum (normalized) exponent.
-    exp_t emax_;
-
 public:
-    MPBContext(prec_t prec, exp_t emin, double maxval, RM rm);
+    constexpr MPBContext(prec_t prec, exp_t emin, double maxval, RM rm)
+        : Context(prec, emin - static_cast<exp_t>(prec), maxval, rm), emin_(emin) {}
 
     /// @brief Gets the minimum exponent of this context.
-    inline exp_t emin() const {
+    constexpr exp_t emin() const {
         return emin_;
     }
 
     /// @brief Gets the maximum exponent of this context.
     inline exp_t emax() const {
-        return emax_;
+        using FP = float_params<double>::params;
+        const double maxval = *maxval_;
+        return maxval == 0.0 ? FP::EXPMIN : static_cast<exp_t>(std::ilogb(maxval));
     }
+
+private:
+
+    /// @brief The minimum (normalized) exponent.
+    exp_t emin_;
 };
 
 } // namespace mpfx
