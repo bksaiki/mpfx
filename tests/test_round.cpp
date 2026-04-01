@@ -1,6 +1,7 @@
 #include <bit>
 #include <climits>
 #include <optional>
+#include <random>
 
 #include <mpfx.hpp>
 #include <gtest/gtest.h>
@@ -252,6 +253,57 @@ TEST(TestRound, TestRoundWithNFixed) {
         const auto y_expect = static_cast<double>(mpfx::make_float<double>(false, exp_out, c_out));
         const auto m_in = static_cast<int64_t>(c_in);
         const auto y = round(m_in, exp_in, 3, -2, rm);
+        EXPECT_EQ(y, y_expect);
+    }
+}
+
+TEST(TestRound, TestRoundBitFloat) {
+    EXPECT_EQ(
+        experimental::round<RM::RNE>(bit_float<float>(0.0f), 1, std::nullopt).to_float(),
+        bit_float<float>(0.0f).to_float()
+    );
+    EXPECT_EQ(
+        experimental::round<RM::RNE>(bit_float<float>(1.0f), 1, std::nullopt).to_float(),
+        bit_float<float>(1.0f).to_float()
+    );
+    EXPECT_EQ(
+        experimental::round<RM::RTZ>(bit_float<float>(3.0f), 1, std::nullopt).to_float(),
+        bit_float<float>(2.0f).to_float()
+    );
+}
+
+TEST(TestRound, TestRoundBitFloatCompare) {
+    static constexpr size_t N = 1'000'000;
+    static constexpr RM rm = RM::RNE;
+
+    // random number generator
+    std::random_device r;
+    std::mt19937_64 rng(r());
+
+    std::uniform_int_distribution<uint32_t> bits_dist(0, 0xffffffff);
+    std::uniform_int_distribution<prec_t> prec_dist(1, 24);
+    std::uniform_int_distribution<exp_t> n_dist(-149, 0);
+
+    for (size_t i = 0; i < N; i++) {
+        // generate a random bitstring
+        uint32_t raw_bits = bits_dist(rng);
+        bit_float<float> bf(raw_bits);
+        float v = bf.to_float();
+
+        // skip NaN
+        if (std::isnan(v)) {
+            continue;
+        }
+
+        // generate a precision [1, 24]
+        prec_t prec = prec_dist(rng);
+
+        // generate a subnormalization point [-149, 0]
+        exp_t n = n_dist(rng);
+
+        // round via both methods and compare results
+        float y_expect = round(v, prec, n, rm);
+        float y = experimental::round<rm>(bf, prec, n).to_float();
         EXPECT_EQ(y, y_expect);
     }
 }

@@ -29,6 +29,24 @@ public:
     /// @param value the floating-point value to convert
     constexpr bit_float(T value) : bits_(std::bit_cast<uint_t>(value)) {}
 
+    /// @brief Constructs a `bit_float` encoding `2^exp`.
+    /// @param exp the exponent
+    static constexpr bit_float make_pow2(exp_t exp) {
+        MPFX_DEBUG_ASSERT(exp >= params_t::EXPMIN, "exponent is too small");
+        MPFX_DEBUG_ASSERT(exp <= params_t::EMAX, "exponent is too large");
+
+        if (exp < params_t::EMIN) {
+            // subnormal result
+            const exp_t shift = params_t::EMIN - exp;
+            const uint_t mbits = params_t::IMPLICIT1 >> shift;
+            return bit_float(mbits);
+        } else {
+            // normal result
+            const uint_t ebits = static_cast<uint_t>(exp + params_t::BIAS);
+            return bit_float(ebits << params_t::M);
+        }
+    }
+
     /// @brief Returns whether the `bit_float` represents a zero value.
     constexpr bool is_zero() const {
         return (bits_ & ~params_t::SMASK) == 0;
@@ -77,7 +95,10 @@ public:
         const uint_t ebits = bits_ & params_t::EMASK;
         if (ebits == 0) {
             // subnormal number
-            return params_t::EMIN;
+            constexpr size_t min_lz = W - params_t::P;
+            const uint_t m = static_cast<uint_t>(bits_ & params_t::MMASK);
+            const size_t lz = std::countl_zero(m) - min_lz;
+            return params_t::EMIN - static_cast<exp_t>(lz);
         } else {
             // normal number (ignoring Inf and NaN cases)
             MPFX_DEBUG_ASSERT(!is_nar(), "cannot compute exponent for NaN or Inf");
@@ -88,7 +109,16 @@ public:
     /// @brief Returns the unnormalized exponent of the `bit_float`.
     /// @return the unnormalized exponent as an integer
     constexpr exp_t exp() const {
-        return this->e() - static_cast<exp_t>(params_t::P - 1);
+        const uint_t ebits = bits_ & params_t::EMASK;
+        if (ebits == 0) {
+            // subnormal number
+            return params_t::EXPMIN;
+        } else {
+            // normal number (ignoring Inf and NaN cases)
+            MPFX_DEBUG_ASSERT(!is_nar(), "cannot compute exponent for NaN or Inf");
+            const exp_t e = static_cast<exp_t>(ebits >> params_t::M) - params_t::BIAS;
+            return e - static_cast<exp_t>(params_t::P - 1);
+        }
     }
 
     /// @brief Returns the integer significand of the `bit_float`,
@@ -131,6 +161,28 @@ public:
         return { s(), exp(), c() };
     }
 
+    /// @brief Extracts the bit at position `n`.
+    /// @param n the bit position to extract.
+    /// @return the bit at position `n` as a boolean
+    constexpr bool bit(exp_t n) const {
+        MPFX_DEBUG_ASSERT(!is_nar(), "cannot compute significand for NaN or Inf");
+
+        // fast path: out of range
+        if (n < params_t::EXPMIN || n > params_t::EMAX) {
+            return false;
+        }
+
+        // compute the range of the mantissa bits
+        const exp_t exp = this->exp();
+        if (n < exp || n >= exp + static_cast<exp_t>(params_t::P)) {
+            return false;
+        }
+
+        // extract the bit from the significand
+        const uint_t c = this->c();
+        return (c >> (n - exp)) & 0x1;
+    }
+
     /// @brief Splits this `bit_float` at digit position `n`.
     /// @param n the digit position to split at
     /// @return a pair of `bit_float`s representing the high and low parts
@@ -151,7 +203,9 @@ public:
         // if split point is at or above `e`, then all digits
         // are in the low part, and the high part is zero
         if (n >= e) {
-            return { bit_float(), *this };
+            // preseve the sign
+            const uint_t sbits = bits_ & params_t::SMASK;
+            return { bit_float(sbits), *this };
         }
 
         // if the split point is at or below `e - P`, then all digits

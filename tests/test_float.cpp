@@ -65,7 +65,7 @@ TEST(TestBitFloat, TestE) {
     mpfx::bit_float<float>::uint_t raw_bits = 0x00000001; // smallest positive subnormal number
     bf = mpfx::bit_float<float>(raw_bits);
     e = bf.e();
-    EXPECT_EQ(e, -126); // smallest subnormal has exponent -126
+    EXPECT_EQ(e, -149); // smallest subnormal has exponent -149
 }
 
 TEST(TestBitFloat, TestExp) {
@@ -106,11 +106,11 @@ TEST(TestBitFloat, TestSplit) {
 
     // random number generator
     std::random_device r;
-    std::mt19937_64 rng(6);
+    std::mt19937_64 rng(r());
+    std::uniform_int_distribution<uint32_t> dist(0, 0xffffffff);
 
     for (size_t i = 0; i < N; i++) {
         // generate a random bitstring
-        std::uniform_int_distribution<uint32_t> dist(0, 0xffffffff);
         uint32_t raw_bits = dist(rng);
         mpfx::bit_float<float> bf(raw_bits);
 
@@ -125,6 +125,9 @@ TEST(TestBitFloat, TestSplit) {
 
         // split the bit_float at position n
         auto [high, low] = bf.split(n);
+
+        // check properties
+        EXPECT_EQ(high.s(), bf.s()); // sign should be the same
         EXPECT_EQ(bf.to_float(), high.to_float() + low.to_float());
     }
 }

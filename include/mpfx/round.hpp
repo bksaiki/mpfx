@@ -6,6 +6,7 @@
 
 #include "convert.hpp"
 #include "flags.hpp"
+#include "float.hpp"
 #include "params.hpp"
 #include "types.hpp"
 
@@ -428,5 +429,92 @@ double round(T m, exp_t exp, prec_t p, const std::optional<exp_t>& n, RM rm) {
     // finalize rounding (mantissa has precision 63)
     return round_finalize<PREC, U, FlagMask>(s, e, c, p, n, rm);
 }
+
+namespace experimental {
+
+/// @brief Should we increment to round?
+/// @tparam RM the rounding mode
+/// @tparam T the type of the significand
+/// @param hi the high part of the split significand
+/// @param lo the low part of the split significand
+/// @param n the split point
+/// @return should we increment the significand?
+template <RM rm, std::floating_point T>
+inline bool round_increment(const bit_float<T>& hi, const bit_float<T>& lo, exp_t n) {
+    // case split on rounding mode
+    if constexpr (rm == RM::RNE) {
+        // nearest rounding, ties to even
+        const T halfway = bit_float<T>::make_pow2(n).to_float();
+        const T lo_abs = std::abs(lo.to_float());
+        if (lo_abs != halfway) {
+            // increment if above halfway
+            return lo_abs > halfway;
+        } else {
+            // exactly at halfway - tie-breaking: increment if LSB is odd
+            return hi.bit(n + 1);
+        }
+    } else if constexpr (rm == RM::RNA) {
+        // nearest rounding, ties away from zero
+        const T halfway = bit_float<T>::make_pow2(n).to_float();
+        const T lo_abs = std::abs(lo.to_float());
+        return lo_abs >= halfway; // increment if above or at halfway
+    } else if constexpr (rm == RM::RTP) {
+        // round toward +infinity
+        return !hi.s();
+    } else if constexpr (rm == RM::RTN) {
+        // round toward -infinity
+        return hi.s();
+    } else if constexpr (rm == RM::RTZ) {
+        // round toward zero
+        return false;
+    } else if constexpr (rm == RM::RAZ) {
+        // round away from zero
+        return true;
+    } else if constexpr (rm == RM::RTO) {
+        // round to odd => increment if LSB is even
+        return !hi.bit(n + 1);
+    } else if constexpr (rm == RM::RTE) {
+        // round to even => increment if LSB is odd
+        return hi.bit(n + 1);
+    } else {
+        MPFX_DEBUG_ASSERT(false, "unreachable");
+        return false;
+    }
+}
+
+/// @brief Optimized rounding of a `bit_float` type.
+template <RM rm, flag_mask_t FlagMask = Flags::ALL_FLAGS, std::floating_point T>
+bit_float<T> round(const bit_float<T>& x, prec_t p, const std::optional<exp_t>& n) {
+    // fast path: special values (infinity, NaN, 0)
+    if (x.is_nar() || x.is_zero()) {
+        return x;
+    }
+
+    // compute the actual split point `n`
+    const exp_t e = x.e();
+    const exp_t n_min = e - static_cast<exp_t>(p);
+    const exp_t n_act = n.has_value() ? std::max(n_min, *n) : n_min;
+
+    // split the `bit_float` at the actual split point
+    const auto [hi, lo] = x.split(n_act);
+
+    // fast path: low is zero
+    if (lo.is_zero()) {
+        return hi;
+    }
+
+    // should we increment?
+    if (round_increment<rm>(hi, lo, n_act)) {
+        // increment the high part by adding "1" relative to the split point `n`
+        const T one = bit_float<T>::make_pow2(n_act + 1).to_float();
+        const T incr = hi.s() ? -one : one;
+        return bit_float<T>(hi.to_float() + incr);
+    } else {
+        // no increment, just return the high part
+        return hi;
+    }
+}
+
+} // namespace experimental
 
 } // namespace mpfx
