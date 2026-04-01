@@ -585,7 +585,7 @@ TEST(TestFlags, TestUnderflowAfterFlag) {
     }
 }
 
-TEST(TestFlags, TestCarry) {
+TEST(TestFlags, TestCarryFlag) {
     static constexpr size_t N = 1'000'000;
     static constexpr mpfx::prec_t MAX_PREC = 8;
     static constexpr mpfx::exp_t MAX_EXP = 4;
