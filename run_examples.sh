@@ -27,3 +27,6 @@ echo "Running benchmark_div_engines..."
 
 echo "Running mixed_dot_prod..."
 "$SCRIPT_DIR"/build/examples/mixed_dot_prod
+
+echo "Running benchmark_bit_float..."
+"$SCRIPT_DIR"/build/examples/benchmark_bit_float
