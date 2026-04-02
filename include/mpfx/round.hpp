@@ -77,6 +77,299 @@ inline RoundingDirection get_direction(RoundingMode mode, bool sign) {
     return table[idx];
 }
 
+namespace experimental {
+
+/// @brief Should we increment to round?
+/// @tparam RM the rounding mode
+/// @tparam T the type of the significand
+/// @param hi the high part of the split significand
+/// @param n the split point
+/// @param halfway whether the low part is exactly at the halfway point
+/// @param sticky whether the low part has any nonzero bits below the halfway point
+/// @return should we increment the significand?
+template <RM rm, std::floating_point T>
+inline bool round_increment_nearest(bit_float<T> hi, exp_t n, bool halfway, bool sticky) {
+    // case split on rounding mode
+    if constexpr (rm == RM::RNE) {
+        if (halfway && !sticky) {
+            // exactly halfway - increment if the LSB is odd
+            return hi.bit(n + 1);
+        } else {
+            // above halfway - increment
+            return halfway;
+        }
+    } else if constexpr (rm == RM::RNA) {
+        // above or exactly at halfway - increment
+        return halfway;
+    } else {
+        MPFX_DEBUG_ASSERT(false, "unreachable");
+        return false;
+    }
+}
+
+/// @brief Should we increment to round?
+/// @tparam RM the rounding mode
+/// @tparam T the type of the significand
+/// @param hi the high part of the split significand
+/// @param lo the low part of the split significand
+/// @param n the split point
+/// @return should we increment the significand?
+template <RM rm, std::floating_point T>
+inline bool round_increment_directed(bit_float<T> hi, exp_t n) {
+    // case split on rounding mode
+    if constexpr (rm == RM::RTP) {
+        // round toward +infinity
+        return !hi.s();
+    } else if constexpr (rm == RM::RTN) {
+        // round toward -infinity
+        return hi.s();
+    } else if constexpr (rm == RM::RTZ) {
+        // round toward zero
+        return false;
+    } else if constexpr (rm == RM::RAZ) {
+        // round away from zero
+        return true;
+    } else if constexpr (rm == RM::RTO) {
+        // round to odd => increment if LSB is even
+        return !hi.bit(n + 1);
+    } else if constexpr (rm == RM::RTE) {
+        // round to even => increment if LSB is odd
+        return hi.bit(n + 1);
+    } else {
+        MPFX_DEBUG_ASSERT(false, "unreachable");
+        return false;
+    }
+}
+
+/// @brief Finalizes the rounding procedure.
+/// @tparam T the floating-point type
+template <std::floating_point T>
+inline bit_float<T> round_finalize(bit_float<T> hi, exp_t exp, bool increment) {
+    if (increment) {
+        // increment the high part by adding "1" relative to the split point `n`
+        const T incr = bit_float<T>::make_pow2(exp, hi.s()).to_float();
+        return bit_float<T>(hi.to_float() + incr);
+    } else {
+        // no increment, just return the high part
+        return hi;
+    }
+}
+
+/// @brief Checks for tininess after rounding
+/// @tparam T the floating-point type
+/// @param x the original value (assumed to be tiny before rounding)
+/// @param result the rounded value
+/// @param e the normalized exponent of `x`
+/// @param emin the minimum normalized exponent
+/// @param n the actual split point used for rounding
+template <RM rm, std::floating_point T>
+inline bool round_tiny_after(bit_float<T> x, exp_t e, exp_t emin, exp_t n) {
+    // below the largest subnormal binade - definitely tiny after rounding
+    if (e < emin - 1) {
+        return true;
+    }
+
+    // in the largest subnormal binade - possibly tiny after rounding
+    const T min_norm = bit_float<T>::make_pow2(emin).to_float();
+    const T half_ulp = bit_float<T>::make_pow2(n).to_float();
+    const T cutoff = min_norm - half_ulp; // Sterbenz lemma guarantees exact
+    if (std::abs(x.to_float()) <= cutoff) {
+        // we will never round up to 2^emin - definitely tiny after rounding
+        return true;
+    }
+
+    // halfway to the smallest normal - round again with an additional bit
+    if constexpr (rm == RM::RNE || rm == RM::RNA) {
+        // nearest rounding modes
+        const auto [hi, halfway, sticky] = x.split_rs(n - 1);
+        return !round_increment_nearest<rm>(hi, n - 1, halfway, sticky);
+    } else {
+        // directed rounding modes
+        const auto [hi, sticky] = x.split_sticky(n - 1);
+        if (!sticky) {
+            // exactly representable
+            return true;
+        } else {
+            // not exact incremental
+            return !round_increment_directed<rm>(hi, n - 1);
+        }
+    }
+}
+
+/// @brief Optimized rounding of a `bit_float` type.
+/// @tparam RM the rounding mode
+/// @tparam FlagMask the mask of flags to set
+/// @param x the `bit_float` value to round
+/// @param p the target precision to round to
+/// @param n optional minimum normalized exponent for subnormalization
+template <RM rm, flag_mask_t FlagMask = Flags::ALL_FLAGS, std::floating_point T>
+bit_float<T> round(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
+    using params_t = typename bit_float<T>::params_t;
+    MPFX_DEBUG_ASSERT(p < params_t::P, "target precision must be less than the precision of the container type");
+    MPFX_DEBUG_ASSERT(!n.has_value() || *n + 1 >= params_t::EXPMIN, "subnormalization point must be at least EMIN - 1");
+
+    // which flags to check
+    static constexpr bool CHECK_TINY_BEFORE = FlagMask & Flags::TINY_BEFORE_ROUNDING_FLAG;
+    static constexpr bool CHECK_TINY_AFTER = FlagMask & Flags::TINY_AFTER_ROUNDING_FLAG;
+    static constexpr bool CHECK_UNDERFLOW_BEFORE = FlagMask & Flags::UNDERFLOW_BEFORE_ROUNDING_FLAG;
+    static constexpr bool CHECK_UNDERFLOW_AFTER = FlagMask & Flags::UNDERFLOW_AFTER_ROUNDING_FLAG;
+    static constexpr bool CHECK_INEXACT = FlagMask & Flags::INEXACT_FLAG;
+    static constexpr bool CHECK_CARRY = FlagMask & Flags::CARRY_FLAG;
+
+    // fast path: special values (infinity, NaN)
+    if (x.is_nar()) {
+        return x;
+    }
+
+    // fast path: zero
+    if (x.is_zero()) {
+        // raise tiny flags
+        if constexpr (CHECK_TINY_BEFORE) {
+            flags.set_tiny_before_rounding();
+        }
+        if constexpr (CHECK_TINY_AFTER) {
+            flags.set_tiny_after_rounding();
+        }
+
+        return x;
+    }
+
+    // compute the actual split point `n`
+    const exp_t e = x.e();
+    const exp_t n_min = e - static_cast<exp_t>(p);
+    const exp_t n_act = n.has_value() ? std::max(n_min, *n) : n_min;
+    const exp_t emin = n.has_value() ? *n + static_cast<exp_t>(p) : std::numeric_limits<exp_t>::min();
+
+    // set tiny before rounding flag if requested
+    bool tiny_before = e < emin;
+    if constexpr (CHECK_TINY_BEFORE) {
+        if (tiny_before) {
+            flags.set_tiny_before_rounding();
+        }
+    }
+
+    // case split on rounding mode
+    bit_float<T> result;
+    bool increment;
+    if constexpr (rm == RM::RNE || rm == RM::RNA) {
+        // nearest rounding modes - need to recover lower part for tie-breaking
+        // split the `bit_float` at the actual split point
+        const auto [hi, halfway, sticky] = x.split_rs(n_act);
+
+        // fast path: low is zero
+        if (!halfway && !sticky) {
+            // we are tiny after rounding if we were tiny before rounding
+            if constexpr (CHECK_TINY_AFTER) {
+                if (tiny_before) {
+                    flags.set_tiny_after_rounding();
+                }
+            }
+
+            return hi;
+        }
+
+        // should we increment?
+        increment = round_increment_nearest<rm>(hi, n_act, halfway, sticky);
+        result = round_finalize(hi, n_act + 1, increment);
+    } else {
+        // directed rounding mode - only need to check if `low == 0`
+        // split the `bit_float` at the actual split point
+        const auto [hi, sticky] = x.split_sticky(n_act);
+
+        // fast path: low is zero
+        if (!sticky) {
+            // we are tiny after rounding if we were tiny before rounding
+            if constexpr (CHECK_TINY_AFTER) {
+                if (tiny_before) {
+                    flags.set_tiny_after_rounding();
+                }
+            }
+
+            return hi;
+        }
+
+        // should we increment?
+        increment = round_increment_directed<rm>(hi, n_act);
+        result = round_finalize(hi, n_act + 1, increment);
+    }
+
+    // set inexact flag if requested
+    if constexpr (CHECK_INEXACT) {
+        flags.set_inexact();
+    }
+
+    if (tiny_before) {
+        // set underflow before rounding flag if requested
+        if constexpr (CHECK_UNDERFLOW_BEFORE) {
+            flags.set_underflow_before_rounding();
+        }
+
+        // detect tininess after rounding
+        if constexpr (CHECK_TINY_AFTER || CHECK_UNDERFLOW_AFTER) {
+            // we can only be tiny after rounding if we were tiny before rounding
+            bool tiny_after = round_tiny_after<rm>(x, e, emin, n_act);
+
+            if (tiny_after) {
+                // set tiny after rounding flag if requested
+                if constexpr (CHECK_TINY_AFTER) {
+                    flags.set_tiny_after_rounding();
+                }
+
+                // set underflow after rounding flag if requested
+                if constexpr (CHECK_UNDERFLOW_AFTER) {
+                    flags.set_underflow_after_rounding();
+                }
+            }
+        }
+    }
+
+    // set carry flag
+    if constexpr (CHECK_CARRY) {
+        // we carry if we incremented and we are normal before incrementing
+        if (increment && !tiny_before) {
+            // we carry when the result is a power of two
+            if (result.mbits() == 0) {
+                flags.set_carry();
+            }
+        }
+    }
+
+    return result;
+}
+
+/// @brief Optimized rounding of a `bit_float` type.
+/// @tparam RM the rounding mode
+/// @tparam FlagMask the mask of flags to set
+/// @param x the `bit_float` value to round
+/// @param p the target precision to round to
+/// @param n optional minimum normalized exponent for subnormalization
+template <flag_mask_t FlagMask = Flags::ALL_FLAGS, std::floating_point T>
+bit_float<T> round(bit_float<T> x, prec_t p, std::optional<exp_t> n, RM rm) {
+    switch (rm) {
+    case RM::RNE:
+        return round<RM::RNE, FlagMask>(x, p, n);
+    case RM::RNA:
+        return round<RM::RNA, FlagMask>(x, p, n);
+    case RM::RTP:
+        return round<RM::RTP, FlagMask>(x, p, n);
+    case RM::RTN:
+        return round<RM::RTN, FlagMask>(x, p, n);
+    case RM::RTZ:
+        return round<RM::RTZ, FlagMask>(x, p, n);
+    case RM::RAZ:
+        return round<RM::RAZ, FlagMask>(x, p, n);
+    case RM::RTO:
+        return round<RM::RTO, FlagMask>(x, p, n);
+    case RM::RTE:
+        return round<RM::RTE, FlagMask>(x, p, n);
+    default:
+        MPFX_DEBUG_ASSERT(false, "round: invalid rounding mode");
+        return x; // default return to avoid warnings
+    }
+}
+
+} // namespace experimental
+
 namespace {
 
 /// @brief Encodes the result of rounding as a double-precision
@@ -364,32 +657,9 @@ double round_finalize(bool s, exp_t e, T c, prec_t p, const std::optional<exp_t>
 /// @brief Optimized rounding to round a double-precision floating-point number
 /// to a double-precision floating-point number with target precision `p`
 /// and first unrepresentable digit `n`.
-template<flag_mask_t FlagMask = Flags::ALL_FLAGS>
-double round(double x, prec_t p, const std::optional<exp_t>& n, RM rm) {
-    using FP = float_params<double>::params; // double precision
-
-    // Fast path: special values (infinity, NaN)
-    if (!std::isfinite(x)) {
-        return x;
-    }
-
-    // decode floating-point data
-    auto [s, exp, c] = unpack_float<double>(x);
-
-    // fully normalize the significand
-    if (exp == FP::EXPMIN) {
-        // subnormal or in the first normal binade
-        const prec_t xp = static_cast<prec_t>(std::bit_width(c));
-        const prec_t lz = FP::P - xp;
-        c <<= lz;
-        exp -= static_cast<exp_t>(lz);
-    }
-
-    // compute normalized exponent
-    const exp_t e = exp + static_cast<exp_t>(FP::P - 1);
-
-    // finalize rounding (mantissa has precision `FP::P`)
-    return round_finalize<FP::P, mant_t, FlagMask>(s, e, c, p, n, rm);
+template<flag_mask_t FlagMask = Flags::ALL_FLAGS, std::floating_point T>
+T round(T x, prec_t p, const std::optional<exp_t>& n, RM rm) {
+    return experimental::round<FlagMask>(bit_float<double>(x), p, n, rm).to_float();
 }
 
 /// @brief Optimized rounding to round `m * 2^exp`
@@ -430,161 +700,5 @@ double round(T m, exp_t exp, prec_t p, const std::optional<exp_t>& n, RM rm) {
     // finalize rounding (mantissa has precision 63)
     return round_finalize<PREC, U, FlagMask>(s, e, c, p, n, rm);
 }
-
-namespace experimental {
-
-/// @brief Should we increment to round?
-/// @tparam RM the rounding mode
-/// @tparam T the type of the significand
-/// @param hi the high part of the split significand
-/// @param n the split point
-/// @param halfway whether the low part is exactly at the halfway point
-/// @param sticky whether the low part has any nonzero bits below the halfway point
-/// @return should we increment the significand?
-template <RM rm, std::floating_point T>
-inline bool round_increment_nearest(bit_float<T> hi, exp_t n, bool halfway, bool sticky) {
-    // case split on rounding mode
-    if constexpr (rm == RM::RNE) {
-        // above halfway or exact halfway (increment if tie-breaking bit is odd)
-        return halfway && (sticky || hi.bit(n + 1));
-    } else if constexpr (rm == RM::RNA) {
-        // above or exactly at halfway - increment
-        return halfway || sticky;
-    } else {
-        MPFX_DEBUG_ASSERT(false, "unreachable");
-        return false;
-    }
-}
-
-/// @brief Should we increment to round?
-/// @tparam RM the rounding mode
-/// @tparam T the type of the significand
-/// @param hi the high part of the split significand
-/// @param lo the low part of the split significand
-/// @param n the split point
-/// @return should we increment the significand?
-template <RM rm, std::floating_point T>
-inline bool round_increment_directed(bit_float<T> hi, exp_t n) {
-    // case split on rounding mode
-    if constexpr (rm == RM::RTP) {
-        // round toward +infinity
-        return !hi.s();
-    } else if constexpr (rm == RM::RTN) {
-        // round toward -infinity
-        return hi.s();
-    } else if constexpr (rm == RM::RTZ) {
-        // round toward zero
-        return false;
-    } else if constexpr (rm == RM::RAZ) {
-        // round away from zero
-        return true;
-    } else if constexpr (rm == RM::RTO) {
-        // round to odd => increment if LSB is even
-        return !hi.bit(n + 1);
-    } else if constexpr (rm == RM::RTE) {
-        // round to even => increment if LSB is odd
-        return hi.bit(n + 1);
-    } else {
-        MPFX_DEBUG_ASSERT(false, "unreachable");
-        return false;
-    }
-}
-
-/// @brief Finalizes the rounding procedure.
-/// @tparam T the floating-point type
-template <std::floating_point T>
-inline bit_float<T> round_finalize(bit_float<T> hi, exp_t exp, bool increment) {
-    if (increment) {
-        // increment the high part by adding "1" relative to the split point `n`
-        const T incr = bit_float<T>::make_pow2(exp, hi.s()).to_float();
-        return bit_float<T>(hi.to_float() + incr);
-    } else {
-        // no increment, just return the high part
-        return hi;
-    }
-}
-
-/// @brief Optimized rounding of a `bit_float` type.
-/// @tparam RM the rounding mode
-/// @tparam FlagMask the mask of flags to set
-/// @param x the `bit_float` value to round
-/// @param p the target precision to round to
-/// @param n optional minimum normalized exponent for subnormalization
-template <RM rm, flag_mask_t FlagMask = Flags::ALL_FLAGS, std::floating_point T>
-bit_float<T> round(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
-    // fast path: special values (infinity, NaN, 0)
-    if (x.is_nar() || x.is_zero()) {
-        return x;
-    }
-
-    // compute the actual split point `n`
-    const exp_t e = x.e();
-    const exp_t n_min = e - static_cast<exp_t>(p);
-    const exp_t n_act = n.has_value() ? std::max(n_min, *n) : n_min;
-
-    // case split on rounding mode
-    if constexpr (rm == RM::RNE || rm == RM::RNA) {
-        // nearest rounding modes - need to recover lower part for tie-breaking
-
-        // split the `bit_float` at the actual split point
-        const auto [hi, halfway, sticky] = x.split_rs(n_act);
-
-        // fast path: low is zero
-        if (!halfway && !sticky) {
-            return hi;
-        }
-
-        // should we increment?
-        bool increment = round_increment_nearest<rm>(hi, n_act, halfway, sticky);
-        return round_finalize(hi, n_act + 1, increment);
-    } else {
-        // directed rounding mode - only need to check if `low == 0`
-
-        // split the `bit_float` at the actual split point
-        const auto [hi, sticky] = x.split_sticky(n_act);
-
-        // fast path: low is zero
-        if (!sticky) {
-            return hi;
-        }
-
-        // should we increment?
-        bool increment = round_increment_directed<rm>(hi, n_act);
-        return round_finalize(hi, n_act + 1, increment);
-    }
-}
-
-/// @brief Optimized rounding of a `bit_float` type.
-/// @tparam RM the rounding mode
-/// @tparam FlagMask the mask of flags to set
-/// @param x the `bit_float` value to round
-/// @param p the target precision to round to
-/// @param n optional minimum normalized exponent for subnormalization
-template <flag_mask_t FlagMask = Flags::ALL_FLAGS, std::floating_point T>
-bit_float<T> round(bit_float<T> x, prec_t p, std::optional<exp_t> n, RM rm) {
-    switch (rm) {
-    case RM::RNE:
-        return round<RM::RNE, FlagMask>(x, p, n);
-    case RM::RNA:
-        return round<RM::RNA, FlagMask>(x, p, n);
-    case RM::RTP:
-        return round<RM::RTP, FlagMask>(x, p, n);
-    case RM::RTN:
-        return round<RM::RTN, FlagMask>(x, p, n);
-    case RM::RTZ:
-        return round<RM::RTZ, FlagMask>(x, p, n);
-    case RM::RAZ:
-        return round<RM::RAZ, FlagMask>(x, p, n);
-    case RM::RTO:
-        return round<RM::RTO, FlagMask>(x, p, n);
-    case RM::RTE:
-        return round<RM::RTE, FlagMask>(x, p, n);
-    default:
-        MPFX_DEBUG_ASSERT(false, "round: invalid rounding mode");
-        return x; // default return to avoid warnings
-    }
-}
-
-} // namespace experimental
 
 } // namespace mpfx

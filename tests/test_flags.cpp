@@ -438,7 +438,8 @@ TEST(TestFlags, TestTinyAfterFlag) {
         const mpfx::exp_t emin = n + static_cast<mpfx::exp_t>(p);
 
         // check inexact flag
-        EXPECT_EQ(mpfx::flags.tiny_after_rounding(), y_unbound == 0 || ye < emin);
+        bool tiny_after_ref = y_unbound == 0 || ye < emin;
+        EXPECT_EQ(mpfx::flags.tiny_after_rounding(), tiny_after_ref);
 
         // reset flag
         mpfx::flags.reset();
@@ -585,7 +586,7 @@ TEST(TestFlags, TestUnderflowAfterFlag) {
     }
 }
 
-TEST(TestFlags, TestCarry) {
+TEST(TestFlags, TestCarryFlag) {
     static constexpr size_t N = 1'000'000;
     static constexpr mpfx::prec_t MAX_PREC = 8;
     static constexpr mpfx::exp_t MAX_EXP = 4;

@@ -51,6 +51,24 @@ public:
         }
     }
 
+    /// @brief Extracts the sign field of the `bit_float`.
+    /// @return the sign bit at the position of the sign mask
+    constexpr uint_t sbits() const {
+        return bits_ & params_t::SMASK;
+    }
+
+    /// @brief Extracts the exponent field of the `bit_float`.
+    /// @return the exponent bits at the position of the exponent mask
+    constexpr uint_t ebits() const {
+        return bits_ & params_t::EMASK;
+    }
+
+    /// @brief Extracts the mantissa field of the `bit_float`.
+    /// @return the mantissa bits at the position of the mantissa mask
+    constexpr uint_t mbits() const {
+        return bits_ & params_t::MMASK;
+    }
+
     /// @brief Returns whether the `bit_float` represents a zero value.
     constexpr bool is_zero() const {
         return (bits_ & ~params_t::SMASK) == 0;
@@ -58,20 +76,20 @@ public:
 
     /// @brief Returns whether the `bit_float` represents an infinity or NaN.
     constexpr bool is_nar() const {
-        return (bits_ & params_t::EMASK) == params_t::EMASK;
+        return this->ebits() == params_t::EMASK;
     }
 
     /// @brief Returns whether the `bit_float` represents an infinity.
     constexpr bool is_inf() const {
-        const bool is_nar = (bits_ & params_t::EMASK) == params_t::EMASK;
-        const bool is_zero_mantissa = (bits_ & params_t::MMASK) == 0;
+        const bool is_nar = this->ebits() == params_t::EMASK;
+        const bool is_zero_mantissa = this->mbits() == 0;
         return is_nar && is_zero_mantissa;
     }
 
     /// @brief Returns whether the `bit_float` represents a NaN (Not a Number).
     constexpr bool is_nan() const {
-        const bool is_nar = (bits_ & params_t::EMASK) == params_t::EMASK;
-        const bool is_nonzero_mantissa = (bits_ & params_t::MMASK) != 0;
+        const bool is_nar = this->ebits() == params_t::EMASK;
+        const bool is_nonzero_mantissa = this->mbits() != 0;
         return is_nar && is_nonzero_mantissa;
     }
 
@@ -113,7 +131,7 @@ public:
     /// @brief Returns the unnormalized exponent of the `bit_float`.
     /// @return the unnormalized exponent as an integer
     constexpr exp_t exp() const {
-        const uint_t ebits = bits_ & params_t::EMASK;
+        const uint_t ebits = this->ebits();
         if (ebits == 0) {
             // subnormal number
             return params_t::EXPMIN;
@@ -129,8 +147,8 @@ public:
     /// including the implicit leading bit for normal numbers.
     /// @return the significand as an unsigned integer
     constexpr uint_t c() const {
-        const uint_t ebits = bits_ & params_t::EMASK;
-        const uint_t m = bits_ & params_t::MMASK;
+        const uint_t ebits = this->ebits();
+        const uint_t m = this->mbits();
         if (ebits == 0) {
             // subnormal number
             return m;
@@ -144,11 +162,11 @@ public:
     /// @brief Returns the (true) precision of the `bit_float`.
     /// @return the precision as an integer
     constexpr prec_t p() const {
-        const uint_t ebits = bits_ & params_t::EMASK;
+        const uint_t ebits = this->ebits();
         if (ebits == 0) {
             // subnormal number
             constexpr size_t min_lz = W - params_t::P;
-            const uint_t m = static_cast<uint_t>(bits_ & params_t::MMASK);
+            const uint_t m = this->mbits();
             const size_t lz = std::countl_zero(m) - min_lz;
             return params_t::P - static_cast<prec_t>(lz);
         } else {
@@ -172,8 +190,8 @@ public:
         MPFX_DEBUG_ASSERT(!is_nar(), "cannot compute significand for NaN or Inf");
 
         // extract the fields
-        const uint_t ebits = bits_ & params_t::EMASK;
-        const uint_t mbits = bits_ & params_t::MMASK;
+        const uint_t ebits = this->ebits();
+        const uint_t mbits = this->mbits();
 
         // extract exponent and significand
         exp_t exp;
@@ -210,9 +228,9 @@ public:
         }
 
         // extract the fields
-        const uint_t sbits = bits_ & params_t::SMASK;
-        const uint_t ebits = bits_ & params_t::EMASK;
-        const uint_t mbits = bits_ & params_t::MMASK;
+        const uint_t sbits = this->sbits();
+        const uint_t ebits = this->ebits();
+        const uint_t mbits = this->mbits();
 
         // extract the normalized exponent and integer significand
         const auto [e, c] = decode(ebits, mbits);
@@ -287,9 +305,9 @@ public:
         }
 
         // extract the fields
-        const uint_t sbits = bits_ & params_t::SMASK;
-        const uint_t ebits = bits_ & params_t::EMASK;
-        const uint_t mbits = bits_ & params_t::MMASK;
+        const uint_t sbits = this->sbits();
+        const uint_t ebits = this->ebits();
+        const uint_t mbits = this->mbits();
 
         // extract the normalized exponent and integer significand
         const auto [e, c] = decode(ebits, mbits);
@@ -350,9 +368,9 @@ public:
         }
 
         // extract the fields
-        const uint_t sbits = bits_ & params_t::SMASK;
-        const uint_t ebits = bits_ & params_t::EMASK;
-        const uint_t mbits = bits_ & params_t::MMASK;
+        const uint_t sbits = this->sbits();
+        const uint_t ebits = this->ebits();
+        const uint_t mbits = this->mbits();
 
         // extract the normalized exponent and integer significand
         const auto [e, c] = decode(ebits, mbits);
