@@ -159,13 +159,15 @@ inline bit_float<T> round_finalize(bit_float<T> hi, exp_t exp, bool increment) {
 /// @param n the actual split point used for rounding
 template <RM rm, std::floating_point T>
 inline bool round_tiny_after(bit_float<T> x, exp_t e, exp_t emin, exp_t n) {
+    static constexpr exp_t EXPMIN = bit_float<T>::params_t::EXPMIN;
+
     if (e < emin - 1) {
         // below the largest subnormal binade - definitely tiny after rounding
         return true;
     } else {
         // in the largest subnormal binade - possibly tiny after rounding
         const T min_norm = bit_float<T>::make_pow2(emin).to_float();
-        const T half_ulp = bit_float<T>::make_pow2(n).to_float();
+        const T half_ulp = bit_float<T>::make_pow2(std::max(n, EXPMIN)).to_float();
         const T cutoff = min_norm - half_ulp; // Sterbenz lemma guarantees exact
         if (std::abs(x.to_float()) <= cutoff) {
             // we will never round up to 2^emin - definitely tiny after rounding
@@ -175,13 +177,7 @@ inline bool round_tiny_after(bit_float<T> x, exp_t e, exp_t emin, exp_t n) {
             if constexpr (rm == RM::RNE || rm == RM::RNA) {
                 // nearest rounding modes
                 const auto [hi, halfway, sticky] = x.split_rs(n - 1);
-                if (!halfway && !sticky) {
-                    // exactly representable
-                    return true;
-                } else {
-                    // not exact incremental
-                    return !round_increment_nearest<rm>(hi, n - 1, halfway, sticky);
-                }
+                return !round_increment_nearest<rm>(hi, n - 1, halfway, sticky);
             } else {
                 // directed rounding modes
                 const auto [hi, sticky] = x.split_sticky(n - 1);
@@ -205,6 +201,14 @@ inline bool round_tiny_after(bit_float<T> x, exp_t e, exp_t emin, exp_t n) {
 /// @param n optional minimum normalized exponent for subnormalization
 template <RM rm, flag_mask_t FlagMask = Flags::ALL_FLAGS, std::floating_point T>
 bit_float<T> round(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
+    // which flags to check
+    static constexpr bool CHECK_TINY_BEFORE = FlagMask & Flags::TINY_BEFORE_ROUNDING_FLAG;
+    static constexpr bool CHECK_TINY_AFTER = FlagMask & Flags::TINY_AFTER_ROUNDING_FLAG;
+    static constexpr bool CHECK_UNDERFLOW_BEFORE = FlagMask & Flags::UNDERFLOW_BEFORE_ROUNDING_FLAG;
+    static constexpr bool CHECK_UNDERFLOW_AFTER = FlagMask & Flags::UNDERFLOW_AFTER_ROUNDING_FLAG;
+    static constexpr bool CHECK_INEXACT = FlagMask & Flags::INEXACT_FLAG;
+    static constexpr bool CHECK_CARRY = FlagMask & Flags::CARRY_FLAG;
+
     // fast path: special values (infinity, NaN)
     if (x.is_nar()) {
         return x;
@@ -213,10 +217,10 @@ bit_float<T> round(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
     // fast path: zero
     if (x.is_zero()) {
         // raise tiny flags
-        if constexpr (FlagMask & Flags::TINY_BEFORE_ROUNDING_FLAG) {
+        if constexpr (CHECK_TINY_BEFORE) {
             flags.set_tiny_before_rounding();
         }
-        if constexpr (FlagMask & Flags::TINY_AFTER_ROUNDING_FLAG) {
+        if constexpr (CHECK_TINY_AFTER) {
             flags.set_tiny_after_rounding();
         }
 
@@ -231,7 +235,7 @@ bit_float<T> round(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
 
     // set tiny before rounding flag if requested
     bool tiny_before = e < emin;
-    if constexpr (FlagMask & Flags::TINY_BEFORE_ROUNDING_FLAG) {
+    if constexpr (CHECK_TINY_BEFORE) {
         if (tiny_before) {
             flags.set_tiny_before_rounding();
         }
@@ -247,7 +251,7 @@ bit_float<T> round(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
         // fast path: low is zero
         if (!halfway && !sticky) {
             // we are tiny after rounding if we were tiny before rounding
-            if constexpr (FlagMask & Flags::TINY_AFTER_ROUNDING_FLAG) {
+            if constexpr (CHECK_TINY_AFTER) {
                 if (tiny_before) {
                     flags.set_tiny_after_rounding();
                 }
@@ -267,7 +271,7 @@ bit_float<T> round(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
         // fast path: low is zero
         if (!sticky) {
             // we are tiny after rounding if we were tiny before rounding
-            if constexpr (FlagMask & Flags::TINY_AFTER_ROUNDING_FLAG) {
+            if constexpr (CHECK_TINY_AFTER) {
                 if (tiny_before) {
                     flags.set_tiny_after_rounding();
                 }
@@ -282,29 +286,29 @@ bit_float<T> round(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
     }
 
     // set inexact flag if requested
-    if constexpr (FlagMask & Flags::INEXACT_FLAG) {
+    if constexpr (CHECK_INEXACT) {
         flags.set_inexact();
     }
 
     // set underflow before rounding flag if requested
-    if constexpr (FlagMask & Flags::UNDERFLOW_BEFORE_ROUNDING_FLAG) {
+    if constexpr (CHECK_UNDERFLOW_BEFORE) {
         if (tiny_before) {
             flags.set_underflow_before_rounding();
         }
     }
 
     // detect tininess after rounding
-    if constexpr (FlagMask & Flags::TINY_AFTER_ROUNDING_FLAG || FlagMask & Flags::UNDERFLOW_AFTER_ROUNDING_FLAG) {
+    if constexpr (CHECK_TINY_AFTER || CHECK_UNDERFLOW_AFTER) {
         if (tiny_before) {
             // we can only be tiny after rounding if we were tiny before rounding
             if (round_tiny_after<rm>(x, e, emin, n_act)) {
                 // set tiny after rounding flag if requested
-                if constexpr (FlagMask & Flags::TINY_AFTER_ROUNDING_FLAG) {
+                if constexpr (CHECK_TINY_AFTER) {
                     flags.set_tiny_after_rounding();
                 }
 
                 // set underflow after rounding flag if requested
-                if constexpr (FlagMask & Flags::UNDERFLOW_AFTER_ROUNDING_FLAG) {
+                if constexpr (CHECK_UNDERFLOW_AFTER) {
                     flags.set_underflow_after_rounding();
                 }
             }
@@ -312,7 +316,7 @@ bit_float<T> round(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
     }
 
     // set carry flag
-    if constexpr (FlagMask & Flags::CARRY_FLAG) {
+    if constexpr (CHECK_CARRY) {
         if (e >= emin && result.e() > e) {
             flags.set_carry();
         }
@@ -641,8 +645,8 @@ double round_finalize(bool s, exp_t e, T c, prec_t p, const std::optional<exp_t>
 /// @brief Optimized rounding to round a double-precision floating-point number
 /// to a double-precision floating-point number with target precision `p`
 /// and first unrepresentable digit `n`.
-template<flag_mask_t FlagMask = Flags::ALL_FLAGS>
-double round(double x, prec_t p, const std::optional<exp_t>& n, RM rm) {
+template<flag_mask_t FlagMask = Flags::ALL_FLAGS, std::floating_point T>
+T round(T x, prec_t p, const std::optional<exp_t>& n, RM rm) {
     return experimental::round<FlagMask>(bit_float<double>(x), p, n, rm).to_float();
 }
 
