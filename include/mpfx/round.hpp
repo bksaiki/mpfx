@@ -159,36 +159,34 @@ inline bit_float<T> round_finalize(bit_float<T> hi, exp_t exp, bool increment) {
 /// @param n the actual split point used for rounding
 template <RM rm, std::floating_point T>
 inline bool round_tiny_after(bit_float<T> x, exp_t e, exp_t emin, exp_t n) {
-    static constexpr exp_t EXPMIN = bit_float<T>::params_t::EXPMIN;
-
+    // below the largest subnormal binade - definitely tiny after rounding
     if (e < emin - 1) {
-        // below the largest subnormal binade - definitely tiny after rounding
         return true;
+    }
+
+    // in the largest subnormal binade - possibly tiny after rounding
+    const T min_norm = bit_float<T>::make_pow2(emin).to_float();
+    const T half_ulp = bit_float<T>::make_pow2(n).to_float();
+    const T cutoff = min_norm - half_ulp; // Sterbenz lemma guarantees exact
+    if (std::abs(x.to_float()) <= cutoff) {
+        // we will never round up to 2^emin - definitely tiny after rounding
+        return true;
+    }
+
+    // halfway to the smallest normal - round again with an additional bit
+    if constexpr (rm == RM::RNE || rm == RM::RNA) {
+        // nearest rounding modes
+        const auto [hi, halfway, sticky] = x.split_rs(n - 1);
+        return !round_increment_nearest<rm>(hi, n - 1, halfway, sticky);
     } else {
-        // in the largest subnormal binade - possibly tiny after rounding
-        const T min_norm = bit_float<T>::make_pow2(emin).to_float();
-        const T half_ulp = bit_float<T>::make_pow2(std::max(n, EXPMIN)).to_float();
-        const T cutoff = min_norm - half_ulp; // Sterbenz lemma guarantees exact
-        if (std::abs(x.to_float()) <= cutoff) {
-            // we will never round up to 2^emin - definitely tiny after rounding
+        // directed rounding modes
+        const auto [hi, sticky] = x.split_sticky(n - 1);
+        if (!sticky) {
+            // exactly representable
             return true;
         } else {
-            // we might be tiny after rounding - round again without subnormalization
-            if constexpr (rm == RM::RNE || rm == RM::RNA) {
-                // nearest rounding modes
-                const auto [hi, halfway, sticky] = x.split_rs(n - 1);
-                return !round_increment_nearest<rm>(hi, n - 1, halfway, sticky);
-            } else {
-                // directed rounding modes
-                const auto [hi, sticky] = x.split_sticky(n - 1);
-                if (!sticky) {
-                    // exactly representable
-                    return true;
-                } else {
-                    // not exact incremental
-                    return !round_increment_directed<rm>(hi, n - 1);
-                }
-            }
+            // not exact incremental
+            return !round_increment_directed<rm>(hi, n - 1);
         }
     }
 }
@@ -201,6 +199,10 @@ inline bool round_tiny_after(bit_float<T> x, exp_t e, exp_t emin, exp_t n) {
 /// @param n optional minimum normalized exponent for subnormalization
 template <RM rm, flag_mask_t FlagMask = Flags::ALL_FLAGS, std::floating_point T>
 bit_float<T> round(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
+    using params_t = typename bit_float<T>::params_t;
+    MPFX_DEBUG_ASSERT(p < params_t::P, "target precision must be less than the precision of the container type");
+    MPFX_DEBUG_ASSERT(!n.has_value() || *n + 1 >= params_t::EXPMIN, "subnormalization point must be at least EMIN - 1");
+
     // which flags to check
     static constexpr bool CHECK_TINY_BEFORE = FlagMask & Flags::TINY_BEFORE_ROUNDING_FLAG;
     static constexpr bool CHECK_TINY_AFTER = FlagMask & Flags::TINY_AFTER_ROUNDING_FLAG;
@@ -243,6 +245,7 @@ bit_float<T> round(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
 
     // case split on rounding mode
     bit_float<T> result;
+    bool increment;
     if constexpr (rm == RM::RNE || rm == RM::RNA) {
         // nearest rounding modes - need to recover lower part for tie-breaking
         // split the `bit_float` at the actual split point
@@ -261,7 +264,7 @@ bit_float<T> round(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
         }
 
         // should we increment?
-        bool increment = round_increment_nearest<rm>(hi, n_act, halfway, sticky);
+        increment = round_increment_nearest<rm>(hi, n_act, halfway, sticky);
         result = round_finalize(hi, n_act + 1, increment);
     } else {
         // directed rounding mode - only need to check if `low == 0`
@@ -281,7 +284,7 @@ bit_float<T> round(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
         }
 
         // should we increment?
-        bool increment = round_increment_directed<rm>(hi, n_act);
+        increment = round_increment_directed<rm>(hi, n_act);
         result = round_finalize(hi, n_act + 1, increment);
     }
 
@@ -290,18 +293,18 @@ bit_float<T> round(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
         flags.set_inexact();
     }
 
-    // set underflow before rounding flag if requested
-    if constexpr (CHECK_UNDERFLOW_BEFORE) {
-        if (tiny_before) {
+    if (tiny_before) {
+        // set underflow before rounding flag if requested
+        if constexpr (CHECK_UNDERFLOW_BEFORE) {
             flags.set_underflow_before_rounding();
         }
-    }
 
-    // detect tininess after rounding
-    if constexpr (CHECK_TINY_AFTER || CHECK_UNDERFLOW_AFTER) {
-        if (tiny_before) {
+        // detect tininess after rounding
+        if constexpr (CHECK_TINY_AFTER || CHECK_UNDERFLOW_AFTER) {
             // we can only be tiny after rounding if we were tiny before rounding
-            if (round_tiny_after<rm>(x, e, emin, n_act)) {
+            bool tiny_after = round_tiny_after<rm>(x, e, emin, n_act);
+
+            if (tiny_after) {
                 // set tiny after rounding flag if requested
                 if constexpr (CHECK_TINY_AFTER) {
                     flags.set_tiny_after_rounding();
@@ -317,8 +320,12 @@ bit_float<T> round(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
 
     // set carry flag
     if constexpr (CHECK_CARRY) {
-        if (e >= emin && result.e() > e) {
-            flags.set_carry();
+        // we carry if we incremented and we are normal before incrementing
+        if (increment && !tiny_before) {
+            // we carry when the result is a power of two
+            if (result.mbits() == 0) {
+                flags.set_carry();
+            }
         }
     }
 

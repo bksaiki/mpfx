@@ -52,7 +52,8 @@ int main() {
     constexpr auto TEST_FLAGS = mpfx::Flags::NO_FLAGS;
 
     double avg_time = run_benchmark<BASELINE_FLAGS>(x_vals, ctx, N);
-    double avg_time_no_flags = run_benchmark<TEST_FLAGS>(x_vals, ctx, N);
+    double avg_time_test_flags = run_benchmark<TEST_FLAGS>(x_vals, ctx, N);
+    double speedup = avg_time / avg_time_test_flags;
 
     std::cout << "MPFX rounding benchmark completed.\n\n";
 
@@ -62,7 +63,8 @@ int main() {
     std::cout << "Precision:                " << static_cast<size_t>(ctx.prec()) << " bits\n";
     std::cout << "Rounding mode:            " << static_cast<int>(ctx.rm()) << "\n";
     std::cout << "Average time (all flags): " << std::fixed << std::setprecision(2) << avg_time << " ns/op\n";
-    std::cout << "Average time (test):      " << std::fixed << std::setprecision(2) << avg_time_no_flags << " ns/op\n";
+    std::cout << "Average time (test):      " << std::fixed << std::setprecision(2) << avg_time_test_flags << " ns/op\n";
+    std::cout << "Speedup:                  " << std::fixed << std::setprecision(2) << speedup << "x\n";
     std::cout << "===============================================================\n";
 
     return 0;
