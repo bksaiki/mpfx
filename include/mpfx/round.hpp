@@ -95,7 +95,7 @@ inline bool round_increment_nearest(bit_float<T> hi, exp_t n, bool halfway, bool
         return halfway && (sticky || hi.bit(n + 1));
     } else if constexpr (rm == RM::RNA) {
         // above or exactly at halfway - increment
-        return halfway || sticky;
+        return halfway;
     } else {
         MPFX_DEBUG_ASSERT(false, "unreachable");
         return false;
