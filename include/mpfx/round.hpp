@@ -91,8 +91,13 @@ template <RM rm, std::floating_point T>
 inline bool round_increment_nearest(bit_float<T> hi, exp_t n, bool halfway, bool sticky) {
     // case split on rounding mode
     if constexpr (rm == RM::RNE) {
-        // above halfway or exact halfway (increment if tie-breaking bit is odd)
-        return halfway && (sticky || hi.bit(n + 1));
+        if (halfway && !sticky) {
+            // exactly halfway - increment if the LSB is odd
+            return hi.bit(n + 1);
+        } else {
+            // above halfway - increment
+            return halfway;
+        }
     } else if constexpr (rm == RM::RNA) {
         // above or exactly at halfway - increment
         return halfway;
