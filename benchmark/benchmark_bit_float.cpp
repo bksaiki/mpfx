@@ -112,7 +112,7 @@ void benchmark_rounding_mode(size_t prec_max, mpfx::exp_t n_min, mpfx::exp_t n_m
     std::cout << "Average time (double):    " << std::fixed << std::setprecision(2) << avg_time_double << " ns/op (" << speedup_double << "x)\n";
     std::cout << "Average time (bit_float): " << std::fixed << std::setprecision(2) << avg_time_bit_float << " ns/op (" << speedup_bit_float << "x)\n";
     std::cout << "Speedup:                  " << std::fixed << std::setprecision(2) << speedup << "x\n";
-    std::cout << "==========================================================================\n";
+    std::cout << "===================================================================\n";
 }
 
 int main() {
