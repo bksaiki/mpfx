@@ -150,6 +150,53 @@ inline bit_float<T> round_finalize(bit_float<T> hi, exp_t exp, bool increment) {
     }
 }
 
+/// @brief Checks for tininess after rounding
+/// @tparam T the floating-point type
+/// @param x the original value (assumed to be tiny before rounding)
+/// @param result the rounded value
+/// @param e the normalized exponent of `x`
+/// @param emin the minimum normalized exponent
+/// @param n the actual split point used for rounding
+template <RM rm, std::floating_point T>
+inline bool round_tiny_after(bit_float<T> x, exp_t e, exp_t emin, exp_t n) {
+    if (e < emin - 1) {
+        // below the largest subnormal binade - definitely tiny after rounding
+        return true;
+    } else {
+        // in the largest subnormal binade - possibly tiny after rounding
+        const T min_norm = bit_float<T>::make_pow2(emin).to_float();
+        const T half_ulp = bit_float<T>::make_pow2(n).to_float();
+        const T cutoff = min_norm - half_ulp; // Sterbenz lemma guarantees exact
+        if (std::abs(x.to_float()) <= cutoff) {
+            // we will never round up to 2^emin - definitely tiny after rounding
+            return true;
+        } else {
+            // we might be tiny after rounding - round again without subnormalization
+            if constexpr (rm == RM::RNE || rm == RM::RNA) {
+                // nearest rounding modes
+                const auto [hi, halfway, sticky] = x.split_rs(n - 1);
+                if (!halfway && !sticky) {
+                    // exactly representable
+                    return true;
+                } else {
+                    // not exact incremental
+                    return !round_increment_nearest<rm>(hi, n - 1, halfway, sticky);
+                }
+            } else {
+                // directed rounding modes
+                const auto [hi, sticky] = x.split_sticky(n - 1);
+                if (!sticky) {
+                    // exactly representable
+                    return true;
+                } else {
+                    // not exact incremental
+                    return !round_increment_directed<rm>(hi, n - 1);
+                }
+            }
+        }
+    }
+}
+
 /// @brief Optimized rounding of a `bit_float` type.
 /// @tparam RM the rounding mode
 /// @tparam FlagMask the mask of flags to set
@@ -234,33 +281,40 @@ bit_float<T> round(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
         result = round_finalize(hi, n_act + 1, increment);
     }
 
-    // set tiny after rounding flag if requested
-    if constexpr (FlagMask & Flags::TINY_AFTER_ROUNDING_FLAG) {
-        if (e < emin - 1) {
-            // we are definitely tiny after rounding
-            flags.set_tiny_after_rounding();
-        } else if (e == emin - 1) {
-
-        }
-    }
-
     // set inexact flag if requested
     if constexpr (FlagMask & Flags::INEXACT_FLAG) {
         flags.set_inexact();
-        if constexpr (FlagMask & Flags::UNDERFLOW_BEFORE_ROUNDING_FLAG) {
-            if (tiny_before) {
-                flags.set_underflow_before_rounding();
+    }
+
+    // set underflow before rounding flag if requested
+    if constexpr (FlagMask & Flags::UNDERFLOW_BEFORE_ROUNDING_FLAG) {
+        if (tiny_before) {
+            flags.set_underflow_before_rounding();
+        }
+    }
+
+    // detect tininess after rounding
+    if constexpr (FlagMask & Flags::TINY_AFTER_ROUNDING_FLAG || FlagMask & Flags::UNDERFLOW_AFTER_ROUNDING_FLAG) {
+        if (tiny_before) {
+            // we can only be tiny after rounding if we were tiny before rounding
+            if (round_tiny_after<rm>(x, e, emin, n_act)) {
+                // set tiny after rounding flag if requested
+                if constexpr (FlagMask & Flags::TINY_AFTER_ROUNDING_FLAG) {
+                    flags.set_tiny_after_rounding();
+                }
+
+                // set underflow after rounding flag if requested
+                if constexpr (FlagMask & Flags::UNDERFLOW_AFTER_ROUNDING_FLAG) {
+                    flags.set_underflow_after_rounding();
+                }
             }
         }
     }
 
     // set carry flag
     if constexpr (FlagMask & Flags::CARRY_FLAG) {
-        if (n.has_value()) {
-            const exp_t emin = *n + static_cast<exp_t>(p);
-            if (e >= emin && result.e() > e) {
-                flags.set_carry();
-            }
+        if (e >= emin && result.e() > e) {
+            flags.set_carry();
         }
     }
 
