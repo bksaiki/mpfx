@@ -171,14 +171,30 @@ public:
     constexpr bool bit(exp_t n) const {
         MPFX_DEBUG_ASSERT(!is_nar(), "cannot compute significand for NaN or Inf");
 
+        // extract the fields
+        const uint_t ebits = bits_ & params_t::EMASK;
+        const uint_t mbits = bits_ & params_t::MMASK;
+
+        // extract exponent and significand
+        exp_t exp;
+        uint_t c;
+        if (ebits == 0) {
+            // subnormal number
+            exp = params_t::EXPMIN;
+            c = mbits;
+        } else {
+            // normal number
+            const exp_t e = static_cast<exp_t>(ebits >> params_t::M) - params_t::BIAS;
+            exp = e - static_cast<exp_t>(params_t::P - 1);
+            c = mbits | params_t::IMPLICIT1; // add implicit leading bit
+        }
+
         // check if the bit is out of range
-        const exp_t exp = this->exp();
         if (n < exp || n >= exp + static_cast<exp_t>(params_t::P)) {
             return false;
         }
 
         // extract the bit from the significand
-        const uint_t c = this->c();
         return (c >> (n - exp)) & 0x1;
     }
 
