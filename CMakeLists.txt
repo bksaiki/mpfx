@@ -98,6 +98,7 @@ include_directories(
 
 # Header files (for IDE organization)
 set(HEADERS
+    include/mpfx/bit_float.hpp
     include/mpfx/context.hpp
     include/mpfx/context_ieee754.hpp
     include/mpfx/context_mp.hpp

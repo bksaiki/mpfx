@@ -5,9 +5,9 @@
 #include <optional>
 #include <tuple>
 
+#include "bit_float.hpp"
 #include "convert.hpp"
 #include "flags.hpp"
-#include "float.hpp"
 #include "params.hpp"
 #include "types.hpp"
 
@@ -319,15 +319,15 @@ bit_float<T> round(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
                 }
             }
         }
-    }
-
-    // set carry flag
-    if constexpr (CHECK_CARRY) {
-        // we carry if we incremented and we are normal before incrementing
-        if (increment && !tiny_before) {
-            // we carry when the result is a power of two
-            if (result.mbits() == 0) {
-                flags.set_carry();
+    } else {
+        if constexpr (CHECK_CARRY) {
+            // we can only carry if we increment (any not tiny before rounding)
+            if (increment) {
+                // we carry when the result is a power of two
+                if (result.mbits() == 0) {
+                    // set carry flag if requested
+                    flags.set_carry();
+                }
             }
         }
     }

@@ -2,7 +2,7 @@
 
 #include <gtest/gtest.h>
 #include <mpfx.hpp>
-#include <mpfx/float.hpp>
+#include <mpfx/bit_float.hpp>
 
 TEST(TestBitFloat, TestF32Construct) {
     mpfx::bit_float<float> bf1; // default constructor
