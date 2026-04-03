@@ -147,8 +147,7 @@ template <std::floating_point T>
 inline bit_float<T> round_finalize(bit_float<T> hi, exp_t exp, bool increment) {
     if (increment) {
         // increment the high part by adding "1" relative to the split point `n`
-        const T incr = bit_float<T>::make_pow2(exp, hi.s()).to_float();
-        return bit_float<T>(hi.to_float() + incr);
+        return hi.next_away_zero(exp);
     } else {
         // no increment, just return the high part
         return hi;
@@ -170,10 +169,9 @@ inline bool round_tiny_after(bit_float<T> x, exp_t e, exp_t emin, exp_t n) {
     }
 
     // in the largest subnormal binade - possibly tiny after rounding
-    const T min_norm = bit_float<T>::make_pow2(emin).to_float();
-    const T half_ulp = bit_float<T>::make_pow2(n).to_float();
-    const T cutoff = min_norm - half_ulp; // Sterbenz lemma guarantees exact
-    if (std::abs(x.to_float()) <= cutoff) {
+    const bit_float<T> min_norm = bit_float<T>::make_pow2(emin, x.s());
+    const bit_float<T> cutoff = min_norm.next_toward_zero(n);
+    if (x.compare_mag(cutoff) <= 0) {
         // we will never round up to 2^emin - definitely tiny after rounding
         return true;
     }
