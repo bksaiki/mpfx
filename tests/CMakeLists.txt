@@ -2,11 +2,11 @@
 
 # Test executables
 set(TEST_SOURCES
+    test_bit_float.cpp
     test_convert.cpp
     test_context.cpp
     test_engine.cpp
     test_flags.cpp
-    test_float.cpp
     test_ops.cpp
     test_round.cpp
     test_eft.cpp

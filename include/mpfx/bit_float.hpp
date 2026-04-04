@@ -93,6 +93,16 @@ public:
         return is_nar && is_nonzero_mantissa;
     }
 
+    /// @brief Compares the magnitude of this `bit_float` with `other`.
+    /// Assumes that neither `this` nor `other` is NaN or infinity.
+    /// @param other the `bit_float` to compare against
+    /// @return -1 if `|this| < |other|`, 0 if `|this| == |other|`, 1 if `|this| > |other|`
+    constexpr int compare_mag(bit_float other) const {
+        const uint_t a = bits_ & ~params_t::SMASK;
+        const uint_t b = other.bits_ & ~params_t::SMASK;
+        return (a > b) - (a < b);
+    }
+
     /// @brief Returns the raw bits of the `bit_float`.
     /// @return the raw bits as an unsigned integer
     constexpr uint_t to_bits() const {
@@ -401,6 +411,42 @@ public:
         const uint_t high = sbits | ebits | (c_high & params_t::MMASK);
 
         return { bit_float(high), c_low != 0 };
+    }
+
+    /// @brief Computes `self + sgn(self) * 2^exp`.
+    ///
+    /// Assumes that `self != 0` and that `self + sgn(self) * 2^exp`
+    /// is representable in the type of `self`.
+    ///
+    /// @param exp the exponent of the increment
+    /// @return the result of the increment as a `bit_float`
+    constexpr bit_float next_away_zero(exp_t exp) const {
+        MPFX_DEBUG_ASSERT(!is_zero(), "self must be nonzero");
+        MPFX_DEBUG_ASSERT(!is_nar(), "self must not be NaN or Inf");
+
+        // compute the increment
+        const auto incr = make_pow2(exp, s()).to_float();
+
+        // compute the result (assuming no rounding error)
+        return bit_float(this->to_float() + incr);
+    }
+
+    /// @brief Computes `self - sgn(self) * 2^exp`.
+    ///
+    /// Assumes that `self != 0` and that `self - sgn(self) * 2^exp`
+    /// is representable in the type of `self`.
+    ///
+    /// @param exp the exponent of the decrement
+    /// @return the result of the decrement as a `bit_float`
+    constexpr bit_float next_toward_zero(exp_t exp) const {
+        MPFX_DEBUG_ASSERT(!is_zero(), "self must be nonzero");
+        MPFX_DEBUG_ASSERT(!is_nar(), "self must not be NaN or Inf");
+
+        // compute the decrement
+        const auto decr = make_pow2(exp, s()).to_float();
+
+        // compute the result (assuming no rounding error)
+        return bit_float(this->to_float() - decr);
     }
 
 private:

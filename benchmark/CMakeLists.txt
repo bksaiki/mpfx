@@ -1,9 +1,6 @@
 add_executable(benchmark_round benchmark_round.cpp)
 target_link_libraries(benchmark_round mpfx)
 
-add_executable(benchmark_bit_float benchmark_bit_float.cpp)
-target_link_libraries(benchmark_bit_float mpfx)
-
 add_executable(benchmark_add benchmark_add.cpp)
 target_link_libraries(benchmark_add 
     mpfx
