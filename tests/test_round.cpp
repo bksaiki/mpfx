@@ -465,14 +465,14 @@ TEST(TestRound, TestFP64toFP32) {
     std::mt19937_64 rng(r());
 
     std::uniform_int_distribution<int> sign_dist(0, 1);
-    std::uniform_int_distribution<uint32_t> c_dist(0, 0xffffffff);
+    std::uniform_int_distribution<uint32_t> c_dist(0, 0x7fffff);
     std::uniform_int_distribution<exp_t> exp_dist(-160, 110);
 
     for (size_t i = 0; i < N; i++) {
         // generate a random float
         const bool s = sign_dist(rng) == 1;
         const exp_t exp = exp_dist(rng);
-        const uint32_t c = c_dist(rng) & 0x7fffff; // 23 bits for significand
+        const uint32_t c = c_dist(rng);
         const double x = make_float<double>(s, exp, c);
 
         // test rounding for each rounding mode
