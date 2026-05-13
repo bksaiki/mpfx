@@ -72,7 +72,7 @@ static double dispatch_optimized(const std::vector<double>& x_vals, mpfx::RM rm)
 }
 
 int main() {
-    static constexpr size_t N = 50'000'000;
+    static constexpr size_t N = 100'000'000;
 
     // exercise the full fp32 range, including overflow and subnormal regions
     static constexpr std::array<mpfx::RM, 8> rms = {
