@@ -155,7 +155,6 @@ float fp64_to_fp32(double x) {
         const uint32_t bits = std::bit_cast<uint32_t>(y_rne);
         return std::bit_cast<float>(bits + static_cast<uint32_t>(up));
     } else if constexpr (rm == RM::RTP) {
-        // round toward +infinity: check if we rounded down and if so step up by one ULP.
         if (y_rne < x) {
             const uint32_t delta = std::signbit(y_rne) ? static_cast<uint32_t>(-1) : 1u;
             const uint32_t bits = std::bit_cast<uint32_t>(y_rne);
@@ -173,18 +172,8 @@ float fp64_to_fp32(double x) {
             return y_rne;
         }
     } else if constexpr (rm == RM::RTO) {
-        // Unoptimized algorithm (round to odd):
-        //     if y_down == y_up: return that value (x exactly representable)
-        //     else: return whichever of y_down / y_up has an odd LSB
-        // Inf/NaN handled up front: RTO produces inf only when |x| >= INFVAL
-        // (= 2^128, the smallest |x| that rounds up to inf under exact RTO);
-        // for the half-binade between MAX and INFVAL the RNE cast overshoots
-        // to inf and we have to clip back to +/-MAX. NaN propagates as-is.
-        // For finite y_rne: if already exact or odd, keep; otherwise step one
-        // ULP toward x. The step direction is "away from zero" iff
-        //   (y_rne < x) XOR signbit(y_rne)
-        // i.e., moving toward more-positive values means away from zero for
-        // positive y_rne and toward zero for negative y_rne.
+        // round to odd: if already odd or exact, keep; otherwise step one ULP away
+        // from zero (bits + 1 for positive, bits - 1 for negative)
         if (!std::isfinite(y_rne)) {
             if (std::isnan(x)) {
                 return y_rne;
@@ -202,13 +191,8 @@ float fp64_to_fp32(double x) {
         const uint32_t delta = away ? 1u : static_cast<uint32_t>(-1);
         return std::bit_cast<float>(bits + delta);
     } else if constexpr (rm == RM::RTE) {
-        // Unoptimized algorithm (round to even):
-        //     if y_down == y_up: return that value
-        //     else: return whichever of y_down / y_up has an even LSB
-        // Inf/NaN/finite-overflow all give back y_rne (RTE overflow yields
-        // inf, matching the RNE cast). Otherwise: if already exact or even,
-        // keep; otherwise step one ULP toward x using the same XOR-with-
-        // signbit rule as RTO.
+        // round to even: if already even or exact, keep; otherwise step one ULP toward
+        // the even neighbor
         if (!std::isfinite(y_rne)) {
             return y_rne;
         }
