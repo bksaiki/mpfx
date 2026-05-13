@@ -109,131 +109,118 @@ inline float next_toward_zero(float x) {
 /// @tparam RM the rounding mode to use
 /// @param x the `double` value to round to `float`
 /// @return the rounded `float` value
+///
+/// Across all modes the implementation strategy is the same:
+///   1. Let `y_rne = (float) x` — this is the hardware RNE result, which also
+///      handles inf/NaN/+/-0 sign correctly.
+///   2. Decide whether `y_rne` already matches the requested rounding mode; if
+///      not, step it by one ULP in the bit pattern (away from zero = bits + 1,
+///      toward zero = bits - 1) to produce the correct neighbor.
+/// Each mode's comment gives the textbook pseudocode (treating x as a real
+/// number with adjacent representable floats y_down <= x <= y_up) followed by
+/// the y_rne-based shortcut that this code actually uses.
 template <RM rm>
 float fp64_to_fp32(double x) {
-    static constexpr float POS_INF = std::numeric_limits<float>::infinity();
-    static constexpr float NEG_INF = -std::numeric_limits<float>::infinity();
     static constexpr float POS_MAX = std::numeric_limits<float>::max();
-    static constexpr float NEG_MAX = -std::numeric_limits<float>::max();
-    static constexpr double INFVAL = 3.4028236692093846e+38;
+    static constexpr double INFVAL = 3.4028236692093846e+38; // 2^128
 
     // round under RNE
     const float y_rne = static_cast<float>(x);
 
     if constexpr (rm == RM::RNE) {
-        // round to nearest, ties to even - the cast already does this,
-        // including correct handling of inf/NaN/±0
+        // round to nearest, ties to even: nothing to do
         return y_rne;
     } else if constexpr (rm == RM::RNA) {
-        // round to nearest, ties away from zero - round using default rounding mode and fix up
-        if (!std::isfinite(y_rne)) {
-            // inf/NaN passthrough or finite overflow - RNA also produces infinity
+        // round to nearest, ties away from zero): only disagrees at midpoints
+        if (std::fabs(static_cast<double>(y_rne)) < std::fabs(x)) {
+            // rounded down to zero so might be incorrect
+            const uint32_t bits = std::bit_cast<uint32_t>(y_rne);
+            const float y_away = std::bit_cast<float>(bits + 1u);
+            const double mid = (static_cast<double>(y_rne) + static_cast<double>(y_away)) * 0.5;
+            return x == mid ? y_away : y_rne;
+        } else {
+            // definitely correct
             return y_rne;
         }
-        // y_rne and x share a sign; compare magnitudes via branchless fabs
-        if (std::fabs(static_cast<double>(y_rne)) >= std::fabs(x)) {
-            // RNE rounded away from zero (or exact) - RNA agrees
-            return y_rne;
-        }
-        // RNE rounded toward zero - check if exactly halfway.
-        // The midpoint between two adjacent floats is exactly representable
-        // as a double, so we can test equality directly.
-        const float y_away = next_away_zero(y_rne);
-        const double mid = (static_cast<double>(y_rne) + static_cast<double>(y_away)) * 0.5;
-        return x == mid ? y_away : y_rne;
     } else if constexpr (rm == RM::RTZ) {
-        // round towards zero - round using default rounding mode and fix up
-        if (!std::isfinite(y_rne)) {
-            // inf/NaN passthrough (when x is also non-finite) or finite overflow
-            if (!std::isfinite(x)) {
-                return y_rne;
-            } else {
-                return std::copysign(POS_MAX, x);
-            }
-        }
-        // y_rne and x share a sign; compare magnitudes via branchless fabs
-        if (std::fabs(static_cast<double>(y_rne)) <= std::fabs(x)) {
-            // already rounded toward zero or exact - just return it
-            return y_rne;
-        }
-        // rounded away from zero - step back toward zero by 1 ULP
-        // (safe: |y_rne| > |x| >= 0 implies y_rne != 0)
-        return next_toward_zero(y_rne);
+        // round toward zero: check if we rounded away from zero and if so
+        // step back toward zero by one ULP
+        const bool down = std::fabs(static_cast<double>(y_rne)) > std::fabs(x);
+        const uint32_t bits = std::bit_cast<uint32_t>(y_rne);
+        return std::bit_cast<float>(bits - static_cast<uint32_t>(down));
     } else if constexpr (rm == RM::RAZ) {
-        // round away from zero - round using default rounding mode and fix up
-        if (!std::isfinite(y_rne)) {
-            // inf/NaN passthrough or finite overflow - RAZ also produces infinity
-            return y_rne;
-        }
-        // y_rne and x share a sign; compare magnitudes via branchless fabs
-        if (std::fabs(static_cast<double>(y_rne)) >= std::fabs(x)) {
-            // already rounded away from zero or exact - just return it
-            return y_rne;
-        }
-        // rounded toward zero - step away from zero by 1 ULP
-        // (y_rne may be ±0 here; next_away_zero handles it correctly)
-        return next_away_zero(y_rne);
+        // round away from zero: check if we rounded toward zero and if so
+        // step away from zero by one ULP.
+        const bool up = std::fabs(static_cast<double>(y_rne)) < std::fabs(x);
+        const uint32_t bits = std::bit_cast<uint32_t>(y_rne);
+        return std::bit_cast<float>(bits + static_cast<uint32_t>(up));
     } else if constexpr (rm == RM::RTP) {
-        // round toward +infinity - round using default rounding mode and fix up
-        if (!std::isfinite(y_rne)) {
-            // inf/NaN passthrough (when x is also non-finite), or finite overflow
-            if (!std::isfinite(x)) {
-                return y_rne;
-            }
-            // finite overflow: +inf saturates up (RTP keeps +inf); -inf must clip to -MAX
-            return (y_rne == NEG_INF) ? NEG_MAX : y_rne;
-        } else if (y_rne >= x) {
-            // already rounded toward +infinity or exact - just return it
+        // round toward +infinity: check if we rounded down and if so step up by one ULP.
+        if (y_rne < x) {
+            const uint32_t delta = std::signbit(y_rne) ? static_cast<uint32_t>(-1) : 1u;
+            const uint32_t bits = std::bit_cast<uint32_t>(y_rne);
+            return std::bit_cast<float>(bits + delta);
+        } else {
             return y_rne;
         }
-        // step toward +inf: positive value moves away from zero, negative toward
-        // (y_rne != -0 in this branch since -0 >= x for any x <= 0)
-        return std::signbit(y_rne) ? next_toward_zero(y_rne) : next_away_zero(y_rne);
     } else if constexpr (rm == RM::RTN) {
-        // round toward -infinity - round using default rounding mode and fix up
-        if (!std::isfinite(y_rne)) {
-            // inf/NaN passthrough (when x is also non-finite), or finite overflow
-            if (!std::isfinite(x)) {
-                return y_rne;
-            }
-            // finite overflow: -inf saturates down (RTN keeps -inf); +inf must clip to +MAX
-            return (y_rne == POS_INF) ? POS_MAX : y_rne;
-        } else if (y_rne <= x) {
-            // already rounded toward -infinity or exact - just return it
+        // round toward -infinity: check if we rounded up and if so step down by one ULP.
+        if (y_rne > x) {
+            const uint32_t delta = std::signbit(y_rne) ? 1u : static_cast<uint32_t>(-1);
+            const uint32_t bits = std::bit_cast<uint32_t>(y_rne);
+            return std::bit_cast<float>(bits + delta);
+        } else {
             return y_rne;
         }
-        // step toward -inf: positive value moves toward zero, negative away
-        // (y_rne != +0 in this branch since +0 <= x for any x >= 0)
-        return std::signbit(y_rne) ? next_away_zero(y_rne) : next_toward_zero(y_rne);
     } else if constexpr (rm == RM::RTO) {
-        // round to odd - round using default rounding mode and fix up
+        // Unoptimized algorithm (round to odd):
+        //     if y_down == y_up: return that value (x exactly representable)
+        //     else: return whichever of y_down / y_up has an odd LSB
+        // Inf/NaN handled up front: RTO produces inf only when |x| >= INFVAL
+        // (= 2^128, the smallest |x| that rounds up to inf under exact RTO);
+        // for the half-binade between MAX and INFVAL the RNE cast overshoots
+        // to inf and we have to clip back to +/-MAX. NaN propagates as-is.
+        // For finite y_rne: if already exact or odd, keep; otherwise step one
+        // ULP toward x. The step direction is "away from zero" iff
+        //   (y_rne < x) XOR signbit(y_rne)
+        // i.e., moving toward more-positive values means away from zero for
+        // positive y_rne and toward zero for negative y_rne.
         if (!std::isfinite(y_rne)) {
-            // NaN passthrough; for inf, RTO produces inf only if |x| >= INFVAL
-            // (|inf| >= INFVAL is true, so x = ±inf also returns y_rne correctly)
             if (std::isnan(x)) {
                 return y_rne;
-            } else {
-                return (std::abs(x) >= INFVAL) ? y_rne : std::copysign(POS_MAX, x);
             }
-        } else if (y_rne == x || is_odd(y_rne)) {
-            // if exact or odd - just return it
+            return (std::abs(x) >= INFVAL) ? y_rne : std::copysign(POS_MAX, x);
+        }
+        const uint32_t bits = std::bit_cast<uint32_t>(y_rne);
+        if ((bits & 1u) || static_cast<double>(y_rne) == x) {
+            // either exact or odd, so already correct
             return y_rne;
         }
-        // inexact and even - step toward x by 1 ULP
+        // step toward x by one ULP: away-from-zero iff (y_rne < x) xor signbit
         const bool up_in_value = static_cast<double>(y_rne) < x;
-        return (up_in_value ^ std::signbit(y_rne)) ? next_away_zero(y_rne) : next_toward_zero(y_rne);
+        const bool away = up_in_value ^ (bits >> 31);
+        const uint32_t delta = away ? 1u : static_cast<uint32_t>(-1);
+        return std::bit_cast<float>(bits + delta);
     } else if constexpr (rm == RM::RTE) {
-        // round to even - round using default rounding mode and fix up
+        // Unoptimized algorithm (round to even):
+        //     if y_down == y_up: return that value
+        //     else: return whichever of y_down / y_up has an even LSB
+        // Inf/NaN/finite-overflow all give back y_rne (RTE overflow yields
+        // inf, matching the RNE cast). Otherwise: if already exact or even,
+        // keep; otherwise step one ULP toward x using the same XOR-with-
+        // signbit rule as RTO.
         if (!std::isfinite(y_rne)) {
-            // inf/NaN passthrough or finite overflow - RTE also produces infinity
-            return y_rne;
-        } else if (y_rne == x || !is_odd(y_rne)) {
-            // if exact or even - just return it
             return y_rne;
         }
-        // inexact and odd - step toward x by 1 ULP
+        const uint32_t bits = std::bit_cast<uint32_t>(y_rne);
+        if (!(bits & 1u) || static_cast<double>(y_rne) == x) {
+            // either exact or even, so already correct
+            return y_rne;
+        }
         const bool up_in_value = static_cast<double>(y_rne) < x;
-        return (up_in_value ^ std::signbit(y_rne)) ? next_away_zero(y_rne) : next_toward_zero(y_rne);
+        const bool away = up_in_value ^ (bits >> 31);
+        const uint32_t delta = away ? 1u : static_cast<uint32_t>(-1);
+        return std::bit_cast<float>(bits + delta);
     } else {
         MPFX_DEBUG_ASSERT(false, "fp64_to_fp32: unsupported rounding mode");
         return static_cast<float>(NAN);

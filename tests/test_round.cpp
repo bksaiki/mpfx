@@ -418,7 +418,7 @@ TEST(TestRound, TestRoundBitFloatCompareRTO) {
 }
 
 TEST(TestRound, TestFP64toFP32Special) {
-    static constexpr RM rms[] = { RM::RTO };
+    static constexpr RM rms[] = { RM::RNE, RM::RNA, RM::RTP, RM::RTN, RM::RTZ, RM::RAZ, RM::RTO, RM::RTE };
     std::vector<double> inputs = {
         // special values
         +INFINITY,
@@ -458,7 +458,7 @@ TEST(TestRound, TestFP64toFP32Special) {
 
 TEST(TestRound, TestFP64toFP32) {
     static constexpr size_t N = 1'000'000;
-    static constexpr RM rms[] = { RM::RTO };
+    static constexpr RM rms[] = { RM::RNE, RM::RNA, RM::RTP, RM::RTN, RM::RTZ, RM::RAZ, RM::RTO, RM::RTE };
 
     // random number generator
     std::random_device r;
