@@ -1,5 +1,6 @@
 #include <bit>
 #include <climits>
+#include <iomanip>
 #include <optional>
 #include <random>
 
@@ -413,5 +414,73 @@ TEST(TestRound, TestRoundBitFloatCompareRTO) {
         float y_expect = round(v, prec, n, rm);
         float y = experimental::round<rm>(bf, prec, n).to_float();
         EXPECT_EQ(y, y_expect);
+    }
+}
+
+TEST(TestRound, TestFP64toFP32Special) {
+    static constexpr RM rms[] = { RM::RTO };
+    std::vector<double> inputs = {
+        // special values
+        +INFINITY,
+        -INFINITY,
+        0.0,
+        -0.0,
+        // max value
+        static_cast<double>(std::numeric_limits<float>::max()),
+        static_cast<double>(-std::numeric_limits<float>::max()),
+        // overflowing value
+        3.4028235677973366e+38,             // halfway between MAX and nextafter(MAX, +INFINITY)
+        -3.4028235677973366e+38,            // halfway between -MAX and nextafter(-MAX, -INFINITY)
+        make_float<double>(false, 128, 1),  // nextafter(MAX, +INFINITY)
+        make_float<double>(true, 128, 1),   // nextafter(-MAX, -INFINITY)
+        // unrepresentable values
+        1.0000000000000002,     // nextafter(1.0, +INFINITY)
+        -1.0000000000000002,    // nextafter(-1.0, -INFINITY)
+        1.0000001192092898,     // nextafter(1.0 + EPSILON, +INFINITY)
+        -1.0000001192092898,    // nextafter(-1.0 - EPSILON, -INFINITY)
+        0.9999999999999999,     // nextafter(1.0, -INFINITY)
+        -0.9999999999999999,    // nextafter(-1.0, +INFINITY)
+        1.0000001192092893,     // nextafter(1.0 - EPSILON, -INFINITY)
+        -1.0000001192092893,    // nextafter(-1.0 + EPSILON, +INFINITY)
+        1.0000000596046448      // halfway between 1.0 and nextafter(1.0 + EPSILON, +INFINITY)
+        -1.0000000596046448     // halfway between -1.0 and nextafter(-1.0 - EPSILON, -INFINITY)
+    };
+
+    for (const auto& rm : rms) {
+        const IEEE754Context ctx(8, 32, rm);
+        for (const auto& input : inputs) {
+            float y = experimental::fp64_to_fp32(input, rm);
+            float y_expect = ctx.round(input);
+            EXPECT_EQ(y, y_expect);
+        }
+    }
+}
+
+TEST(TestRound, TestFP64toFP32) {
+    static constexpr size_t N = 1'000'000;
+    static constexpr RM rms[] = { RM::RTO };
+
+    // random number generator
+    std::random_device r;
+    std::mt19937_64 rng(r());
+
+    std::uniform_int_distribution<int> sign_dist(0, 1);
+    std::uniform_int_distribution<uint32_t> c_dist(0, 0xffffffff);
+    std::uniform_int_distribution<exp_t> exp_dist(-160, 110);
+
+    for (size_t i = 0; i < N; i++) {
+        // generate a random float
+        const bool s = sign_dist(rng) == 1;
+        const exp_t exp = exp_dist(rng);
+        const uint32_t c = c_dist(rng) & 0x7fffff; // 23 bits for significand
+        const double x = make_float<double>(s, exp, c);
+
+        // test rounding for each rounding mode
+        for (const auto& rm : rms) {
+            const IEEE754Context ctx(8, 32, rm);
+            float y = experimental::fp64_to_fp32(x, rm);
+            float y_expect = ctx.round(x);
+            EXPECT_EQ(y, y_expect);
+        }
     }
 }

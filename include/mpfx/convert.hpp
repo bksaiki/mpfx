@@ -17,6 +17,8 @@ template <std::floating_point T>
 inline T make_float(bool s, exp_t exp, typename float_params<T>::uint_t c) {
     using FP = typename float_params<T>::params;
     using uint_t = typename float_params<T>::uint_t;
+    static constexpr uint_t MASK = bitmask<uint_t>(FP::P);
+    MPFX_DEBUG_ASSERT((c & ~MASK) == 0, "make_float: significand has too much precision");
 
     // special case: zero
     if (c == 0) {

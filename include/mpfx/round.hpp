@@ -79,6 +79,167 @@ inline RoundingDirection get_direction(RoundingMode mode, bool sign) {
 
 namespace experimental {
 
+/// @brief Is this value odd (i.e. has the least significant bit set)?
+/// @tparam RM the rounding mode to use
+/// @param x the value to check
+/// @return true if x is odd, false otherwise
+template <std::floating_point T>
+bool is_odd(T x) {
+    using uint_t = typename float_params<T>::uint_t;
+    MPFX_DEBUG_ASSERT(std::isfinite(x), "is_odd is only defined for finite values");
+    const uint_t bits = std::bit_cast<uint_t>(x);
+    return bits & 1;
+}
+
+/// @brief Optimized rounding from `double` to `float`.
+/// @tparam RM the rounding mode to use
+/// @param x the `double` value to round to `float`
+/// @return the rounded `float` value
+template <RM rm>
+float fp64_to_fp32(double x) {
+    static constexpr float POS_INF = std::numeric_limits<float>::infinity();
+    static constexpr float NEG_INF = -std::numeric_limits<float>::infinity();
+    static constexpr float POS_MAX = std::numeric_limits<float>::max();
+    static constexpr float NEG_MAX = -std::numeric_limits<float>::max();
+    static constexpr double INFVAL = 3.4028236692093846e+38;
+
+    // fast path: special values (infinity, NaN)
+    if (std::isinf(x) || std::isnan(x) || x == 0.0) {
+        return static_cast<float>(x);
+    }
+
+    if constexpr (rm == RM::RNE) {
+        // round to nearest, ties to even - use default rounding mode
+        return static_cast<float>(x);
+    } else if constexpr (rm == RM::RNA) {
+        // round to nearest, ties away from zero - round using default rounding mode and fix up
+        const float y_rne = static_cast<float>(x);
+        if (std::isinf(y_rne)) {
+            // overflow - RNA would also produce infinity
+            return y_rne;
+        } else if (std::abs(y_rne) >= std::abs(x)) {
+            // RNE rounded away from zero (or exact) - RNA agrees
+            return y_rne;
+        } else {
+            // RNE rounded toward zero - check if exactly halfway.
+            // The midpoint between two adjacent floats is exactly representable
+            // as a double, so we can test equality directly.
+            const float y_away = std::nextafterf(y_rne, (x > 0) ? POS_INF : NEG_INF);
+            const double mid = (static_cast<double>(y_rne) + static_cast<double>(y_away)) * 0.5;
+            return x == mid ? y_away : y_rne;
+        }
+    } else if constexpr (rm == RM::RTZ) {
+        // round towards zero - round using default rounding mode and fix up
+        const float y_rne = static_cast<float>(x);
+        if (std::isinf(y_rne)) {
+            // overflow - RTZ should produce the largest finite value
+            return (x > 0) ? POS_MAX : NEG_MAX;
+        } else if (std::abs(y_rne) <= std::abs(x)) {
+            // already rounded toward zero or exact - just return it
+            return y_rne;
+        } else {
+            // rounded away from zero - need to round back toward zero
+            return std::nextafterf(y_rne, 0.0f);
+        }
+    } else if constexpr (rm == RM::RAZ) {
+        // round away from zero - round using default rounding mode and fix up
+        const float y_rne = static_cast<float>(x);
+        if (std::isinf(y_rne)) {
+            // overflow - RAZ should produce infinity
+            return y_rne;
+        } else if (std::abs(y_rne) >= std::abs(x)) {
+            // already rounded away from zero or exact - just return it
+            return y_rne;
+        } else {
+            // rounded toward zero - need to round up away from zero
+            return std::nextafterf(y_rne, (x > 0) ? POS_INF : NEG_INF);
+        }
+    } else if constexpr (rm == RM::RTP) {
+        // round toward +infinity - round using default rounding mode and fix up
+        const float y_rne = static_cast<float>(x);
+        if (y_rne == NEG_INF) {
+            // overflow to -INF - RTP should produce -MAX
+            return NEG_MAX;
+        } else if (y_rne >= x) {
+            // already rounded toward +infinity or exact - just return it
+            return y_rne;
+        } else {
+            // rounded toward -infinity - need to round up toward +infinity
+            return std::nextafterf(y_rne, POS_INF);
+        }
+    } else if constexpr (rm == RM::RTN) {
+        // round toward -infinity - round using default rounding mode and fix up
+        const float y_rne = static_cast<float>(x);
+        if (y_rne == POS_INF) {
+            // overflow to +INF - RTN should produce +MAX
+            return POS_MAX;
+        } else if (y_rne <= x) {
+            // already rounded toward -infinity or exact - just return it
+            return y_rne;
+        } else {
+            // rounded toward +infinity - need to round down toward -infinity
+            return std::nextafterf(y_rne, NEG_INF);
+        }
+    } else if constexpr (rm == RM::RTO) {
+        // round to odd - round using default rounding mode and fix up
+        const float y_rne = static_cast<float>(x);
+        if (std::isinf(y_rne)) {
+            // overflow - RTO should produce infinity only if |x| >= INFVAL
+            return (std::abs(x) >= INFVAL) ? y_rne : (x > 0 ? POS_MAX : NEG_MAX);
+        } else if (y_rne == x || is_odd(y_rne)) {
+            // if exact or odd - just return it
+            return y_rne;
+        } else {
+            // inexact and even - should have rounded the other way
+            return std::nextafterf(y_rne, (y_rne < x) ? POS_INF : NEG_INF);
+        }
+    } else if constexpr (rm == RM::RTE) {
+        // round to even - round using default rounding mode and fix up
+        const float y_rne = static_cast<float>(x);
+        if (std::isinf(y_rne)) {
+            // overflow - RTE should produce infinity
+            return y_rne;
+        } else if (y_rne == x || !is_odd(y_rne)) {
+            // if exact or even - just return it
+            return y_rne;
+        } else {
+            // inexact and odd - should have rounded the other way
+            return std::nextafterf(y_rne, (y_rne < x) ? POS_INF : NEG_INF);
+        }
+    } else {
+        MPFX_DEBUG_ASSERT(false, "fp64_to_fp32: unsupported rounding mode");
+        return static_cast<float>(NAN);
+    }
+}
+
+/// @brief Optimized rounding from `double` to `float`.
+/// @param x the `double` value to round to `float`
+/// @param rm the rounding mode to use
+/// @return the rounded `float` value
+inline float fp64_to_fp32(double x, RM rm) {
+    switch (rm) {
+        case RM::RNE:
+            return fp64_to_fp32<RM::RNE>(x);
+        case RM::RNA:
+            return fp64_to_fp32<RM::RNA>(x);
+        case RM::RTP:
+            return fp64_to_fp32<RM::RTP>(x);
+        case RM::RTN:
+            return fp64_to_fp32<RM::RTN>(x);
+        case RM::RTZ:
+            return fp64_to_fp32<RM::RTZ>(x);
+        case RM::RAZ:
+            return fp64_to_fp32<RM::RAZ>(x);
+        case RM::RTO:
+            return fp64_to_fp32<RM::RTO>(x);
+        case RM::RTE:
+            return fp64_to_fp32<RM::RTE>(x);
+        default:
+            MPFX_DEBUG_ASSERT(false, "fp64_to_fp32: unsupported rounding mode");
+            return static_cast<float>(x); // default return to avoid warnings
+    }
+}
+
 /// @brief Should we increment to round?
 /// @tparam RM the rounding mode
 /// @tparam T the type of the significand
