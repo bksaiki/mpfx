@@ -239,6 +239,79 @@ inline float fp64_to_fp32(double x, RM rm) {
     }
 }
 
+/// @brief Rounds a `float` to `p` bits of precision using the
+/// fp32 subnormalization machinery on a double-to-float cast.
+///
+/// We pack x's 24-bit significand into a double whose exponent places
+/// the value in the fp32 subnormal binade `[2^(emin-(P-p)), 2^(emin-(P-p-1)))`,
+/// so the cast to float rounds to exactly `p` bits via subnormalization.
+/// `fp64_to_fp32<rm>` applies the per-mode 1-ULP fix-up at the correct
+/// granularity (1 fp32 subnormal ULP == 1 ULP at p-bit precision once we
+/// scale back). The carry case where rounding overflows the binade is
+/// handled naturally by the power-of-two scaling step.
+///
+/// Requires `1 <= p <= 24`. Subnormal `x` is returned unchanged.
+/// @tparam rm rounding mode
+/// @param x the float to round
+/// @param p target precision in bits, in `[1, 24]`
+template <RM rm>
+float round_p(float x, prec_t p) {
+    using FP32 = float_params<float>::params;
+    using FP64 = float_params<double>::params;
+    MPFX_DEBUG_ASSERT(p >= 1 && p <= FP32::P, "p must be in [1, P]");
+
+    const uint32_t bits = std::bit_cast<uint32_t>(x);
+    const uint32_t ebits = static_cast<uint32_t>((bits >> FP32::M) & FP32::EONES);
+
+    // pass through ±0 / subnormal x / ±inf / NaN
+    if (ebits == 0 || ebits == FP32::EONES) [[unlikely]] {
+        return x;
+    }
+
+    // unbiased exponent of x; target subnormal exponent
+    //   e_y = EMIN - (P - p)
+    // puts x's significand into the fp32 subnormal binade whose representable
+    // values have exactly p bits of precision.
+    const exp_t e_x = static_cast<exp_t>(ebits) - FP32::BIAS;
+    const exp_t e_y = FP32::EMIN - (static_cast<exp_t>(FP32::P) - static_cast<exp_t>(p));
+
+    // forward scale `s = 2^(e_y - e_x)` and its inverse, both exact power-of-two
+    // doubles constructed by direct bit manipulation (cheaper than `ldexp`).
+    const exp_t k = e_y - e_x;
+    const double scale = std::bit_cast<double>(
+        static_cast<uint64_t>(k + FP64::BIAS) << FP64::M);
+    const double inv_scale = std::bit_cast<double>(
+        static_cast<uint64_t>(FP64::BIAS - k) << FP64::M);
+
+    // transform: y = scale * x. The double→float cast rounds y's significand
+    // to p bits via subnormalization, then `fp64_to_fp32<rm>` applies the
+    // per-mode 1-ULP fix-up.
+    const double y = scale * static_cast<double>(x);
+    const float f = fp64_to_fp32<rm>(y);
+
+    // untransform: result = f / scale = f * inv_scale. Multiplication by a
+    // power of two is exact (modulo over/underflow on the final cast back),
+    // and the carry case is handled naturally.
+    return static_cast<float>(static_cast<double>(f) * inv_scale);
+}
+
+/// @brief Runtime-dispatched version of `round_p`.
+inline float round_p(float x, prec_t p, RM rm) {
+    switch (rm) {
+        case RM::RNE: return round_p<RM::RNE>(x, p);
+        case RM::RNA: return round_p<RM::RNA>(x, p);
+        case RM::RTP: return round_p<RM::RTP>(x, p);
+        case RM::RTN: return round_p<RM::RTN>(x, p);
+        case RM::RTZ: return round_p<RM::RTZ>(x, p);
+        case RM::RAZ: return round_p<RM::RAZ>(x, p);
+        case RM::RTO: return round_p<RM::RTO>(x, p);
+        case RM::RTE: return round_p<RM::RTE>(x, p);
+        default:
+            MPFX_DEBUG_ASSERT(false, "round_p: unsupported rounding mode");
+            return x;
+    }
+}
+
 /// @brief Should we increment to round?
 /// @tparam RM the rounding mode
 /// @tparam T the type of the significand

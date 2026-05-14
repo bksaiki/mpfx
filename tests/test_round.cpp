@@ -484,3 +484,66 @@ TEST(TestRound, TestFP64toFP32) {
         }
     }
 }
+
+TEST(TestRound, TestRoundPSpecial) {
+    static constexpr RM rms[] = {
+        RM::RNE, RM::RNA, RM::RTP, RM::RTN, RM::RTZ, RM::RAZ, RM::RTO, RM::RTE,
+    };
+    const float passthrough[] = {
+        +0.0f, -0.0f,
+        +std::numeric_limits<float>::infinity(),
+        -std::numeric_limits<float>::infinity(),
+        std::numeric_limits<float>::quiet_NaN(),
+        std::numeric_limits<float>::denorm_min(),
+        -std::numeric_limits<float>::denorm_min(),
+    };
+
+    // ±0 / ±inf / NaN / subnormal x should pass through unchanged for every
+    // mode and every valid precision
+    for (int p = 1; p <= 24; p++) {
+        for (const auto& rm : rms) {
+            for (float x : passthrough) {
+                const float y = experimental::round_p(x, static_cast<prec_t>(p), rm);
+                if (std::isnan(x)) {
+                    EXPECT_TRUE(std::isnan(y));
+                } else {
+                    EXPECT_EQ(std::bit_cast<uint32_t>(y), std::bit_cast<uint32_t>(x));
+                }
+            }
+        }
+    }
+}
+
+TEST(TestRound, TestRoundP) {
+    using FP32 = float_params<float>::params;
+    static constexpr size_t N = 100'000;
+    static constexpr RM rms[] = {
+        RM::RNE, RM::RNA, RM::RTP, RM::RTN, RM::RTZ, RM::RAZ, RM::RTO, RM::RTE,
+    };
+
+    std::random_device r;
+    std::mt19937_64 rng(r());
+
+    std::uniform_int_distribution<int> sign_dist(0, 1);
+    // c always has its top bit set (full 24-bit precision) so the normalized
+    // exponent is `exp + 23`, keeping every generated value in fp32-normal
+    // range (round_p's contract passes subnormals through unchanged).
+    std::uniform_int_distribution<uint32_t> c_dist(FP32::IMPLICIT1, (FP32::IMPLICIT1 << 1) - 1);
+    std::uniform_int_distribution<exp_t> exp_dist(FP32::EXPMIN, FP32::EXPMAX);
+
+    for (int p = 1; p <= static_cast<int>(FP32::P); p++) {
+        for (size_t i = 0; i < N; i++) {
+            const bool s = sign_dist(rng) == 1;
+            const exp_t exp = exp_dist(rng);
+            const uint32_t c = c_dist(rng);
+            const float x = make_float<float>(s, exp, c);
+
+            for (const auto& rm : rms) {
+                const float y = experimental::round_p(x, static_cast<prec_t>(p), rm);
+                const float y_expect = static_cast<float>(
+                    round(static_cast<double>(x), static_cast<prec_t>(p), std::nullopt, rm));
+                EXPECT_EQ(std::bit_cast<uint32_t>(y), std::bit_cast<uint32_t>(y_expect));
+            }
+        }
+    }
+}
