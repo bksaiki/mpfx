@@ -4,6 +4,9 @@ target_link_libraries(benchmark_round mpfx)
 add_executable(fp64_to_fp32 fp64_to_fp32.cpp)
 target_link_libraries(fp64_to_fp32 mpfx)
 
+add_executable(round_p round_p.cpp)
+target_link_libraries(round_p mpfx)
+
 add_executable(benchmark_add benchmark_add.cpp)
 target_link_libraries(benchmark_add 
     mpfx
