@@ -70,3 +70,55 @@ TEST(Context, TestIEEE754ContextFP16) {
     // rounding parameters
     EXPECT_EQ(ctx.round_prec(), 13);
 }
+
+TEST(Context, TestEFloatContextFP16) {
+    // an IEEE-754-style format with infinities matches IEEE754Context(5, 16)
+    const EFloatContext ctx(5, 16, true, EFloatNanKind::IEEE_754, 0, mpfx::RM::RNE);
+    EXPECT_EQ(ctx.prec(), 11);
+    EXPECT_EQ(ctx.emin(), -14);
+    EXPECT_EQ(ctx.emax(), 15);
+    EXPECT_EQ(ctx.n(), -25);
+    EXPECT_EQ(ctx.maxval(), 65504.0);
+    EXPECT_EQ(ctx.overflow(), mpfx::OverflowMode::OVERFLOW);
+    // overflow rounds to infinity
+    EXPECT_EQ(ctx.round(1e30), std::numeric_limits<double>::infinity());
+}
+
+TEST(Context, TestEFloatContextE5M2) {
+    // OCP FP8 E5M2: es=5, nbits=8, infinities, IEEE 754 NaNs
+    const EFloatContext ctx(5, 8, true, EFloatNanKind::IEEE_754, 0, mpfx::RM::RNE);
+    EXPECT_EQ(ctx.prec(), 3);
+    EXPECT_EQ(ctx.emax(), 15);
+    EXPECT_EQ(ctx.maxval(), 57344.0);
+    EXPECT_EQ(ctx.round(57344.0), 57344.0);
+    EXPECT_EQ(ctx.round(1e30), std::numeric_limits<double>::infinity());
+}
+
+TEST(Context, TestEFloatContextE4M3) {
+    // OCP FP8 E4M3: es=4, nbits=8, no infinities, MAX_VAL NaN (S.1111.111)
+    const EFloatContext ctx(4, 8, false, EFloatNanKind::MAX_VAL, 0, mpfx::RM::RNE);
+    EXPECT_EQ(ctx.prec(), 4);
+    EXPECT_EQ(ctx.maxval(), 448.0);
+    EXPECT_EQ(ctx.round(448.0), 448.0);
+    // infinities are disabled but NaNs exist: overflow remaps to NaN
+    EXPECT_TRUE(std::isnan(ctx.round(1e30)));
+    EXPECT_TRUE(std::isnan(ctx.round(std::numeric_limits<double>::infinity())));
+}
+
+TEST(Context, TestEFloatContextSaturate) {
+    // no infinities and no NaNs: overflow saturates to maxval
+    const EFloatContext ctx(4, 8, false, EFloatNanKind::NONE, 0, mpfx::RM::RNE);
+    EXPECT_EQ(ctx.overflow(), mpfx::OverflowMode::SATURATE);
+    EXPECT_EQ(ctx.round(1e30), ctx.maxval());
+    // NaN input is unrepresentable: maps to maxval
+    EXPECT_EQ(ctx.round(std::numeric_limits<double>::quiet_NaN()), ctx.maxval());
+}
+
+TEST(Context, TestEFloatContextEOffset) {
+    // shifting the exponent range scales maxval by 2^eoffset
+    const EFloatContext base(5, 8, true, EFloatNanKind::IEEE_754, 0, mpfx::RM::RNE);
+    const EFloatContext shifted(5, 8, true, EFloatNanKind::IEEE_754, -2, mpfx::RM::RNE);
+    EXPECT_EQ(shifted.emax(), base.emax() - 2);
+    EXPECT_EQ(shifted.emin(), base.emin() - 2);
+    EXPECT_EQ(*shifted.maxval(), *base.maxval() / 4.0);
+}

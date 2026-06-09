@@ -6,6 +6,7 @@
 #include <mpfx/context_mp.hpp>
 #include <mpfx/context_mps.hpp>
 #include <mpfx/context_mpb.hpp>
+#include <mpfx/context_efloat.hpp>
 
 // operations
 #include <mpfx/ops.hpp>
