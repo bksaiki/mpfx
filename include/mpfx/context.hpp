@@ -15,10 +15,12 @@ namespace mpfx {
 enum class OverflowMode : uint8_t {
     /// @brief Overflow rounds to infinity or `maxval` depending on the
     /// rounding direction (the usual IEEE 754 behavior).
-    OVERFLOW,
+    ///
+    /// Note: not named `OVERFLOW` because `<math.h>` defines that as a macro.
+    TO_INF,
     /// @brief Overflow always saturates to `±maxval`, never producing
     /// infinity. Used by formats without infinities.
-    SATURATE,
+    TO_MAXVAL,
 };
 
 /// @brief Rounding context
@@ -41,7 +43,7 @@ public:
         const std::optional<exp_t>& n,
         const std::optional<double>& maxval,
         RM rm,
-        OverflowMode overflow = OverflowMode::OVERFLOW)
+        OverflowMode overflow = OverflowMode::TO_INF)
         : p_(p), n_(n), maxval_(maxval), rm_(rm), overflow_(overflow) {}
 
     /// @brief Gets the precision of this context.
@@ -141,7 +143,7 @@ private:
             }
 
             const bool s = std::signbit(x);
-            if (overflow_ != OverflowMode::SATURATE && overflow_to_infinity(rm_, s)) {
+            if (overflow_ != OverflowMode::TO_MAXVAL && overflow_to_infinity(rm_, s)) {
                 static constexpr double POS_INF = std::numeric_limits<double>::infinity();
                 return std::copysign(POS_INF, x);
             } else {

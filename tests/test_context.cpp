@@ -79,7 +79,7 @@ TEST(Context, TestEFloatContextFP16) {
     EXPECT_EQ(ctx.emax(), 15);
     EXPECT_EQ(ctx.n(), -25);
     EXPECT_EQ(ctx.maxval(), 65504.0);
-    EXPECT_EQ(ctx.overflow(), mpfx::OverflowMode::OVERFLOW);
+    EXPECT_EQ(ctx.overflow(), mpfx::OverflowMode::TO_INF);
     // overflow rounds to infinity
     EXPECT_EQ(ctx.round(1e30), std::numeric_limits<double>::infinity());
 }
@@ -108,7 +108,7 @@ TEST(Context, TestEFloatContextE4M3) {
 TEST(Context, TestEFloatContextSaturate) {
     // no infinities and no NaNs: overflow saturates to maxval
     const EFloatContext ctx(4, 8, false, EFloatNanKind::NONE, 0, mpfx::RM::RNE);
-    EXPECT_EQ(ctx.overflow(), mpfx::OverflowMode::SATURATE);
+    EXPECT_EQ(ctx.overflow(), mpfx::OverflowMode::TO_MAXVAL);
     EXPECT_EQ(ctx.round(1e30), ctx.maxval());
     // NaN input is unrepresentable: maps to maxval
     EXPECT_EQ(ctx.round(std::numeric_limits<double>::quiet_NaN()), ctx.maxval());
@@ -189,7 +189,7 @@ TEST(Context, TestEFloatContextNegZero) {
     // infinities remaps to NaN (unlike NONE, which saturates).
     const EFloatContext ctx(4, 8, false, EFloatNanKind::NEG_ZERO, 0, mpfx::RM::RNE);
     EXPECT_EQ(ctx.maxval(), 480.0); // same binade as NONE
-    EXPECT_EQ(ctx.overflow(), mpfx::OverflowMode::OVERFLOW);
+    EXPECT_EQ(ctx.overflow(), mpfx::OverflowMode::TO_INF);
     EXPECT_TRUE(std::isnan(ctx.round(1e30)));
 }
 

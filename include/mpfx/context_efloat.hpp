@@ -179,8 +179,8 @@ constexpr bool efloat_is_valid(
 /// `EFloatContext` fixup may then remap to NaN).
 constexpr OverflowMode efloat_overflow_mode(bool enable_inf, EFloatNanKind nan_kind) {
     return (!enable_inf && nan_kind == EFloatNanKind::NONE)
-        ? OverflowMode::SATURATE
-        : OverflowMode::OVERFLOW;
+        ? OverflowMode::TO_MAXVAL
+        : OverflowMode::TO_INF;
 }
 
 } // anonymous namespace
