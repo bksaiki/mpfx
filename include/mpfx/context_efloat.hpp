@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bit>
 #include <cmath>
 #include <limits>
 
@@ -74,9 +75,44 @@ constexpr efloat_binade efloat_next_towards_zero(efloat_binade x, prec_t p, exp_
     return { c, exp };
 }
 
+/// @brief Encodes a finite value `c * 2^exp` as a double. Mirrors
+/// `make_float<double>`, but `constexpr` (relies only on `std::bit_cast`).
+/// Loses precision if the significand exceeds 53 bits, consistent with
+/// representing `maxval` as a double.
+constexpr double efloat_binade_to_double(efloat_binade x) {
+    using FP = float_params<double>::params;
+    if (x.c == 0) {
+        return 0.0;
+    }
+
+    // normalize the significand to `FP::P` bits
+    mant_t c = x.c;
+    const prec_t p = static_cast<prec_t>(bit_width(c));
+    const exp_t e = x.exp + static_cast<exp_t>(p) - 1; // normalized exponent
+    const exp_t shift = static_cast<exp_t>(FP::P) - static_cast<exp_t>(p);
+    if (shift > 0) {
+        c <<= shift;
+    } else if (shift < 0) {
+        c >>= -shift;
+    }
+
+    // encode the exponent and mantissa fields
+    uint64_t ebits, mbits;
+    if (e < FP::EMIN) {
+        ebits = 0;
+        mbits = static_cast<uint64_t>(c >> (FP::EMIN - e));
+    } else {
+        ebits = static_cast<uint64_t>(e + FP::BIAS);
+        mbits = static_cast<uint64_t>(c) & FP::MMASK;
+    }
+
+    const uint64_t bits = (ebits << FP::M) | mbits;
+    return std::bit_cast<double>(bits);
+}
+
 /// @brief The largest finite representable magnitude for an EFloat format,
 /// as a double. Assumes `p >= 2`.
-inline double efloat_max_value(
+constexpr double efloat_max_value(
     prec_t es, prec_t nbits, bool enable_inf, EFloatNanKind nan_kind, exp_t eoffset)
 {
     const prec_t p = efloat_prec(es, nbits);
@@ -112,7 +148,29 @@ inline double efloat_max_value(
             break;
     }
 
-    return bm.c == 0 ? 0.0 : std::ldexp(static_cast<double>(bm.c), bm.exp);
+    return efloat_binade_to_double(bm);
+}
+
+/// @brief Returns true if the given EFloat parameters form a valid format
+/// (assuming `p = nbits - es >= 2`).
+constexpr bool efloat_is_valid(
+    prec_t es, prec_t nbits, bool enable_inf, EFloatNanKind nan_kind)
+{
+    if (es >= nbits || efloat_prec(es, nbits) < 2) {
+        return false;
+    }
+    switch (nan_kind) {
+        case EFloatNanKind::IEEE_754:
+            // largest-exponent NaNs require an exponent field
+            return es != 0;
+        case EFloatNanKind::MAX_VAL:
+            // the reserved Inf/NaN patterns would consume every value
+            return !(es == 0 && enable_inf && efloat_prec(es, nbits) == 2);
+        case EFloatNanKind::NEG_ZERO:
+        case EFloatNanKind::NONE:
+            return true;
+    }
+    return false;
 }
 
 /// @brief Selects the base overflow behavior for an EFloat format. Overflow
@@ -148,7 +206,10 @@ public:
     /// @param nan_kind how NaNs are encoded
     /// @param eoffset exponent offset
     /// @param rm rounding mode
-    EFloatContext(
+    ///
+    /// The parameters are not validated; use `is_valid()` to check that they
+    /// form a representable format.
+    constexpr EFloatContext(
         prec_t es,
         prec_t nbits,
         bool enable_inf,
@@ -163,16 +224,12 @@ public:
             efloat_overflow_mode(enable_inf, nan_kind)),
         es_(es), nbits_(nbits), enable_inf_(enable_inf),
         nan_kind_(nan_kind), eoffset_(eoffset)
-    {
-        MPFX_ASSERT(es < nbits, "EFloatContext: es must be less than nbits");
-        MPFX_ASSERT(efloat_prec(es, nbits) >= 2, "EFloatContext: requires p = nbits - es >= 2");
-        MPFX_ASSERT(
-            !(nan_kind == EFloatNanKind::IEEE_754 && es == 0),
-            "EFloatContext: IEEE_754 NaNs require an exponent field");
-        MPFX_ASSERT(
-            !(nan_kind == EFloatNanKind::MAX_VAL && es == 0 && enable_inf
-              && efloat_prec(es, nbits) == 2),
-            "EFloatContext: invalid MAX_VAL format");
+    {}
+
+    /// @brief Returns true if this context's parameters form a valid format
+    /// (assuming `p = nbits - es >= 2`).
+    constexpr bool is_valid() const {
+        return efloat_is_valid(es_, nbits_, enable_inf_, nan_kind_);
     }
 
     /// @brief Gets the number of exponent bits.

@@ -114,6 +114,23 @@ TEST(Context, TestEFloatContextSaturate) {
     EXPECT_EQ(ctx.round(std::numeric_limits<double>::quiet_NaN()), ctx.maxval());
 }
 
+TEST(Context, TestEFloatContextValid) {
+    // constructor is usable in a constant expression
+    constexpr EFloatContext ctx(5, 8, true, EFloatNanKind::IEEE_754, 0, mpfx::RM::RNE);
+    static_assert(ctx.is_valid());
+    static_assert(ctx.prec() == 3);
+
+    // valid formats
+    EXPECT_TRUE((EFloatContext(4, 8, false, EFloatNanKind::MAX_VAL, 0, mpfx::RM::RNE).is_valid()));
+    EXPECT_TRUE((EFloatContext(0, 8, false, EFloatNanKind::NONE, 0, mpfx::RM::RNE).is_valid()));
+
+    // invalid: es >= nbits, or p < 2
+    EXPECT_FALSE((EFloatContext(8, 8, false, EFloatNanKind::NONE, 0, mpfx::RM::RNE).is_valid()));
+    EXPECT_FALSE((EFloatContext(7, 8, false, EFloatNanKind::NONE, 0, mpfx::RM::RNE).is_valid()));
+    // invalid: IEEE 754 NaNs require an exponent field
+    EXPECT_FALSE((EFloatContext(0, 8, false, EFloatNanKind::IEEE_754, 0, mpfx::RM::RNE).is_valid()));
+}
+
 TEST(Context, TestEFloatContextEOffset) {
     // shifting the exponent range scales maxval by 2^eoffset
     const EFloatContext base(5, 8, true, EFloatNanKind::IEEE_754, 0, mpfx::RM::RNE);
