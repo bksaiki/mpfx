@@ -11,6 +11,18 @@
 
 namespace mpfx {
 
+/// @brief Behavior when a value exceeds the maximum representable magnitude.
+enum class OverflowMode : uint8_t {
+    /// @brief Overflow rounds to infinity or `maxval` depending on the
+    /// rounding direction (the usual IEEE 754 behavior).
+    ///
+    /// Note: not named `OVERFLOW` because `<math.h>` defines that as a macro.
+    TO_INF,
+    /// @brief Overflow always saturates to `±maxval`, never producing
+    /// infinity. Used by formats without infinities.
+    TO_MAXVAL,
+};
+
 /// @brief Rounding context
 ///
 /// A rounding context encapsulates a rounding operation from real numbers
@@ -25,8 +37,14 @@ public:
     /// @param n first unrepresented digit
     /// @param maxval maximum representable magnitude
     /// @param rm rounding mode
-    constexpr Context(prec_t p, const std::optional<exp_t>& n, const std::optional<double>& maxval, RM rm)
-        : p_(p), n_(n), maxval_(maxval), rm_(rm) {}
+    /// @param overflow behavior when a value exceeds `maxval`
+    constexpr Context(
+        prec_t p,
+        const std::optional<exp_t>& n,
+        const std::optional<double>& maxval,
+        RM rm,
+        OverflowMode overflow = OverflowMode::TO_INF)
+        : p_(p), n_(n), maxval_(maxval), rm_(rm), overflow_(overflow) {}
 
     /// @brief Gets the precision of this context.
     constexpr prec_t prec() const {
@@ -36,6 +54,11 @@ public:
     /// @brief Gets the rounding mode of this context.
     constexpr RM rm() const {
         return rm_;
+    }
+
+    /// @brief Gets the overflow behavior of this context.
+    constexpr OverflowMode overflow() const {
+        return overflow_;
     }
 
     /// @brief Gets the first unrepresented digit (subnormalization parameter).
@@ -86,6 +109,8 @@ protected:
     std::optional<double> maxval_;
     /// @brief Rounding mode of this context.
     RM rm_;
+    /// @brief Overflow behavior of this context.
+    OverflowMode overflow_;
 
 private:
 
@@ -118,7 +143,7 @@ private:
             }
 
             const bool s = std::signbit(x);
-            if (overflow_to_infinity(rm_, s)) {
+            if (overflow_ != OverflowMode::TO_MAXVAL && overflow_to_infinity(rm_, s)) {
                 static constexpr double POS_INF = std::numeric_limits<double>::infinity();
                 return std::copysign(POS_INF, x);
             } else {
