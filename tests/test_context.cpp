@@ -217,3 +217,76 @@ TEST(Context, TestEFloatContextMatchesIEEE754) {
         EXPECT_EQ(ctx.round(v), ref.round(v)) << "mismatch at v=" << v;
     }
 }
+
+TEST(Context, TestEFloatContextSpecialValues) {
+    // Exhaustively exercise EFloatContext::round on NaN and infinity inputs,
+    // covering every fixup branch. Representability is:
+    //   inf  <=> enable_inf,   NaN <=> nan_kind != NONE.
+    const double inf = std::numeric_limits<double>::infinity();
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+
+    // -- NaN and inf both representable: special values pass through unchanged.
+    {
+        const EFloatContext ctx(5, 8, true, EFloatNanKind::IEEE_754, 0, mpfx::RM::RNE);
+        EXPECT_TRUE(std::isnan(ctx.round(nan)));
+        EXPECT_TRUE(std::isnan(ctx.round(-nan)));
+        EXPECT_EQ(ctx.round(inf), inf);
+        EXPECT_EQ(ctx.round(-inf), -inf);
+    }
+
+    // -- NaN representable, infinities disabled: NaN stays, inf remaps to NaN.
+    {
+        const EFloatContext ctx(4, 8, false, EFloatNanKind::MAX_VAL, 0, mpfx::RM::RNE);
+        EXPECT_TRUE(std::isnan(ctx.round(nan)));
+        const double pos = ctx.round(inf);
+        const double neg = ctx.round(-inf);
+        EXPECT_TRUE(std::isnan(pos));
+        EXPECT_TRUE(std::isnan(neg));
+        EXPECT_FALSE(std::signbit(pos)); // +inf -> +NaN
+        EXPECT_TRUE(std::signbit(neg));  // -inf -> -NaN
+    }
+
+    // -- NaN unrepresentable (NONE), infinities enabled: NaN remaps to inf,
+    //    inf passes through. Sign is preserved on the NaN substitution.
+    {
+        const EFloatContext ctx(5, 8, true, EFloatNanKind::NONE, 0, mpfx::RM::RNE);
+        EXPECT_EQ(ctx.round(nan), inf);
+        EXPECT_EQ(ctx.round(-nan), -inf);
+        EXPECT_EQ(ctx.round(inf), inf);
+        EXPECT_EQ(ctx.round(-inf), -inf);
+    }
+
+    // -- Neither NaN nor inf representable (NONE, no inf): both saturate to
+    //    +/-maxval, preserving sign.
+    {
+        const EFloatContext ctx(4, 8, false, EFloatNanKind::NONE, 0, mpfx::RM::RNE);
+        const double maxval = *ctx.maxval();
+        EXPECT_EQ(ctx.round(nan), maxval);
+        EXPECT_EQ(ctx.round(-nan), -maxval);
+        EXPECT_EQ(ctx.round(inf), maxval);
+        EXPECT_EQ(ctx.round(-inf), -maxval);
+    }
+
+    // -- Finite values are untouched by the fixup, including signed zero.
+    {
+        const EFloatContext ctx(5, 8, true, EFloatNanKind::IEEE_754, 0, mpfx::RM::RNE);
+        EXPECT_EQ(ctx.round(0.0), 0.0);
+        EXPECT_TRUE(std::signbit(ctx.round(-0.0)));
+        EXPECT_EQ(ctx.round(8.0), 8.0);
+    }
+
+    // -- The round(m, exp) overload routes through the same fixup: 2^100
+    //    overflows to the format's special value.
+    {
+        const EFloatContext inf_ctx(5, 8, true, EFloatNanKind::IEEE_754, 0, mpfx::RM::RNE);
+        EXPECT_EQ(inf_ctx.round(int64_t{1}, 100), inf);
+        EXPECT_EQ(inf_ctx.round(int64_t{-1}, 100), -inf);
+
+        const EFloatContext nan_ctx(4, 8, false, EFloatNanKind::MAX_VAL, 0, mpfx::RM::RNE);
+        EXPECT_TRUE(std::isnan(nan_ctx.round(int64_t{1}, 100)));
+
+        const EFloatContext sat_ctx(4, 8, false, EFloatNanKind::NONE, 0, mpfx::RM::RNE);
+        EXPECT_EQ(sat_ctx.round(int64_t{1}, 100), *sat_ctx.maxval());
+        EXPECT_EQ(sat_ctx.round(int64_t{-1}, 100), -*sat_ctx.maxval());
+    }
+}

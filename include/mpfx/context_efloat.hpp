@@ -253,23 +253,13 @@ public:
     /// @brief Gets the maximum normalized exponent of this context.
     constexpr exp_t emax() const { return efloat_emax(es_, eoffset_); }
 
-    /// @brief Rounds `x` according to this context.
-    template <flag_mask_t FlagMask = Flags::ALL_FLAGS>
-    double round(double x) const {
-        return fixup(Context::round<FlagMask>(x));
-    }
-
-    /// @brief Rounds `m * 2^exp` according to this context.
-    template <flag_mask_t FlagMask = Flags::ALL_FLAGS, signed_integral T>
-    double round(T m, exp_t exp) const {
-        return fixup(Context::round<FlagMask>(m, exp));
-    }
-
 private:
 
     /// @brief Remaps native infinities/NaNs to the value this format actually
-    /// represents (mirrors FPy's `EFloatContext._fixup`).
-    double fixup(double y) const {
+    /// represents (mirrors FPy's `EFloatContext._fixup`). Overrides the base
+    /// `Context::fixup`, so it applies to both `EFloatContext::round` and the
+    /// `ops.hpp` layer's `const Context&` calls.
+    double fixup(double y) const override {
         if (std::isnan(y) && nan_kind_ == EFloatNanKind::NONE) {
             // NaN is unrepresentable: substitute infinity or `maxval`
             if (enable_inf_) {
