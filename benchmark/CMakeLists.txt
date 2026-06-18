@@ -1,5 +1,15 @@
+# GMP and MPFR headers are used by several benchmarks as a reference oracle.
+include_directories(
+    ${GMP_INCLUDE_DIR}
+    ${MPFR_INCLUDE_DIR}
+)
+
 add_executable(benchmark_round benchmark_round.cpp)
-target_link_libraries(benchmark_round mpfx)
+target_link_libraries(benchmark_round
+    mpfx
+    ${GMP_LIBRARY}
+    ${MPFR_LIBRARY}
+)
 
 add_executable(benchmark_add benchmark_add.cpp)
 target_link_libraries(benchmark_add 

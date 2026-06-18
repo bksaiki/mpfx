@@ -36,20 +36,24 @@ if(ENABLE_PROFILING)
     set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fno-omit-frame-pointer")
 endif()
 
-# GMP
-find_path(GMP_INCLUDE_DIR gmp.h)
-find_library(GMP_LIBRARY gmp)
+# GMP and MPFR are only required for building tests and benchmarks,
+# not for the MPFX library itself.
+if(BUILD_TESTS OR BUILD_BENCHMARKS)
+    # GMP
+    find_path(GMP_INCLUDE_DIR gmp.h)
+    find_library(GMP_LIBRARY gmp)
 
-if(NOT GMP_INCLUDE_DIR OR NOT GMP_LIBRARY)
-    message(FATAL_ERROR "GMP not found")
-endif()
+    if(NOT GMP_INCLUDE_DIR OR NOT GMP_LIBRARY)
+        message(FATAL_ERROR "GMP not found (required for tests and benchmarks)")
+    endif()
 
-# MPFR
-find_path(MPFR_INCLUDE_DIR mpfr.h)
-find_library(MPFR_LIBRARY mpfr)
+    # MPFR
+    find_path(MPFR_INCLUDE_DIR mpfr.h)
+    find_library(MPFR_LIBRARY mpfr)
 
-if(NOT MPFR_INCLUDE_DIR OR NOT MPFR_LIBRARY)
-    message(FATAL_ERROR "MPFR not found")
+    if(NOT MPFR_INCLUDE_DIR OR NOT MPFR_LIBRARY)
+        message(FATAL_ERROR "MPFR not found (required for tests and benchmarks)")
+    endif()
 endif()
 
 # FetchContent for external dependencies
@@ -92,8 +96,6 @@ add_definitions(-DUSE_SOFTFLOAT)
 # Include directories
 include_directories(
     ${PROJECT_SOURCE_DIR}/include
-    ${GMP_INCLUDE_DIR}
-    ${MPFR_INCLUDE_DIR}
 )
 
 # Header files (for IDE organization)
@@ -144,9 +146,6 @@ target_link_libraries(${PROJECT_NAME} PRIVATE floppy_float_static)
 
 # Link against SoftFloat static library
 target_link_libraries(${PROJECT_NAME} PRIVATE softfloat)
-
-# Link against GMP and MPFR (needed for other parts of the library)
-target_link_libraries(${PROJECT_NAME} PUBLIC ${GMP_LIBRARY} ${MPFR_LIBRARY})
 
 # Install targets
 install(TARGETS ${PROJECT_NAME}

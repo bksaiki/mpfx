@@ -46,6 +46,9 @@ public:
         OverflowMode overflow = OverflowMode::TO_INF)
         : p_(p), n_(n), maxval_(maxval), rm_(rm), overflow_(overflow) {}
 
+    /// @brief Virtual destructor: `Context` is a polymorphic base (see `fixup`).
+    virtual ~Context() = default;
+
     /// @brief Gets the precision of this context.
     constexpr prec_t prec() const {
         return p_;
@@ -84,7 +87,7 @@ public:
     template <flag_mask_t FlagMask = Flags::ALL_FLAGS>
     double round(double x) const {
         x = mpfx::round<FlagMask>(x, p_, n_, rm_);
-        return round_overflow<FlagMask>(x);
+        return fixup(round_overflow<FlagMask>(x));
     }
 
     /// @brief Rounds `m * 2^exp` according to this rounding context.
@@ -95,10 +98,20 @@ public:
     template <flag_mask_t FlagMask = Flags::ALL_FLAGS, signed_integral T>
     double round(T m, exp_t exp) const {
         double x = mpfx::round<FlagMask, T>(m, exp, p_, n_, rm_);
-        return round_overflow<FlagMask>(x);
+        return fixup(round_overflow<FlagMask>(x));
     }
 
 protected:
+
+    /// @brief Remaps a rounded result to the value this format can actually
+    /// represent. The base context represents every `double` it produces, so
+    /// this is the identity; subclasses (e.g. `EFloatContext`) override it to
+    /// substitute unrepresentable infinities/NaNs. Called at the tail of
+    /// `round`, so it applies through a `Context&` (e.g. the `ops.hpp` layer).
+    virtual double fixup(double y) const {
+        return y;
+    }
+
 
     /// @brief Precision of this context.
     prec_t p_;
