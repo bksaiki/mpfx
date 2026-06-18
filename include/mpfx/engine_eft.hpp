@@ -188,11 +188,12 @@ std::tuple<T, T, T, T> eft_add4(T x0, T x1, T x2, T x3) {
 ///
 /// Ensures the result has at least `p` bits of precision.
 /// Otherwise, an exception is thrown.
-inline double add(double x, double y, prec_t p) {
-    // double-precision only guarantees 53 bits of precision
+template <std::floating_point T>
+inline T add(T x, T y, prec_t p) {
+    // the container type only guarantees `P` bits of precision
     MPFX_DEBUG_ASSERT(
-        p <= 53,
-        "add: requested precision exceeds double-precision capability"
+        p <= float_params<T>::params::P,
+        "add: requested precision exceeds the container type's capability"
     );
 
     if (!std::isfinite(x) || !std::isfinite(y)) [[unlikely]] {
@@ -211,11 +212,12 @@ inline double add(double x, double y, prec_t p) {
 ///
 /// Ensures the result has at least `p` bits of precision.
 /// Otherwise, an exception is thrown.
-inline double sub(double x, double y, prec_t p) {
-    // double-precision only guarantees 53 bits of precision
+template <std::floating_point T>
+inline T sub(T x, T y, prec_t p) {
+    // the container type only guarantees `P` bits of precision
     MPFX_DEBUG_ASSERT(
-        p <= 53,
-        "sub: requested precision exceeds double-precision capability"
+        p <= float_params<T>::params::P,
+        "sub: requested precision exceeds the container type's capability"
     );
 
     if (!std::isfinite(x) || !std::isfinite(y)) [[unlikely]] {
@@ -234,11 +236,12 @@ inline double sub(double x, double y, prec_t p) {
 ///
 /// Ensures the result has at least `p` bits of precision.
 /// Otherwise, an exception is thrown.
-inline double mul(double x, double y, prec_t p) {
-    // double-precision only guarantees 53 bits of precision
+template <std::floating_point T>
+inline T mul(T x, T y, prec_t p) {
+    // the container type only guarantees `P` bits of precision
     MPFX_DEBUG_ASSERT(
-        p <= 53,
-        "mul: requested precision exceeds double-precision capability"
+        p <= float_params<T>::params::P,
+        "mul: requested precision exceeds the container type's capability"
     );
 
     if (!std::isfinite(x) || !std::isfinite(y)) [[unlikely]] {
@@ -257,14 +260,15 @@ inline double mul(double x, double y, prec_t p) {
 ///
 /// Ensures the result has at least `p` bits of precision.
 /// Otherwise, an exception is thrown.
-inline double div(double x, double y, prec_t p) {
-    // double-precision only guarantees 53 bits of precision
+template <std::floating_point T>
+inline T div(T x, T y, prec_t p) {
+    // the container type only guarantees `P` bits of precision
     MPFX_DEBUG_ASSERT(
-        p <= 53,
-        "div: requested precision exceeds double-precision capability"
+        p <= float_params<T>::params::P,
+        "div: requested precision exceeds the container type's capability"
     );
 
-    if (!std::isfinite(x) || !std::isfinite(y) || y == 0.0) [[unlikely]] {
+    if (!std::isfinite(x) || !std::isfinite(y) || y == static_cast<T>(0)) [[unlikely]] {
         // handle special values using standard division
         return x / y;
     }
@@ -280,14 +284,15 @@ inline double div(double x, double y, prec_t p) {
 ///
 /// Ensures the result has at least `p` bits of precision.
 /// Otherwise, an exception is thrown.
-inline double sqrt(double x, prec_t p) {
-    // double-precision only guarantees 53 bits of precision
+template <std::floating_point T>
+inline T sqrt(T x, prec_t p) {
+    // the container type only guarantees `P` bits of precision
     MPFX_DEBUG_ASSERT(
-        p <= 53,
-        "sqrt: requested precision exceeds double-precision capability"
+        p <= float_params<T>::params::P,
+        "sqrt: requested precision exceeds the container type's capability"
     );
 
-    if (!std::isfinite(x) || x <= 0.0) [[unlikely]] {
+    if (!std::isfinite(x) || x <= static_cast<T>(0)) [[unlikely]] {
         // handle special values using standard square root
         return std::sqrt(x);
     }
@@ -303,11 +308,12 @@ inline double sqrt(double x, prec_t p) {
 ///
 /// Ensures the result has at least `p` bits of precision.
 /// Otherwise, an exception is thrown.
-inline double fma(double x, double y, double z, prec_t p) {
-    // double-precision only guarantees 53 bits of precision
+template <std::floating_point T>
+inline T fma(T x, T y, T z, prec_t p) {
+    // the container type only guarantees `P` bits of precision
     MPFX_DEBUG_ASSERT(
-        p <= 53,
-        "fma: requested precision exceeds double-precision capability"
+        p <= float_params<T>::params::P,
+        "fma: requested precision exceeds the container type's capability"
     );
 
     if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) [[unlikely]] {
@@ -326,11 +332,12 @@ inline double fma(double x, double y, double z, prec_t p) {
 ///
 /// Ensures the result has at least `p` bits of precision.
 /// Otherwise, an exception is thrown.
-inline double add3(double x, double y, double z, prec_t p) {
-    // double-precision only guarantees 53 bits of precision
+template <std::floating_point T>
+inline T add3(T x, T y, T z, prec_t p) {
+    // the container type only guarantees `P` bits of precision
     MPFX_DEBUG_ASSERT(
-        p <= 53,
-        "add3: requested precision exceeds double-precision capability"
+        p <= float_params<T>::params::P,
+        "add3: requested precision exceeds the container type's capability"
     );
 
     if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) [[unlikely]] {
@@ -349,12 +356,13 @@ inline double add3(double x, double y, double z, prec_t p) {
 ///
 /// Ensures the result has at least `p` bits of precision.
 /// Otherwise, an exception is thrown.
-inline double add4(double x, double y, double z, double w, prec_t p) {
-    // double-precision only guarantees 53 bits of precision
+template <std::floating_point T>
+inline T add4(T x, T y, T z, T w, prec_t p) {
+    // the container type only guarantees `P` bits of precision
     MPFX_DEBUG_ASSERT(
-        p <= 53,
-        "add4: requested precision exceeds double-precision capability"
-    ); 
+        p <= float_params<T>::params::P,
+        "add4: requested precision exceeds the container type's capability"
+    );
 
     if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z) || !std::isfinite(w)) [[unlikely]] {
         // handle special values using standard addition
