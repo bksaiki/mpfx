@@ -47,10 +47,11 @@ inline T round_finalize(T high, T low) {
     const int sign_low = b_low >> SIGN_SHIFT;
     const int sign_diff = sign_high ^ sign_low;
 
-    // compute adjustment for RTZ: +1 for negative `high`, -1 for positive `high`
-    // only apply if the signs differ
-    const int adjust_mask = -static_cast<int>(sign_diff);
-    const int adjust = static_cast<int>((sign_high << 1) - 1) & adjust_mask;
+    // When `low` has the opposite sign to `high`, the exact value lies between
+    // `high` and the next representable value toward zero, so we truncate `high`
+    // toward zero (RTZ) before jamming the sticky bit. The magnitude field is in
+    // the low bits for both signs, so "toward zero" is always `b_high - 1`.
+    const int adjust = -static_cast<int>(sign_diff);
 
     // apply adjustment and jam sticky bit for RTO
     U result = b_high + adjust;
