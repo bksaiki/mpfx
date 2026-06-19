@@ -256,26 +256,32 @@ public:
 private:
 
     /// @brief Remaps native infinities/NaNs to the value this format actually
-    /// represents (mirrors FPy's `EFloatContext._fixup`). Overrides the base
-    /// `Context::fixup`, so it applies to both `EFloatContext::round` and the
-    /// `ops.hpp` layer's `const Context&` calls.
-    double fixup(double y) const override {
+    /// represents (mirrors FPy's `EFloatContext._fixup`). The logic is
+    /// type-generic; the two `fixup` overrides below delegate to it so it
+    /// applies for both `float` and `double` rounding.
+    template <std::floating_point T>
+    T fixup_impl(T y) const {
         if (std::isnan(y) && nan_kind_ == EFloatNanKind::NONE) {
             // NaN is unrepresentable: substitute infinity or `maxval`
             if (enable_inf_) {
-                return std::copysign(std::numeric_limits<double>::infinity(), y);
+                return std::copysign(std::numeric_limits<T>::infinity(), y);
             }
-            return std::copysign(*maxval_, y);
+            return std::copysign(static_cast<T>(*maxval_), y);
         }
         if (std::isinf(y) && !enable_inf_) {
             // infinity is unrepresentable: substitute NaN or `maxval`
             if (nan_kind_ != EFloatNanKind::NONE) {
-                return std::copysign(std::numeric_limits<double>::quiet_NaN(), y);
+                return std::copysign(std::numeric_limits<T>::quiet_NaN(), y);
             }
-            return std::copysign(*maxval_, y);
+            return std::copysign(static_cast<T>(*maxval_), y);
         }
         return y;
     }
+
+    /// @brief Overrides `Context::fixup`, so the remapping applies to both
+    /// `EFloatContext::round` and the `ops.hpp` layer's `const Context&` calls.
+    double fixup(double y) const override { return fixup_impl(y); }
+    float fixup(float y) const override { return fixup_impl(y); }
 
     /// @brief Number of exponent bits.
     prec_t es_;

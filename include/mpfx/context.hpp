@@ -105,19 +105,18 @@ public:
 protected:
 
     /// @brief Remaps a rounded result to the value this format can actually
-    /// represent. The base context represents every value it produces, so this
-    /// is the identity; subclasses (e.g. `EFloatContext`) override it to
-    /// substitute unrepresentable infinities/NaNs. Called at the tail of
-    /// `round`, so it applies through a `Context&` (e.g. the `ops.hpp` layer).
-    /// A virtual function cannot be a template, so there is one overload per
-    /// supported floating-point type.
+    /// represent. Useful for remapping special values when they are
+    /// not included in a number format.
     virtual double fixup(double y) const {
         return y;
     }
+
+    /// @brief Remaps a rounded result to the value this format can actually
+    /// represent. Useful for remapping special values when they are
+    /// not included in a number format.
     virtual float fixup(float y) const {
         return y;
     }
-
 
     /// @brief Precision of this context.
     prec_t p_;
