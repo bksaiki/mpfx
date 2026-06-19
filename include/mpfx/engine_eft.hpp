@@ -51,10 +51,10 @@ inline T round_finalize(T high, T low) {
     // `high` and the next representable value toward zero, so we truncate `high`
     // toward zero (RTZ) before jamming the sticky bit. The magnitude field is in
     // the low bits for both signs, so "toward zero" is always `b_high - 1`.
-    const int adjust = -static_cast<int>(sign_diff);
+    const int adjust = static_cast<int>(sign_diff);
 
     // apply adjustment and jam sticky bit for RTO
-    U result = b_high + adjust;
+    U result = b_high - adjust;
     result |= 1;
 
     // reinterpret back to floating-point
@@ -187,8 +187,8 @@ std::tuple<T, T, T, T> eft_add4(T x0, T x1, T x2, T x3) {
 
 /// @brief Computes `x + y` using error-free transformation.
 ///
-/// Ensures the result has at least `p` bits of precision.
-/// Otherwise, an exception is thrown.
+/// Requires `p` to not exceed the container type's precision (checked by a
+/// debug assertion).
 template <std::floating_point T>
 inline T add(T x, T y, prec_t p) {
     // the container type only guarantees `P` bits of precision
@@ -211,8 +211,8 @@ inline T add(T x, T y, prec_t p) {
 
 /// @brief Computes `x - y` using error-free transformation.
 ///
-/// Ensures the result has at least `p` bits of precision.
-/// Otherwise, an exception is thrown.
+/// Requires `p` to not exceed the container type's precision (checked by a
+/// debug assertion).
 template <std::floating_point T>
 inline T sub(T x, T y, prec_t p) {
     // the container type only guarantees `P` bits of precision
@@ -235,8 +235,8 @@ inline T sub(T x, T y, prec_t p) {
 
 /// @brief Computes `x * y` using error-free transformation.
 ///
-/// Ensures the result has at least `p` bits of precision.
-/// Otherwise, an exception is thrown.
+/// Requires `p` to not exceed the container type's precision (checked by a
+/// debug assertion).
 template <std::floating_point T>
 inline T mul(T x, T y, prec_t p) {
     // the container type only guarantees `P` bits of precision
@@ -259,8 +259,8 @@ inline T mul(T x, T y, prec_t p) {
 
 /// @brief Computes `x / y` using an error-free transformation.
 ///
-/// Ensures the result has at least `p` bits of precision.
-/// Otherwise, an exception is thrown.
+/// Requires `p` to not exceed the container type's precision (checked by a
+/// debug assertion).
 template <std::floating_point T>
 inline T div(T x, T y, prec_t p) {
     // the container type only guarantees `P` bits of precision
@@ -283,8 +283,8 @@ inline T div(T x, T y, prec_t p) {
 
 /// @brief Computes `sqrt(x)` using an error-free transformation.
 ///
-/// Ensures the result has at least `p` bits of precision.
-/// Otherwise, an exception is thrown.
+/// Requires `p` to not exceed the container type's precision (checked by a
+/// debug assertion).
 template <std::floating_point T>
 inline T sqrt(T x, prec_t p) {
     // the container type only guarantees `P` bits of precision
@@ -307,8 +307,8 @@ inline T sqrt(T x, prec_t p) {
 
 /// @brief Computes `x * y + z` using an error-free transformation.
 ///
-/// Ensures the result has at least `p` bits of precision.
-/// Otherwise, an exception is thrown.
+/// Requires `p` to not exceed the container type's precision (checked by a
+/// debug assertion).
 template <std::floating_point T>
 inline T fma(T x, T y, T z, prec_t p) {
     // the container type only guarantees `P` bits of precision
@@ -331,8 +331,8 @@ inline T fma(T x, T y, T z, prec_t p) {
 
 /// @brief Computes `x + y + z` using error-free transformation.
 ///
-/// Ensures the result has at least `p` bits of precision.
-/// Otherwise, an exception is thrown.
+/// Requires `p` to not exceed the container type's precision (checked by a
+/// debug assertion).
 template <std::floating_point T>
 inline T add3(T x, T y, T z, prec_t p) {
     // the container type only guarantees `P` bits of precision
@@ -355,8 +355,8 @@ inline T add3(T x, T y, T z, prec_t p) {
 
 /// @brief Computes `x + y + z + w` using error-free transformation.
 ///
-/// Ensures the result has at least `p` bits of precision.
-/// Otherwise, an exception is thrown.
+/// Requires `p` to not exceed the container type's precision (checked by a
+/// debug assertion).
 template <std::floating_point T>
 inline T add4(T x, T y, T z, T w, prec_t p) {
     // the container type only guarantees `P` bits of precision

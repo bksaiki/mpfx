@@ -59,7 +59,7 @@ T neg(T x, const Context& ctx) {
 }
 
 /// @brief Computes `|x|` using the given context.
-/// Must be the case that `ctx.round_prec() <= 53`.
+/// Requires `ctx.round_prec()` to fit `T`'s precision (53 for `double`, 24 for `float`).
 /// @tparam FlagMask mask to indicate the status flags to check during rounding.
 /// @param x a number
 /// @param ctx rounding context
@@ -74,7 +74,7 @@ T abs(T x, const Context& ctx) {
 }
 
 /// @brief Computes `x + y` using the given context.
-/// Must be the case that `ctx.round_prec() <= 53`.
+/// Requires `ctx.round_prec()` to fit `T`'s precision (53 for `double`, 24 for `float`).
 /// @tparam E engine to use for computation
 /// @tparam FlagMask mask to indicate the status flags to check during rounding.
 /// @param x first operand
@@ -129,7 +129,7 @@ T add(T x, T y, const Context& ctx) {
 }
 
 /// @brief Computes `x - y` using the given context.
-/// Must be the case that `ctx.round_prec() <= 53`.
+/// Requires `ctx.round_prec()` to fit `T`'s precision (53 for `double`, 24 for `float`).
 /// @tparam E engine to use for computation
 /// @tparam FlagMask mask to indicate the status flags to check during rounding.
 /// @param x first operand
@@ -184,7 +184,7 @@ T sub(T x, T y, const Context& ctx) {
 }
 
 /// @brief Computes `x * y` using the given context.
-/// Must be the case that `ctx.round_prec() <= 53`.
+/// Requires `ctx.round_prec()` to fit `T`'s precision (53 for `double`, 24 for `float`).
 /// @tparam E engine to use for computation
 /// @tparam FlagMask mask to indicate the status flags to check during rounding.
 /// @param x first operand
@@ -253,7 +253,7 @@ T mul(T x, T y, const Context& ctx) {
 }
 
 /// @brief Computes `x / y` using the given context.
-/// Must be the case that `ctx.round_prec() <= 53`.
+/// Requires `ctx.round_prec()` to fit `T`'s precision (53 for `double`, 24 for `float`).
 /// @tparam E engine to use for computation
 /// @tparam FlagMask mask to indicate the status flags to check during rounding.
 /// @param x dividend
@@ -310,7 +310,7 @@ T div(T x, T y, const Context& ctx) {
 }
 
 /// @brief Computes `sqrt(x)` using the given context.
-/// Must be the case that `ctx.round_prec() <= 53`.
+/// Requires `ctx.round_prec()` to fit `T`'s precision (53 for `double`, 24 for `float`).
 /// @tparam E engine to use for computation
 /// @tparam FlagMask mask to indicate the status flags to check during rounding.
 /// @param x the radicand
@@ -359,7 +359,7 @@ T sqrt(T x, const Context& ctx) {
 }
 
 /// @brief Computes `x * y + z` using the given context.
-/// Must be the case that `ctx.round_prec() <= 53`.
+/// Requires `ctx.round_prec()` to fit `T`'s precision (53 for `double`, 24 for `float`).
 /// @tparam E engine to use for computation
 /// @tparam FlagMask mask to indicate the status flags to check during rounding.
 /// @param x first multiplicand
@@ -423,7 +423,7 @@ T fma(T x, T y, T z, const Context& ctx) {
 }
 
 /// @brief Computes `x + y + z` using the given context.
-/// Must be the case that `ctx.round_prec() <= 53`.
+/// Requires `ctx.round_prec()` to fit `T`'s precision (53 for `double`, 24 for `float`).
 /// @tparam E engine to use for computation
 /// @tparam FlagMask mask to indicate the status flags to check during rounding.
 /// @param x first operand
@@ -466,7 +466,7 @@ T add3(T x, T y, T z, const Context& ctx) {
 }
 
 /// @brief Computes `x + y + z + w` using the given context.
-/// Must be the case that `ctx.round_prec() <= 53`.
+/// Requires `ctx.round_prec()` to fit `T`'s precision (53 for `double`, 24 for `float`).
 /// @tparam E engine to use for computation
 /// @tparam FlagMask mask to indicate the status flags to check during rounding.
 /// @param x first operand

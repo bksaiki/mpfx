@@ -105,15 +105,12 @@ public:
 protected:
 
     /// @brief Remaps a rounded result to the value this format can actually
-    /// represent. Useful for remapping special values when they are
-    /// not included in a number format.
+    /// represent (e.g. substituting special values a format omits). The base
+    /// is the identity; subclasses override it. A virtual function cannot be a
+    /// template, so there is one overload per supported floating-point type.
     virtual double fixup(double y) const {
         return y;
     }
-
-    /// @brief Remaps a rounded result to the value this format can actually
-    /// represent. Useful for remapping special values when they are
-    /// not included in a number format.
     virtual float fixup(float y) const {
         return y;
     }
