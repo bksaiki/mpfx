@@ -652,12 +652,13 @@ double round_finalize(bool s, exp_t e, T c, prec_t p, const std::optional<exp_t>
 
 } // anonymous namespace
 
-/// @brief Optimized rounding to round a double-precision floating-point number
-/// to a double-precision floating-point number with target precision `p`
-/// and first unrepresentable digit `n`.
+/// @brief Optimized rounding to round a floating-point number of type `T`
+/// to a value of the same type with target precision `p` and first
+/// unrepresentable digit `n`. Rounding happens in `T`'s own container, so a
+/// `float` argument is not widened to `double` (which would double-round).
 template<flag_mask_t FlagMask = Flags::ALL_FLAGS, std::floating_point T>
 T round(T x, prec_t p, const std::optional<exp_t>& n, RM rm) {
-    return experimental::round<FlagMask>(bit_float<double>(x), p, n, rm).to_float();
+    return experimental::round<FlagMask>(bit_float<T>(x), p, n, rm).to_float();
 }
 
 /// @brief Optimized rounding to round `m * 2^exp`

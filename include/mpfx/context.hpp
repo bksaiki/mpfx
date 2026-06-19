@@ -82,10 +82,11 @@ public:
 
     /// @brief Rounds `x` according to this rounding context.
     /// @tparam FlagMask mask to indicate the status flags to check during rounding.
+    /// @tparam T the floating-point type to round in (`float` or `double`)
     /// @param x a number to round
     /// @return the rounded number
-    template <flag_mask_t FlagMask = Flags::ALL_FLAGS>
-    double round(double x) const {
+    template <flag_mask_t FlagMask = Flags::ALL_FLAGS, std::floating_point T = double>
+    T round(T x) const {
         x = mpfx::round<FlagMask>(x, p_, n_, rm_);
         return fixup(round_overflow<FlagMask>(x));
     }
@@ -104,14 +105,15 @@ public:
 protected:
 
     /// @brief Remaps a rounded result to the value this format can actually
-    /// represent. The base context represents every `double` it produces, so
-    /// this is the identity; subclasses (e.g. `EFloatContext`) override it to
-    /// substitute unrepresentable infinities/NaNs. Called at the tail of
-    /// `round`, so it applies through a `Context&` (e.g. the `ops.hpp` layer).
+    /// represent (e.g. substituting special values a format omits). The base
+    /// is the identity; subclasses override it. A virtual function cannot be a
+    /// template, so there is one overload per supported floating-point type.
     virtual double fixup(double y) const {
         return y;
     }
-
+    virtual float fixup(float y) const {
+        return y;
+    }
 
     /// @brief Precision of this context.
     prec_t p_;
@@ -135,9 +137,10 @@ private:
 
     /// @brief Helper function to handle overflow.
     /// @tparam Mask to indicate the status flags to set during overflow handling.
+    /// @tparam T the floating-point type being rounded (`float` or `double`)
     /// @param x a number to check for overflow
-    template <flag_mask_t FlagMask>
-    double round_overflow(double x) const {
+    template <flag_mask_t FlagMask, std::floating_point T>
+    T round_overflow(T x) const {
         if (!maxval_.has_value()) {
             return x;
         }
@@ -146,7 +149,7 @@ private:
             return x;
         }
 
-        const double maxval = *maxval_;
+        const T maxval = static_cast<T>(*maxval_);
         if (std::abs(x) > maxval) {
             if constexpr (FlagMask & Flags::OVERFLOW_FLAG) {
                 flags.set_overflow();
@@ -157,7 +160,7 @@ private:
 
             const bool s = std::signbit(x);
             if (overflow_ != OverflowMode::TO_MAXVAL && overflow_to_infinity(rm_, s)) {
-                static constexpr double POS_INF = std::numeric_limits<double>::infinity();
+                static constexpr T POS_INF = std::numeric_limits<T>::infinity();
                 return std::copysign(POS_INF, x);
             } else {
                 return std::copysign(maxval, x);
