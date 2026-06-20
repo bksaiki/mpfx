@@ -1,5 +1,10 @@
 #include "mpfx/engine_ff.hpp"
 
+#include <bit>
+#include <concepts>
+
+#include "mpfx/params.hpp"
+
 #include <floppy_float.h>
 #include <vfpu.h>
 
@@ -14,144 +19,87 @@ static FloppyFloat ff = []() {
     return f;
 }();
 
-
-/// @brief Computes `x + y` using FloppyFloat.
-///
-/// Ensures the result has at least `p` bits of precision.
-/// Otherwise, an exception is thrown.
-double add(double x, double y, prec_t p) {
-    // double-precision only guarantees 53 bits of precision
-    MPFX_DEBUG_ASSERT(
-        p <= 53,
-        "add: requested precision exceeds double-precision capability"
-    );
-
-    // Perform round-to-zero addition with round-to-odd fix-up
-    double z = ff.Add(x, y);
+// FloppyFloat rounds toward zero; jam the LSB on inexact results to obtain
+// round-to-odd, then clear the sticky inexact flag for the next operation.
+template <std::floating_point T>
+static T rto_fixup(T z) {
+    using U = typename float_params<T>::uint_t;
     if (ff.inexact) {
-        uint64_t b = std::bit_cast<uint64_t>(z);
+        U b = std::bit_cast<U>(z);
         b |= 1; // set LSB
-        z = std::bit_cast<double>(b);
+        z = std::bit_cast<T>(b);
         ff.inexact = false;
     }
-
     return z;
 }
 
-/// @brief Computes `x - y` using FloppyFloat.
-///
-/// Ensures the result has at least `p` bits of precision.
-/// Otherwise, an exception is thrown.
-double sub(double x, double y, prec_t p) {
-    // double-precision only guarantees 53 bits of precision
+template <std::floating_point T>
+T add(T x, T y, prec_t p) {
     MPFX_DEBUG_ASSERT(
-        p <= 53,
-        "sub: requested precision exceeds double-precision capability"
+        p <= float_params<T>::params::P,
+        "add: requested precision exceeds the container type's capability"
     );
-
-    // Perform round-to-zero subtraction with round-to-odd fix-up
-    double z = ff.Sub(x, y);
-    if (ff.inexact) {
-        uint64_t b = std::bit_cast<uint64_t>(z);
-        b |= 1; // set LSB
-        z = std::bit_cast<double>(b);
-        ff.inexact = false;
-    }
-
-    return z;
+    return rto_fixup(ff.Add(x, y));
 }
 
-/// @brief Computes `x * y` using FloppyFloat.
-///
-/// Ensures the result has at least `p` bits of precision.
-/// Otherwise, an exception is thrown.
-double mul(double x, double y, prec_t p) {
-    // double-precision only guarantees 53 bits of precision
+template <std::floating_point T>
+T sub(T x, T y, prec_t p) {
     MPFX_DEBUG_ASSERT(
-        p <= 53,
-        "mul: requested precision exceeds double-precision capability"
+        p <= float_params<T>::params::P,
+        "sub: requested precision exceeds the container type's capability"
     );
-
-    // Perform round-to-zero multiplication with round-to-odd fix-up
-    double z = ff.Mul(x, y);
-    if (ff.inexact) {
-        uint64_t b = std::bit_cast<uint64_t>(z);
-        b |= 1; // set LSB
-        z = std::bit_cast<double>(b);
-        ff.inexact = false;
-    }
-
-    return z;
+    return rto_fixup(ff.Sub(x, y));
 }
 
-/// @brief Computes `x / y` using FloppyFloat.
-///
-/// Ensures the result has at least `p` bits of precision.
-/// Otherwise, an exception is thrown.
-double div(double x, double y, prec_t p) {
-    // double-precision only guarantees 53 bits of precision
+template <std::floating_point T>
+T mul(T x, T y, prec_t p) {
     MPFX_DEBUG_ASSERT(
-        p <= 53,
-        "div: requested precision exceeds double-precision capability"
+        p <= float_params<T>::params::P,
+        "mul: requested precision exceeds the container type's capability"
     );
-
-    // Perform round-to-zero division with round-to-odd fix-up
-    double z = ff.Div(x, y);
-    if (ff.inexact) {
-        uint64_t b = std::bit_cast<uint64_t>(z);
-        b |= 1; // set LSB
-        z = std::bit_cast<double>(b);
-        ff.inexact = false;
-    }
-
-    return z;
+    return rto_fixup(ff.Mul(x, y));
 }
 
-/// @brief Computes `sqrt(x)` using FloppyFloat.
-///
-/// Ensures the result has at least `p` bits of precision.
-/// Otherwise, an exception is thrown.
-double sqrt(double x, prec_t p) {
-    // double-precision only guarantees 53 bits of precision
+template <std::floating_point T>
+T div(T x, T y, prec_t p) {
     MPFX_DEBUG_ASSERT(
-        p <= 53,
-        "sqrt: requested precision exceeds double-precision capability"
+        p <= float_params<T>::params::P,
+        "div: requested precision exceeds the container type's capability"
     );
-
-    // Perform round-to-zero square root with round-to-odd fix-up
-    double z = ff.Sqrt(x);
-    if (ff.inexact) {
-        uint64_t b = std::bit_cast<uint64_t>(z);
-        b |= 1; // set LSB
-        z = std::bit_cast<double>(b);
-        ff.inexact = false;
-    }
-
-    return z;
+    return rto_fixup(ff.Div(x, y));
 }
 
-/// @brief Computes `x * y + z` using FloppyFloat.
-///
-/// Ensures the result has at least `p` bits of precision.
-/// Otherwise, an exception is thrown.
-double fma(double x, double y, double z, prec_t p) {
-    // double-precision only guarantees 53 bits of precision
+template <std::floating_point T>
+T sqrt(T x, prec_t p) {
     MPFX_DEBUG_ASSERT(
-        p <= 53,
-        "fma: requested precision exceeds double-precision capability"
+        p <= float_params<T>::params::P,
+        "sqrt: requested precision exceeds the container type's capability"
     );
-
-    // Perform round-to-zero FMA with round-to-odd fix-up
-    double result = ff.Fma(x, y, z);
-    if (ff.inexact) {
-        uint64_t b = std::bit_cast<uint64_t>(result);
-        b |= 1; // set LSB
-        result = std::bit_cast<double>(b);
-        ff.inexact = false;
-    }
-
-    return result;
+    return rto_fixup(ff.Sqrt(x));
 }
+
+template <std::floating_point T>
+T fma(T x, T y, T z, prec_t p) {
+    MPFX_DEBUG_ASSERT(
+        p <= float_params<T>::params::P,
+        "fma: requested precision exceeds the container type's capability"
+    );
+    return rto_fixup(ff.Fma(x, y, z));
+}
+
+// Explicit instantiations for the supported container types.
+template float add<float>(float, float, prec_t);
+template double add<double>(double, double, prec_t);
+template float sub<float>(float, float, prec_t);
+template double sub<double>(double, double, prec_t);
+template float mul<float>(float, float, prec_t);
+template double mul<double>(double, double, prec_t);
+template float div<float>(float, float, prec_t);
+template double div<double>(double, double, prec_t);
+template float sqrt<float>(float, prec_t);
+template double sqrt<double>(double, prec_t);
+template float fma<float>(float, float, float, prec_t);
+template double fma<double>(double, double, double, prec_t);
 
 } // end namespace engine_ff
 

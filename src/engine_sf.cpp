@@ -1,6 +1,9 @@
-#include "mpfx/engine_sf.hpp"
+#include <bit>
+#include <concepts>
+#include <type_traits>
 
-#include <cmath>
+#include "mpfx/engine_sf.hpp"
+#include "mpfx/params.hpp"
 
 extern "C" {
 #include <softfloat.h>
@@ -10,107 +13,115 @@ namespace mpfx {
 
 namespace engine_sf {
 
-// Converts from double to float64_t
-static float64_t to_sf(double x) {
-    float64_t result;
-    result.v = std::bit_cast<uint64_t>(x);
-    return result;
-}
+// Conversions between native floating-point and SoftFloat's bit-wrapped types.
+static float64_t to_sf(double x) { return { std::bit_cast<uint64_t>(x) }; }
+static float32_t to_sf(float x) { return { std::bit_cast<uint32_t>(x) }; }
+static double from_sf(float64_t x) { return std::bit_cast<double>(x.v); }
+static float from_sf(float32_t x) { return std::bit_cast<float>(x.v); }
 
-// Converts from float64_t to double
-static double from_sf(float64_t x) {
-    return std::bit_cast<double>(x.v);
-}
-
-/// @brief Computes `x + y` using softfloat.
-///
-/// Ensures the result has at least `p` bits of precision.
-/// Otherwise, an exception is thrown.
-double add(double x, double y, prec_t p) {
-    // double-precision only guarantees 53 bits of precision
+template <std::floating_point T>
+T add(T x, T y, prec_t p) {
     MPFX_DEBUG_ASSERT(
-        p <= 53,
-        "add: requested precision exceeds double-precision capability"
+        p <= float_params<T>::params::P,
+        "add: requested precision exceeds the container type's capability"
     );
 
     softfloat_roundingMode = softfloat_round_odd;
-    return from_sf(f64_add(to_sf(x), to_sf(y)));
+    if constexpr (std::is_same_v<T, float>) {
+        return from_sf(f32_add(to_sf(x), to_sf(y)));
+    } else {
+        return from_sf(f64_add(to_sf(x), to_sf(y)));
+    }
 }
 
-/// @brief Computes `x - y` using softfloat.
-///
-/// Ensures the result has at least `p` bits of precision.
-/// Otherwise, an exception is thrown.
-double sub(double x, double y, prec_t p) {
-    // double-precision only guarantees 53 bits of precision
+template <std::floating_point T>
+T sub(T x, T y, prec_t p) {
     MPFX_DEBUG_ASSERT(
-        p <= 53,
-        "sub: requested precision exceeds double-precision capability"
+        p <= float_params<T>::params::P,
+        "sub: requested precision exceeds the container type's capability"
     );
 
     softfloat_roundingMode = softfloat_round_odd;
-    return from_sf(f64_sub(to_sf(x), to_sf(y)));
+    if constexpr (std::is_same_v<T, float>) {
+        return from_sf(f32_sub(to_sf(x), to_sf(y)));
+    } else {
+        return from_sf(f64_sub(to_sf(x), to_sf(y)));
+    }
 }
 
-/// @brief Computes `x * y` using softfloat.
-///
-/// Ensures the result has at least `p` bits of precision.
-/// Otherwise, an exception is thrown.
-double mul(double x, double y, prec_t p) {
-    // double-precision only guarantees 53 bits of precision
+template <std::floating_point T>
+T mul(T x, T y, prec_t p) {
     MPFX_DEBUG_ASSERT(
-        p <= 53,
-        "mul: requested precision exceeds double-precision capability"
+        p <= float_params<T>::params::P,
+        "mul: requested precision exceeds the container type's capability"
     );
 
     softfloat_roundingMode = softfloat_round_odd;
-    return from_sf(f64_mul(to_sf(x), to_sf(y)));
+    if constexpr (std::is_same_v<T, float>) {
+        return from_sf(f32_mul(to_sf(x), to_sf(y)));
+    } else {
+        return from_sf(f64_mul(to_sf(x), to_sf(y)));
+    }
 }
 
-/// @brief Computes `x / y` using softfloat.
-///
-/// Ensures the result has at least `p` bits of precision.
-/// Otherwise, an exception is thrown.
-double div(double x, double y, prec_t p) {
-    // double-precision only guarantees 53 bits of precision
+template <std::floating_point T>
+T div(T x, T y, prec_t p) {
     MPFX_DEBUG_ASSERT(
-        p <= 53,
-        "div: requested precision exceeds double-precision capability"
+        p <= float_params<T>::params::P,
+        "div: requested precision exceeds the container type's capability"
     );
 
     softfloat_roundingMode = softfloat_round_odd;
-    return from_sf(f64_div(to_sf(x), to_sf(y)));
+    if constexpr (std::is_same_v<T, float>) {
+        return from_sf(f32_div(to_sf(x), to_sf(y)));
+    } else {
+        return from_sf(f64_div(to_sf(x), to_sf(y)));
+    }
 }
 
-/// @brief Computes `sqrt(x)` using softfloat.
-///
-/// Ensures the result has at least `p` bits of precision.
-/// Otherwise, an exception is thrown.
-double sqrt(double x, prec_t p) {
-    // double-precision only guarantees 53 bits of precision
+template <std::floating_point T>
+T sqrt(T x, prec_t p) {
     MPFX_DEBUG_ASSERT(
-        p <= 53,
-        "sqrt: requested precision exceeds double-precision capability"
+        p <= float_params<T>::params::P,
+        "sqrt: requested precision exceeds the container type's capability"
     );
 
     softfloat_roundingMode = softfloat_round_odd;
-    return from_sf(f64_sqrt(to_sf(x)));
+    if constexpr (std::is_same_v<T, float>) {
+        return from_sf(f32_sqrt(to_sf(x)));
+    } else {
+        return from_sf(f64_sqrt(to_sf(x)));
+    }
 }
 
-/// @brief Computes `x * y + z` using softfloat.
-///
-/// Ensures the result has at least `p` bits of precision.
-/// Otherwise, an exception is thrown.
-double fma(double x, double y, double z, prec_t p) {
-    // double-precision only guarantees 53 bits of precision
+template <std::floating_point T>
+T fma(T x, T y, T z, prec_t p) {
     MPFX_DEBUG_ASSERT(
-        p <= 53,
-        "fma: requested precision exceeds double-precision capability"
+        p <= float_params<T>::params::P,
+        "fma: requested precision exceeds the container type's capability"
     );
 
     softfloat_roundingMode = softfloat_round_odd;
-    return from_sf(f64_mulAdd(to_sf(x), to_sf(y), to_sf(z)));
+    if constexpr (std::is_same_v<T, float>) {
+        return from_sf(f32_mulAdd(to_sf(x), to_sf(y), to_sf(z)));
+    } else {
+        return from_sf(f64_mulAdd(to_sf(x), to_sf(y), to_sf(z)));
+    }
 }
+
+// Explicit instantiations for the supported container types.
+template float add<float>(float, float, prec_t);
+template double add<double>(double, double, prec_t);
+template float sub<float>(float, float, prec_t);
+template double sub<double>(double, double, prec_t);
+template float mul<float>(float, float, prec_t);
+template double mul<double>(double, double, prec_t);
+template float div<float>(float, float, prec_t);
+template double div<double>(double, double, prec_t);
+template float sqrt<float>(float, prec_t);
+template double sqrt<double>(double, prec_t);
+template float fma<float>(float, float, float, prec_t);
+template double fma<double>(double, double, double, prec_t);
 
 } // end namespace engine_sf
 
