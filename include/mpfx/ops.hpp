@@ -88,7 +88,8 @@ T abs(T x, const Context& ctx) {
 /// @return the sum
 template<Engine E = Engine::FP_RTO, flag_mask_t FlagMask = Flags::ALL_FLAGS, std::floating_point T = double>
 T add(T x, T y, const Context& ctx) {
-    static_assert(engine_supports_type<E, T>, "non-double operations only support the EFT, FP_RTO, SoftFloat, and FloppyFloat engines");
+    static_assert(engine_supports_type<E, T>,
+                  "non-double arithmetic requires a multi-precision engine (EFT, FP_RTO, SoftFloat, or FloppyFloat)");
     T result;
 
     if constexpr (E == Engine::FP_RTO) {
@@ -143,7 +144,8 @@ T add(T x, T y, const Context& ctx) {
 /// @return the difference
 template<Engine E = Engine::FP_RTO, flag_mask_t FlagMask = Flags::ALL_FLAGS, std::floating_point T = double>
 T sub(T x, T y, const Context& ctx) {
-    static_assert(engine_supports_type<E, T>, "non-double operations only support the EFT, FP_RTO, SoftFloat, and FloppyFloat engines");
+    static_assert(engine_supports_type<E, T>,
+                  "non-double arithmetic requires a multi-precision engine (EFT, FP_RTO, SoftFloat, or FloppyFloat)");
     T result;
 
     if constexpr (E == Engine::FP_RTO) {
@@ -198,7 +200,8 @@ T sub(T x, T y, const Context& ctx) {
 /// @return the product
 template<Engine E = Engine::FP_RTO, flag_mask_t FlagMask = Flags::ALL_FLAGS, std::floating_point T = double>
 T mul(T x, T y, const Context& ctx) {
-    static_assert(engine_supports_type<E, T>, "non-double operations only support the EFT, FP_RTO, SoftFloat, and FloppyFloat engines");
+    static_assert(engine_supports_type<E, T>,
+                  "non-double arithmetic requires a multi-precision engine (EFT, FP_RTO, SoftFloat, or FloppyFloat)");
     const prec_t p = ctx.round_prec();
     T result;
 
@@ -267,7 +270,8 @@ T mul(T x, T y, const Context& ctx) {
 /// @return the quotient
 template<Engine E = Engine::FP_RTO, flag_mask_t FlagMask = Flags::ALL_FLAGS, std::floating_point T = double>
 T div(T x, T y, const Context& ctx) {
-    static_assert(engine_supports_type<E, T>, "non-double operations only support the EFT, FP_RTO, SoftFloat, and FloppyFloat engines");
+    static_assert(engine_supports_type<E, T>,
+                  "non-double arithmetic requires a multi-precision engine (EFT, FP_RTO, SoftFloat, or FloppyFloat)");
     T result;
 
     if constexpr (E == Engine::FP_RTO) {
@@ -323,7 +327,8 @@ T div(T x, T y, const Context& ctx) {
 /// @return the square root
 template<Engine E = Engine::FP_RTO, flag_mask_t FlagMask = Flags::ALL_FLAGS, std::floating_point T = double>
 T sqrt(T x, const Context& ctx) {
-    static_assert(engine_supports_type<E, T>, "non-double operations only support the EFT, FP_RTO, SoftFloat, and FloppyFloat engines");
+    static_assert(engine_supports_type<E, T>,
+                  "non-double arithmetic requires a multi-precision engine (EFT, FP_RTO, SoftFloat, or FloppyFloat)");
     T result;
 
     if constexpr (E == Engine::FP_RTO) {
@@ -374,7 +379,8 @@ T sqrt(T x, const Context& ctx) {
 /// @return the fused multiply-add result
 template<Engine E = Engine::FP_RTO, flag_mask_t FlagMask = Flags::ALL_FLAGS, std::floating_point T = double>
 T fma(T x, T y, T z, const Context& ctx) {
-    static_assert(engine_supports_type<E, T>, "non-double operations only support the EFT, FP_RTO, SoftFloat, and FloppyFloat engines");
+    static_assert(engine_supports_type<E, T>,
+                  "non-double arithmetic requires a multi-precision engine (EFT, FP_RTO, SoftFloat, or FloppyFloat)");
     T result;
 
     if constexpr (E == Engine::FP_RTO) {
@@ -438,7 +444,7 @@ T fma(T x, T y, T z, const Context& ctx) {
 /// @return the sum
 template<Engine E = Engine::EFT, flag_mask_t FlagMask = Flags::ALL_FLAGS, std::floating_point T = double>
 T add3(T x, T y, T z, const Context& ctx) {
-    static_assert(engine_supports_type<E, T>, "non-double operations only support the EFT, FP_RTO, SoftFloat, and FloppyFloat engines");
+    // only the EFT engine implements 3-operand summation (see the `else` below)
     T result;
     if constexpr (E == Engine::EFT) {
         // compute result using error-free transformations
@@ -482,7 +488,7 @@ T add3(T x, T y, T z, const Context& ctx) {
 /// @return the sum
 template<Engine E = Engine::EFT, flag_mask_t FlagMask = Flags::ALL_FLAGS, std::floating_point T = double>
 T add4(T x, T y, T z, T w, const Context& ctx) {
-    static_assert(engine_supports_type<E, T>, "non-double operations only support the EFT, FP_RTO, SoftFloat, and FloppyFloat engines");
+    // only the EFT engine implements 4-operand summation (see the `else` below)
     T result;
     if constexpr (E == Engine::EFT) {
         // compute result using error-free transformations
