@@ -915,3 +915,127 @@ TEST(OpsF32, TestFmaFPUniform) {
         }
     }
 }
+
+// `float` variants using the SoftFloat engine (native round-to-odd mode).
+// Correctly rounded for context precision p <= 22, so the MPFR oracles apply.
+
+TEST(OpsF32, TestAddSFUniform) {
+    static constexpr size_t N = 200000;
+    std::random_device r;
+    std::mt19937_64 rng(r());
+    for (int p = 2; p <= 8; p++) {
+        for (const auto rm : F32_ROUNDING_MODES) {
+            const mpfx::MPContext ctx(p, rm);
+            std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
+            for (size_t i = 0; i < N; i++) {
+                const float x = dist(rng);
+                const float y = dist(rng);
+
+                const double z_ref = ref_add(x, y, p, rm);
+                const float z = mpfx::add<mpfx::Engine::SOFTFLOAT>(x, y, ctx);
+                EXPECT_EQ(z_ref, static_cast<double>(z));
+            }
+        }
+    }
+}
+
+TEST(OpsF32, TestSubSFUniform) {
+    static constexpr size_t N = 200000;
+    std::random_device r;
+    std::mt19937_64 rng(r());
+    for (int p = 2; p <= 8; p++) {
+        for (const auto rm : F32_ROUNDING_MODES) {
+            const mpfx::MPContext ctx(p, rm);
+            std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
+            for (size_t i = 0; i < N; i++) {
+                const float x = dist(rng);
+                const float y = dist(rng);
+
+                const double z_ref = ref_sub(x, y, p, rm);
+                const float z = mpfx::sub<mpfx::Engine::SOFTFLOAT>(x, y, ctx);
+                EXPECT_EQ(z_ref, static_cast<double>(z));
+            }
+        }
+    }
+}
+
+TEST(OpsF32, TestMulSFUniform) {
+    static constexpr size_t N = 200000;
+    std::random_device r;
+    std::mt19937_64 rng(r());
+    for (int p = 2; p <= 8; p++) {
+        for (const auto rm : F32_ROUNDING_MODES) {
+            const mpfx::MPContext ctx(p, rm);
+            std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
+            for (size_t i = 0; i < N; i++) {
+                const float x = dist(rng);
+                const float y = dist(rng);
+
+                const double z_ref = ref_mul(x, y, p, rm);
+                const float z = mpfx::mul<mpfx::Engine::SOFTFLOAT>(x, y, ctx);
+                EXPECT_EQ(z_ref, static_cast<double>(z));
+            }
+        }
+    }
+}
+
+TEST(OpsF32, TestDivSFUniform) {
+    static constexpr size_t N = 200000;
+    std::random_device r;
+    std::mt19937_64 rng(r());
+    for (int p = 2; p <= 8; p++) {
+        for (const auto rm : F32_ROUNDING_MODES) {
+            const mpfx::MPContext ctx(p, rm);
+            std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
+            for (size_t i = 0; i < N; i++) {
+                const float x = dist(rng);
+                const float y = dist(rng);
+                if (y == 0.0f) continue; // skip division by zero
+
+                const double z_ref = ref_div(x, y, p, rm);
+                const float z = mpfx::div<mpfx::Engine::SOFTFLOAT>(x, y, ctx);
+                EXPECT_EQ(z_ref, static_cast<double>(z));
+            }
+        }
+    }
+}
+
+TEST(OpsF32, TestSqrtSFUniform) {
+    static constexpr size_t N = 200000;
+    std::random_device r;
+    std::mt19937_64 rng(r());
+    for (int p = 2; p <= 8; p++) {
+        for (const auto rm : F32_ROUNDING_MODES) {
+            const mpfx::MPContext ctx(p, rm);
+            std::uniform_real_distribution<float> dist(0.0f, 4.0f);
+            for (size_t i = 0; i < N; i++) {
+                const float x = dist(rng);
+
+                const double z_ref = ref_sqrt(x, p, rm);
+                const float z = mpfx::sqrt<mpfx::Engine::SOFTFLOAT>(x, ctx);
+                EXPECT_EQ(z_ref, static_cast<double>(z));
+            }
+        }
+    }
+}
+
+TEST(OpsF32, TestFmaSFUniform) {
+    static constexpr size_t N = 200000;
+    std::random_device r;
+    std::mt19937_64 rng(r());
+    for (int p = 2; p <= 8; p++) {
+        for (const auto rm : F32_ROUNDING_MODES) {
+            const mpfx::MPContext ctx(p, rm);
+            std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
+            for (size_t i = 0; i < N; i++) {
+                const float x = dist(rng);
+                const float y = dist(rng);
+                const float z = dist(rng);
+
+                const double w_ref = ref_fma(x, y, z, p, rm);
+                const float w = mpfx::fma<mpfx::Engine::SOFTFLOAT>(x, y, z, ctx);
+                EXPECT_EQ(w_ref, static_cast<double>(w));
+            }
+        }
+    }
+}
