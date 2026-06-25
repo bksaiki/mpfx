@@ -69,12 +69,12 @@ target_link_libraries(benchmark_div_engines
     softfloat
     floppy_float_static)
 
-add_executable(ops ops.cpp)
-target_link_libraries(ops
+add_executable(benchmark_ops benchmark_ops.cpp)
+target_link_libraries(benchmark_ops
     mpfx
     ${GMP_LIBRARY}
     ${MPFR_LIBRARY}
-    ${SOFTFLOAT_LIBRARY}
+    softfloat
     floppy_float_static
 )
 
