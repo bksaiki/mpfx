@@ -93,7 +93,21 @@ static void generate_inputs(std::vector<T>& vals, const mpfx::Context& ctx, doub
     }
 }
 
-static void report_header() {
+// One benchmarked operation: timings (microseconds) for every implementation.
+struct Row {
+    std::string type;
+    std::string op;
+    double native;
+    double mpfr;
+    double softfloat;
+    double floppyfloat;
+    double mpfx_rto;
+    double mpfx_softfloat;
+    double mpfx_ffloat;
+    double mpfx_eft;
+};
+
+static void print_header() {
     std::cout << "type"
         << ", op"
         << ", native"
@@ -107,29 +121,42 @@ static void report_header() {
         << "\n";
 }
 
-static void report_result(
-    const std::string& type,
-    const std::string& op_name,
-    double duration_ref,
-    double duration_mpfr,
-    double duration_softfloat,
-    double duration_floppyfloat,
-    double duration_mpfx_rto,
-    double duration_mpfx_softfloat,
-    double duration_mpfx_ffloat,
-    double duration_mpfx_eft
-) {
-    std::cout << type
-        << ", " << op_name
-        << ", " << static_cast<size_t>(duration_ref)
-        << ", " << static_cast<size_t>(duration_mpfr)
-        << ", " << static_cast<size_t>(duration_softfloat)
-        << ", " << static_cast<size_t>(duration_floppyfloat)
-        << ", " << static_cast<size_t>(duration_mpfx_rto)
-        << ", " << static_cast<size_t>(duration_mpfx_softfloat)
-        << ", " << static_cast<size_t>(duration_mpfx_ffloat)
-        << ", " << static_cast<size_t>(duration_mpfx_eft)
+// Raw runtimes, in microseconds.
+static void print_runtime_row(const Row& r) {
+    std::cout << r.type
+        << ", " << r.op
+        << ", " << static_cast<size_t>(r.native)
+        << ", " << static_cast<size_t>(r.mpfr)
+        << ", " << static_cast<size_t>(r.softfloat)
+        << ", " << static_cast<size_t>(r.floppyfloat)
+        << ", " << static_cast<size_t>(r.mpfx_rto)
+        << ", " << static_cast<size_t>(r.mpfx_softfloat)
+        << ", " << static_cast<size_t>(r.mpfx_ffloat)
+        << ", " << static_cast<size_t>(r.mpfx_eft)
         << "\n";
+}
+
+// Speedup relative to SoftFloat: softfloat_time / column_time. A value > 1 means
+// faster than SoftFloat, < 1 means slower. (SoftFloat's own column is 1.00.)
+static void print_speedup_row(const Row& r) {
+    const auto sp = [&](double t) {
+        std::cout << ", ";
+        if (t > 0.0) {
+            std::cout << r.softfloat / t;
+        } else {
+            std::cout << "inf";
+        }
+    };
+    std::cout << r.type << ", " << r.op;
+    sp(r.native);
+    sp(r.mpfr);
+    sp(r.softfloat);
+    sp(r.floppyfloat);
+    sp(r.mpfx_rto);
+    sp(r.mpfx_softfloat);
+    sp(r.mpfx_ffloat);
+    sp(r.mpfx_eft);
+    std::cout << "\n";
 }
 
 ///////////////////////////////////////////////////////////
@@ -626,7 +653,7 @@ double mpfx_op3(const std::vector<T>& x_vals, const std::vector<T>& y_vals, cons
 // Benchmarking functions
 
 template <std::floating_point T, OP1 O>
-void benchmark_op1(
+Row benchmark_op1(
     const std::string& type,
     const mpfx::Context& input_ctx,
     const mpfx::Context& output_ctx,
@@ -640,25 +667,21 @@ void benchmark_op1(
         generate_inputs(x_vals, input_ctx);
     }
 
-    const double duration_ref = reference_op1<T, O>(x_vals, num_inputs);
-    const double duration_mpfr = mpfr_op1<T, O>(x_vals, output_ctx, num_inputs);
-    const double duration_softfloat = softfloat_op1<T, O>(x_vals, output_ctx, num_inputs);
-    const double duration_floppyfloat = floppyfloat_op1<T, O>(x_vals, output_ctx, num_inputs);
-
-    const double duration_mpfx_rto = mpfx_op1<mpfx::Engine::FP_RTO, T, O>(x_vals, output_ctx, num_inputs);
-    const double duration_mpfx_softfloat = mpfx_op1<mpfx::Engine::SOFTFLOAT, T, O>(x_vals, output_ctx, num_inputs);
-    const double duration_mpfx_ffloat = mpfx_op1<mpfx::Engine::FFLOAT, T, O>(x_vals, output_ctx, num_inputs);
-    const double duration_mpfx_eft = mpfx_op1<mpfx::Engine::EFT, T, O>(x_vals, output_ctx, num_inputs);
-
-    report_result(
+    return Row{
         type, to_string(O),
-        duration_ref, duration_mpfr, duration_softfloat, duration_floppyfloat,
-        duration_mpfx_rto, duration_mpfx_softfloat, duration_mpfx_ffloat, duration_mpfx_eft
-    );
+        reference_op1<T, O>(x_vals, num_inputs),
+        mpfr_op1<T, O>(x_vals, output_ctx, num_inputs),
+        softfloat_op1<T, O>(x_vals, output_ctx, num_inputs),
+        floppyfloat_op1<T, O>(x_vals, output_ctx, num_inputs),
+        mpfx_op1<mpfx::Engine::FP_RTO, T, O>(x_vals, output_ctx, num_inputs),
+        mpfx_op1<mpfx::Engine::SOFTFLOAT, T, O>(x_vals, output_ctx, num_inputs),
+        mpfx_op1<mpfx::Engine::FFLOAT, T, O>(x_vals, output_ctx, num_inputs),
+        mpfx_op1<mpfx::Engine::EFT, T, O>(x_vals, output_ctx, num_inputs)
+    };
 }
 
 template <std::floating_point T, OP2 O>
-void benchmark_op2(
+Row benchmark_op2(
     const std::string& type,
     const mpfx::Context& input_ctx,
     const mpfx::Context& output_ctx,
@@ -670,25 +693,21 @@ void benchmark_op2(
     generate_inputs(x_vals, input_ctx);
     generate_inputs(y_vals, input_ctx);
 
-    const double duration_ref = reference_op2<T, O>(x_vals, y_vals, num_inputs);
-    const double duration_mpfr = mpfr_op2<T, O>(x_vals, y_vals, output_ctx, num_inputs);
-    const double duration_softfloat = softfloat_op2<T, O>(x_vals, y_vals, output_ctx, num_inputs);
-    const double duration_floppyfloat = floppyfloat_op2<T, O>(x_vals, y_vals, output_ctx, num_inputs);
-
-    const double duration_mpfx_rto = mpfx_op2<mpfx::Engine::FP_RTO, T, O>(x_vals, y_vals, output_ctx, num_inputs);
-    const double duration_mpfx_softfloat = mpfx_op2<mpfx::Engine::SOFTFLOAT, T, O>(x_vals, y_vals, output_ctx, num_inputs);
-    const double duration_mpfx_ffloat = mpfx_op2<mpfx::Engine::FFLOAT, T, O>(x_vals, y_vals, output_ctx, num_inputs);
-    const double duration_mpfx_eft = mpfx_op2<mpfx::Engine::EFT, T, O>(x_vals, y_vals, output_ctx, num_inputs);
-
-    report_result(
+    return Row{
         type, to_string(O),
-        duration_ref, duration_mpfr, duration_softfloat, duration_floppyfloat,
-        duration_mpfx_rto, duration_mpfx_softfloat, duration_mpfx_ffloat, duration_mpfx_eft
-    );
+        reference_op2<T, O>(x_vals, y_vals, num_inputs),
+        mpfr_op2<T, O>(x_vals, y_vals, output_ctx, num_inputs),
+        softfloat_op2<T, O>(x_vals, y_vals, output_ctx, num_inputs),
+        floppyfloat_op2<T, O>(x_vals, y_vals, output_ctx, num_inputs),
+        mpfx_op2<mpfx::Engine::FP_RTO, T, O>(x_vals, y_vals, output_ctx, num_inputs),
+        mpfx_op2<mpfx::Engine::SOFTFLOAT, T, O>(x_vals, y_vals, output_ctx, num_inputs),
+        mpfx_op2<mpfx::Engine::FFLOAT, T, O>(x_vals, y_vals, output_ctx, num_inputs),
+        mpfx_op2<mpfx::Engine::EFT, T, O>(x_vals, y_vals, output_ctx, num_inputs)
+    };
 }
 
 template <std::floating_point T, OP3 O>
-void benchmark_op3(
+Row benchmark_op3(
     const std::string& type,
     const mpfx::Context& input_ctx,
     const mpfx::Context& output_ctx,
@@ -702,21 +721,17 @@ void benchmark_op3(
     generate_inputs(y_vals, input_ctx);
     generate_inputs(z_vals, input_ctx);
 
-    const double duration_ref = reference_op3<T, O>(x_vals, y_vals, z_vals, num_inputs);
-    const double duration_mpfr = mpfr_op3<T, O>(x_vals, y_vals, z_vals, output_ctx, num_inputs);
-    const double duration_softfloat = softfloat_op3<T, O>(x_vals, y_vals, z_vals, output_ctx, num_inputs);
-    const double duration_floppyfloat = floppyfloat_op3<T, O>(x_vals, y_vals, z_vals, output_ctx, num_inputs);
-
-    const double duration_mpfx_rto = mpfx_op3<mpfx::Engine::FP_RTO, T, O>(x_vals, y_vals, z_vals, output_ctx, num_inputs);
-    const double duration_mpfx_softfloat = mpfx_op3<mpfx::Engine::SOFTFLOAT, T, O>(x_vals, y_vals, z_vals, output_ctx, num_inputs);
-    const double duration_mpfx_ffloat = mpfx_op3<mpfx::Engine::FFLOAT, T, O>(x_vals, y_vals, z_vals, output_ctx, num_inputs);
-    const double duration_mpfx_eft = mpfx_op3<mpfx::Engine::EFT, T, O>(x_vals, y_vals, z_vals, output_ctx, num_inputs);
-
-    report_result(
+    return Row{
         type, to_string(O),
-        duration_ref, duration_mpfr, duration_softfloat, duration_floppyfloat,
-        duration_mpfx_rto, duration_mpfx_softfloat, duration_mpfx_ffloat, duration_mpfx_eft
-    );
+        reference_op3<T, O>(x_vals, y_vals, z_vals, num_inputs),
+        mpfr_op3<T, O>(x_vals, y_vals, z_vals, output_ctx, num_inputs),
+        softfloat_op3<T, O>(x_vals, y_vals, z_vals, output_ctx, num_inputs),
+        floppyfloat_op3<T, O>(x_vals, y_vals, z_vals, output_ctx, num_inputs),
+        mpfx_op3<mpfx::Engine::FP_RTO, T, O>(x_vals, y_vals, z_vals, output_ctx, num_inputs),
+        mpfx_op3<mpfx::Engine::SOFTFLOAT, T, O>(x_vals, y_vals, z_vals, output_ctx, num_inputs),
+        mpfx_op3<mpfx::Engine::FFLOAT, T, O>(x_vals, y_vals, z_vals, output_ctx, num_inputs),
+        mpfx_op3<mpfx::Engine::EFT, T, O>(x_vals, y_vals, z_vals, output_ctx, num_inputs)
+    };
 }
 
 // Emulated output format: a fixed 16-bit IEEE-754 format (8 exponent bits),
@@ -724,15 +739,16 @@ void benchmark_op3(
 // f32 (24-bit) and f64 (53-bit) containers.
 static const auto OUTPUT_CTX = mpfx::IEEE754Context(8, 16, mpfx::RM::RNE);
 
-// Runs the full operation suite in a given container type.
+// Runs the full operation suite in a given container type, appending one row
+// per operation to `rows`.
 template <std::floating_point T>
-static void run(const std::string& type, const mpfx::Context& input_ctx, size_t N) {
-    benchmark_op2<T, OP2::ADD>(type, input_ctx, OUTPUT_CTX, N);
-    benchmark_op2<T, OP2::SUB>(type, input_ctx, OUTPUT_CTX, N);
-    benchmark_op2<T, OP2::MUL>(type, input_ctx, OUTPUT_CTX, N);
-    benchmark_op2<T, OP2::DIV>(type, input_ctx, OUTPUT_CTX, N);
-    benchmark_op1<T, OP1::SQRT>(type, input_ctx, OUTPUT_CTX, N);
-    benchmark_op3<T, OP3::FMA>(type, input_ctx, OUTPUT_CTX, N);
+static void run(std::vector<Row>& rows, const std::string& type, const mpfx::Context& input_ctx, size_t N) {
+    rows.push_back(benchmark_op2<T, OP2::ADD>(type, input_ctx, OUTPUT_CTX, N));
+    rows.push_back(benchmark_op2<T, OP2::SUB>(type, input_ctx, OUTPUT_CTX, N));
+    rows.push_back(benchmark_op2<T, OP2::MUL>(type, input_ctx, OUTPUT_CTX, N));
+    rows.push_back(benchmark_op2<T, OP2::DIV>(type, input_ctx, OUTPUT_CTX, N));
+    rows.push_back(benchmark_op1<T, OP1::SQRT>(type, input_ctx, OUTPUT_CTX, N));
+    rows.push_back(benchmark_op3<T, OP3::FMA>(type, input_ctx, OUTPUT_CTX, N));
 }
 
 int main(int argc, char** argv) {
@@ -740,11 +756,20 @@ int main(int argc, char** argv) {
     size_t N = 10'000'000;
     if (argc > 1) N = std::stoull(argv[1]);
 
-    report_header();
-
+    std::vector<Row> rows;
     // f32 container: inputs are FP32; f64 container: inputs are FP64.
-    run<float>("f32", mpfx::IEEE754Context(8, 32, mpfx::RM::RNE), N);
-    run<double>("f64", mpfx::IEEE754Context(11, 64, mpfx::RM::RNE), N);
+    run<float>(rows, "f32", mpfx::IEEE754Context(8, 32, mpfx::RM::RNE), N);
+    run<double>(rows, "f64", mpfx::IEEE754Context(11, 64, mpfx::RM::RNE), N);
+
+    // Table 1: raw runtimes (microseconds).
+    print_header();
+    for (const auto& r : rows) print_runtime_row(r);
+
+    // Table 2: speedup relative to SoftFloat (>1 = faster than SoftFloat).
+    std::cout << "\n# speedup relative to softfloat (>1 = faster, <1 = slower)\n";
+    std::cout << std::fixed << std::setprecision(2);
+    print_header();
+    for (const auto& r : rows) print_speedup_row(r);
 
     return 0;
 }
