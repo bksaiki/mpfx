@@ -42,20 +42,16 @@ inline T round_finalize(T high, T low) {
     const U b_high = std::bit_cast<U>(high);
     const U b_low = std::bit_cast<U>(low);
 
-    // compute sign difference
-    const int sign_high = b_high >> SIGN_SHIFT;
-    const int sign_low = b_low >> SIGN_SHIFT;
-    const int sign_diff = sign_high ^ sign_low;
-
     // When `low` has the opposite sign to `high`, the exact value lies between
     // `high` and the next representable value toward zero, so we truncate `high`
     // toward zero (RTZ) before jamming the sticky bit. The magnitude field is in
     // the low bits for both signs, so "toward zero" is always `b_high - 1`.
-    const int adjust = static_cast<int>(sign_diff);
+    // The sign-difference is the top bit of `b_high ^ b_low`, so this is `1`
+    // exactly when the signs differ and `0` otherwise.
+    const U adjust = (b_high ^ b_low) >> SIGN_SHIFT;
 
     // apply adjustment and jam sticky bit for RTO
-    U result = b_high - adjust;
-    result |= 1;
+    const U result = (b_high - adjust) | 1;
 
     // reinterpret back to floating-point
     return std::bit_cast<T>(result);
