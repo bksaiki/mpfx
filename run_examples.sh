@@ -5,7 +5,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "Running benchmark_ops..."
-"$SCRIPT_DIR"/build/benchmark/benchmark_ops
+"$SCRIPT_DIR"/build/benchmark/benchmark_ops 10000000 rne
 
 echo "Running benchmark_round..."
 "$SCRIPT_DIR"/build/benchmark/benchmark_round
