@@ -12,6 +12,27 @@
 
 namespace mpfx {
 
+/// @brief Summary of rounding bits using round-sticky scheme.
+///
+/// For a rounding interval [lo, hi), this enumeration specifies
+/// whether the precise result is one of the following
+///
+/// - `EXACT`: exactly the value `lo`
+/// - `BELOW_HALFWAY`: strictly between the value `lo` and `(lo + hi) / 2`
+/// - `EXACT_HALFWAY`: exactly `(lo + hi) / 2`
+/// - `ABOVE_HALFWAY`: strictly between the value `(lo + hi) / 2` and `hi`
+enum class RoundRS : uint8_t {
+    EXACT,          // RS = 0b00
+    BELOW_HALFWAY,  // RS = 0b01
+    EXACT_HALFWAY,  // RS = 0b10
+    ABOVE_HALFWAY   // RS = 0b11
+};
+
+/// @brief Wrapper class around a floating-point type.
+/// @tparam T floating-point type
+///
+/// Provides additional methods for a standard floating-point type
+/// including bit field extraction, splitting, and encoding.
 template <std::floating_point T>
 class bit_float {
 public:
@@ -306,31 +327,31 @@ public:
     /// @return a `bit_float` representing the high part of the split,
     /// a boolean indicating the halfway bit, and a boolean indicating
     /// the sticky bit, whether there are any bits below the halfway bit.
-    constexpr std::tuple<bit_float, bool, bool> split_rs(exp_t n) const {
+    constexpr std::tuple<bit_float, RoundRS> split_rs(exp_t n) const {
         MPFX_DEBUG_ASSERT(!is_nar(), "cannot compute exponent for NaN or Inf");
 
         // fast path: zero
         if (is_zero()) {
-            return { *this, false, false };
+            return { *this, RoundRS::EXACT };
         }
 
-        // extract the fields
-        const uint_t sbits = this->sbits();
+        // normalized exponent (subnormals use EMIN, matching `decode`)
         const uint_t ebits = this->ebits();
-        const uint_t mbits = this->mbits();
-
-        // extract the normalized exponent and integer significand
-        const auto [e, c] = decode(ebits, mbits);
+        const exp_t e = (ebits == 0)
+            ? params_t::EMIN
+            : static_cast<exp_t>(ebits >> params_t::M) - params_t::BIAS;
 
         // if split point is at or above `e`, then all digits
         // are in the low part, and the high part is zero
         if (n >= e) {
+            const uint_t sbits = this->sbits();
             if (n > e || ebits == 0) {
                 // n > e or subnormal: no halfway bit, all bits are sticky
-                return { bit_float(sbits), false, true };
+                return { bit_float(sbits), RoundRS::BELOW_HALFWAY };
             } else {
                 // n == e, normal: implicit 1 becomes the halfway bit
-                return { bit_float(sbits), true, mbits != 0 };
+                const RoundRS rs = this->mbits() == 0 ? RoundRS::EXACT_HALFWAY : RoundRS::ABOVE_HALFWAY;
+                return { bit_float(sbits), rs };
             }
         }
 
@@ -338,31 +359,32 @@ public:
         // are in the high part, and the low part is zero
         const exp_t exp = e - static_cast<exp_t>(params_t::P);
         if (exp > n) {
-            return { *this, false, false };
-        };
+            return { *this, RoundRS::EXACT };
+        }
 
-        // otherwise, we need to split the bits
+        // otherwise, split within the mantissa. Since `n < e`, we have
+        // `p_low <= M`, so the low part lies entirely within the mantissa
+        // field; we can operate directly on the raw encoding without
+        // decoding the significand or re-adding/stripping the implicit bit.
         const prec_t p_high = static_cast<prec_t>(e - n);
         const prec_t p_low = params_t::P - p_high;
         const uint_t p_mask = bitmask<uint_t>(p_low);
 
-        // split the mantissa bits into high and low parts
-        const uint_t c_high = c & ~p_mask;
-        uint_t c_low = c & p_mask;
-
-        // reform the high part
-        const uint_t high = sbits | ebits | (c_high & params_t::MMASK);
+        const uint_t high = bits_ & ~p_mask;
+        const uint_t c_low = bits_ & p_mask;
 
         // fast path: low == 0
         if (c_low == 0) {
-            return { bit_float(high), false, false };
+            return { bit_float(high), RoundRS::EXACT };
         }
 
-        // extract rounding bits
+        // here c_low != 0, so the result is a three-way comparison against
+        // the halfway bit (the top bit of the low part): below, exactly at,
+        // or above halfway. The RoundRS values are laid out so this is
+        // `2 + sign(c_low - halfway_mask)`, computed branchlessly.
         const uint_t halfway_mask = static_cast<uint_t>(1) << (p_low - 1);
-        const bool halfway = (c_low & halfway_mask) != 0;
-        const bool sticky = (c_low & (halfway_mask - 1)) != 0;
-        return { bit_float(high), halfway, sticky };
+        const auto rs = 2 + (c_low > halfway_mask) - (c_low < halfway_mask);
+        return { bit_float(high), static_cast<RoundRS>(rs) };
     }
 
     /// @brief Splits this `bit_float` at digit position `n`.

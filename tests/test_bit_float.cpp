@@ -172,7 +172,11 @@ TEST(TestBitFloat, TestSplitRSRandom) {
 
         // split the bit_float at position n
         auto [high_ref, low_ref] = bf.split(n);
-        auto [high, halfway, sticky] = bf.split_rs(n);
+        auto [high, rs] = bf.split_rs(n);
+
+        // decompose `rs` value into booleans
+        const bool halfway = (rs == mpfx::RoundRS::EXACT_HALFWAY || rs == mpfx::RoundRS::ABOVE_HALFWAY);
+        const bool sticky = (rs == mpfx::RoundRS::BELOW_HALFWAY || rs == mpfx::RoundRS::ABOVE_HALFWAY);
 
         // recompute reference rounding bits
         bool halfway_ref;

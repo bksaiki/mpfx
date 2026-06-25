@@ -84,23 +84,22 @@ namespace experimental {
 /// @tparam T the type of the significand
 /// @param hi the high part of the split significand
 /// @param n the split point
-/// @param halfway whether the low part is exactly at the halfway point
-/// @param sticky whether the low part has any nonzero bits below the halfway point
+/// @param rs the low part of the significand represented in a round-sticky scheme
 /// @return should we increment the significand?
 template <RM rm, std::floating_point T>
-inline bool round_increment_nearest(bit_float<T> hi, exp_t n, bool halfway, bool sticky) {
+inline bool round_increment_nearest(bit_float<T> hi, exp_t n, RoundRS rs) {
     // case split on rounding mode
     if constexpr (rm == RM::RNE) {
-        if (halfway && !sticky) {
+        if (rs == RoundRS::EXACT_HALFWAY) {
             // exactly halfway - increment if the LSB is odd
             return hi.bit(n + 1);
         } else {
-            // above halfway - increment
-            return halfway;
+            // increment only if strictly above halfway
+            return rs == RoundRS::ABOVE_HALFWAY;
         }
     } else if constexpr (rm == RM::RNA) {
         // above or exactly at halfway - increment
-        return halfway;
+        return static_cast<uint8_t>(rs) >= static_cast<uint8_t>(RoundRS::EXACT_HALFWAY);
     } else {
         MPFX_DEBUG_ASSERT(false, "unreachable");
         return false;
@@ -179,18 +178,14 @@ inline bool round_tiny_after(bit_float<T> x, exp_t e, exp_t emin, exp_t n) {
     // halfway to the smallest normal - round again with an additional bit
     if constexpr (rm == RM::RNE || rm == RM::RNA) {
         // nearest rounding modes
-        const auto [hi, halfway, sticky] = x.split_rs(n - 1);
-        return !round_increment_nearest<rm>(hi, n - 1, halfway, sticky);
+        const auto [hi, rs] = x.split_rs(n - 1);
+        return !round_increment_nearest<rm>(hi, n - 1, rs);
     } else {
         // directed rounding modes
         const auto [hi, sticky] = x.split_sticky(n - 1);
-        if (!sticky) {
-            // exactly representable
-            return true;
-        } else {
-            // not exact incremental
-            return !round_increment_directed<rm>(hi, n - 1);
-        }
+        // tiny if `x` is not representable and it would have rounded down
+        // with an additional bit of precision.
+        return !(sticky && round_increment_directed<rm>(hi, n - 1));
     }
 }
 
@@ -252,10 +247,10 @@ bit_float<T> round(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
     if constexpr (rm == RM::RNE || rm == RM::RNA) {
         // nearest rounding modes - need to recover lower part for tie-breaking
         // split the `bit_float` at the actual split point
-        const auto [hi, halfway, sticky] = x.split_rs(n_act);
+        const auto [hi, rs] = x.split_rs(n_act);
 
         // fast path: low is zero
-        if (!halfway && !sticky) {
+        if (rs == RoundRS::EXACT) {
             // we are tiny after rounding if we were tiny before rounding
             if constexpr (CHECK_TINY_AFTER) {
                 if (tiny_before) {
@@ -267,7 +262,7 @@ bit_float<T> round(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
         }
 
         // should we increment?
-        increment = round_increment_nearest<rm>(hi, n_act, halfway, sticky);
+        increment = round_increment_nearest<rm>(hi, n_act, rs);
         result = round_finalize(hi, n_act + 1, increment);
     } else {
         // directed rounding mode - only need to check if `low == 0`
