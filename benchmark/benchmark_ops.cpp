@@ -615,7 +615,7 @@ double mpfx_op3(const std::vector<double>& x_vals, const std::vector<double>& y_
 ////////////////////////////////////////////////////////////
 // Benchmarking functions
 
-template <OP1 O>
+template <OP1 O, mpfx::flag_mask_t Flags = mpfx::Flags::ALL_FLAGS>
 Row benchmark_op1(const mpfx::Context& output_ctx, size_t N) {
     std::vector<float> x_vals(N);
     generate_inputs(x_vals, 0.0, 1.0); // sqrt requires non-negative inputs
@@ -627,14 +627,14 @@ Row benchmark_op1(const mpfx::Context& output_ctx, size_t N) {
         mpfr_op1<O>(x_vals, output_ctx, N),
         softfloat_op1<O>(x_vals, output_ctx, N),
         floppyfloat_op1<O>(x_vals, output_ctx, N),
-        mpfx_op1<mpfx::Engine::FP_RTO, O>(x_wide, output_ctx, N),
-        mpfx_op1<mpfx::Engine::SOFTFLOAT, O>(x_wide, output_ctx, N),
-        mpfx_op1<mpfx::Engine::FFLOAT, O>(x_wide, output_ctx, N),
-        mpfx_op1<mpfx::Engine::EFT, O>(x_wide, output_ctx, N)
+        mpfx_op1<mpfx::Engine::FP_RTO, O, Flags>(x_wide, output_ctx, N),
+        mpfx_op1<mpfx::Engine::SOFTFLOAT, O, Flags>(x_wide, output_ctx, N),
+        mpfx_op1<mpfx::Engine::FFLOAT, O, Flags>(x_wide, output_ctx, N),
+        mpfx_op1<mpfx::Engine::EFT, O, Flags>(x_wide, output_ctx, N)
     };
 }
 
-template <OP2 O>
+template <OP2 O, mpfx::flag_mask_t Flags = mpfx::Flags::ALL_FLAGS>
 Row benchmark_op2(const mpfx::Context& output_ctx, size_t N) {
     std::vector<float> x_vals(N);
     std::vector<float> y_vals(N);
@@ -649,14 +649,14 @@ Row benchmark_op2(const mpfx::Context& output_ctx, size_t N) {
         mpfr_op2<O>(x_vals, y_vals, output_ctx, N),
         softfloat_op2<O>(x_vals, y_vals, output_ctx, N),
         floppyfloat_op2<O>(x_vals, y_vals, output_ctx, N),
-        mpfx_op2<mpfx::Engine::FP_RTO, O>(x_wide, y_wide, output_ctx, N),
-        mpfx_op2<mpfx::Engine::SOFTFLOAT, O>(x_wide, y_wide, output_ctx, N),
-        mpfx_op2<mpfx::Engine::FFLOAT, O>(x_wide, y_wide, output_ctx, N),
-        mpfx_op2<mpfx::Engine::EFT, O>(x_wide, y_wide, output_ctx, N)
+        mpfx_op2<mpfx::Engine::FP_RTO, O, Flags>(x_wide, y_wide, output_ctx, N),
+        mpfx_op2<mpfx::Engine::SOFTFLOAT, O, Flags>(x_wide, y_wide, output_ctx, N),
+        mpfx_op2<mpfx::Engine::FFLOAT, O, Flags>(x_wide, y_wide, output_ctx, N),
+        mpfx_op2<mpfx::Engine::EFT, O, Flags>(x_wide, y_wide, output_ctx, N)
     };
 }
 
-template <OP3 O>
+template <OP3 O, mpfx::flag_mask_t Flags = mpfx::Flags::ALL_FLAGS>
 Row benchmark_op3(const mpfx::Context& output_ctx, size_t N) {
     std::vector<float> x_vals(N);
     std::vector<float> y_vals(N);
@@ -674,10 +674,10 @@ Row benchmark_op3(const mpfx::Context& output_ctx, size_t N) {
         mpfr_op3<O>(x_vals, y_vals, z_vals, output_ctx, N),
         softfloat_op3<O>(x_vals, y_vals, z_vals, output_ctx, N),
         floppyfloat_op3<O>(x_vals, y_vals, z_vals, output_ctx, N),
-        mpfx_op3<mpfx::Engine::FP_RTO, O>(x_wide, y_wide, z_wide, output_ctx, N),
-        mpfx_op3<mpfx::Engine::SOFTFLOAT, O>(x_wide, y_wide, z_wide, output_ctx, N),
-        mpfx_op3<mpfx::Engine::FFLOAT, O>(x_wide, y_wide, z_wide, output_ctx, N),
-        mpfx_op3<mpfx::Engine::EFT, O>(x_wide, y_wide, z_wide, output_ctx, N)
+        mpfx_op3<mpfx::Engine::FP_RTO, O, Flags>(x_wide, y_wide, z_wide, output_ctx, N),
+        mpfx_op3<mpfx::Engine::SOFTFLOAT, O, Flags>(x_wide, y_wide, z_wide, output_ctx, N),
+        mpfx_op3<mpfx::Engine::FFLOAT, O, Flags>(x_wide, y_wide, z_wide, output_ctx, N),
+        mpfx_op3<mpfx::Engine::EFT, O, Flags>(x_wide, y_wide, z_wide, output_ctx, N)
     };
 }
 
@@ -706,13 +706,18 @@ int main(int argc, char** argv) {
     // FP32 target: the engines round to a 24-bit IEEE-754 format (f64 container).
     const auto output_ctx = mpfx::IEEE754Context(8, 32, rm);
 
+    // Status-flag mask applied to every MPFX rounding in this run. Set to
+    // `mpfx::Flags::NO_FLAGS` to measure rounding without flag bookkeeping, or
+    // a specific subset (e.g. `mpfx::Flags::INEXACT_FLAG`) to isolate its cost.
+    constexpr mpfx::flag_mask_t MPFX_FLAGS = mpfx::Flags::ALL_FLAGS;
+
     const std::vector<Row> rows = {
-        benchmark_op2<OP2::ADD>(output_ctx, N),
-        benchmark_op2<OP2::SUB>(output_ctx, N),
-        benchmark_op2<OP2::MUL>(output_ctx, N),
-        benchmark_op2<OP2::DIV>(output_ctx, N),
-        benchmark_op1<OP1::SQRT>(output_ctx, N),
-        benchmark_op3<OP3::FMA>(output_ctx, N)
+        benchmark_op2<OP2::ADD, MPFX_FLAGS>(output_ctx, N),
+        benchmark_op2<OP2::SUB, MPFX_FLAGS>(output_ctx, N),
+        benchmark_op2<OP2::MUL, MPFX_FLAGS>(output_ctx, N),
+        benchmark_op2<OP2::DIV, MPFX_FLAGS>(output_ctx, N),
+        benchmark_op1<OP1::SQRT, MPFX_FLAGS>(output_ctx, N),
+        benchmark_op3<OP3::FMA, MPFX_FLAGS>(output_ctx, N)
     };
 
     // Table 1: raw runtimes (microseconds).
