@@ -20,8 +20,8 @@ BUILD_DIR = REPO_ROOT / "build"
 FP32, FP16 = 'fp32', 'fp16'
 FORMATS = [FP32, FP16]
 
-RNE, RTP, RAZ = 'rne', 'rtp', 'raz'
-RMS = [RNE, RTP, RAZ]
+RNE, RTP, RTZ = 'rne', 'rtp', 'rtz'
+RMS = [RNE, RTP, RTZ]
 
 ROWS = [
     'add',
@@ -39,8 +39,8 @@ COLUMNS = [
     'softfloat',
     'floppyfloat',
     'mpfx_rto',
-    'mpfx_sfloat',
-    'mpfx_ffloat',
+    # 'mpfx_sfloat',
+    # 'mpfx_ffloat',
     'mpfx_eft'
 ]
 
@@ -164,7 +164,14 @@ def aggregate_and_cache(cache_dir: Path, results: list, fmt: str, rounding_mode:
     aggregated: dict[str, dict[str, list[float]]] = {}
     for result in results:
         headers = result[0]
-        assert headers[1:] == COLUMNS, f"unexpected benchmark output columns: {headers[1:]} != {COLUMNS}"
+        # COLUMNS is a (possibly pruned) selection of what the binary emits, so
+        # require it to be a subset rather than an exact match. The baseline must
+        # always be present since overheads are computed against it. Every emitted
+        # column is still cached, so pruning only affects what gets displayed.
+        emitted = headers[1:]
+        missing = [c for c in COLUMNS if c not in emitted]
+        assert not missing, f"benchmark output is missing requested columns {missing} (emitted: {emitted})"
+        assert BASELINE in emitted, f"baseline '{BASELINE}' missing from benchmark output: {emitted}"
         for row in result[1:]:
             op_name = row[0]
             if op_name not in aggregated:
@@ -224,68 +231,113 @@ def report_overhead(output_dir: Path, fmt: str, rm: str):
         print()
 
 
-def plot_overhead(output_dir: Path, fmt: str, rm: str):
-    # load average overheads from pickle
-    avg_overhead_file = output_dir / "cache" / f"average_overheads_{fmt}_{rm}.pkl"
-    with avg_overhead_file.open('rb') as f:
-        average_overheads: dict[tuple[str, str], float] = pickle.load(f)
+def _rm_shade(base, r: int):
+    # Lightness encodes rounding mode: early modes lighter, last mode full color.
+    frac = 0.45 + 0.55 * (r / max(len(RMS) - 1, 1))
+    c = np.array(base) * frac + np.array([1.0, 1.0, 1.0, 1.0]) * (1.0 - frac)
+    c[3] = 1.0
+    return c
 
+
+def plot_speedup(output_dir: Path, bare: bool = False):
+    # One merged figure: a subplot row per format; within each subplot the bars
+    # are grouped by operation, then clustered by treatment (hue), then by
+    # rounding mode (shade). Heights are speedup relative to SoftFloat (>1 =
+    # faster), i.e. the reciprocal of the cached overhead.
+    cache_dir = output_dir / "cache"
     plot_dir = output_dir / "plots"
     plot_dir.mkdir(exist_ok=True)
 
-    # Create a color gradient from light to dark blue
-    n_colors = len(DISPLAY_COLUMNS)
-    colors = plt.cm.Blues(np.linspace(0.4, 0.9, n_colors))
+    # speedups[(fmt, rm)][(op, col)] = SoftFloat_time / impl_time
+    speedups: dict[tuple[str, str], dict[tuple[str, str], float]] = {}
+    for fmt in FORMATS:
+        for rm in RMS:
+            with (cache_dir / f"average_overheads_{fmt}_{rm}.pkl").open('rb') as f:
+                overheads: dict[tuple[str, str], float] = pickle.load(f)
+            speedups[(fmt, rm)] = {
+                key: (1.0 / ov if (ov and not math.isnan(ov)) else math.nan)
+                for key, ov in overheads.items()
+            }
 
-    # Create a single figure with subplots for all operations
-    fig, axes = plt.subplots(2, 3, figsize=(18, 10))
+    treatments = DISPLAY_COLUMNS  # SoftFloat is the 1.0 reference, not a bar
+    R = len(RMS)
+    T = len(treatments)
+
+    # bar geometry (data units): all bars within one operator are flush (no gaps
+    # between treatments or rounding modes); only operators are separated
+    bar_w = 1.0
+    treat_gap = 0.0
+    op_gap = 2.0
+
+    # shared x layout: (x, op, treatment, rm_index) and per-op group centers
+    layout: list[tuple[float, str, str, int]] = []
+    op_centers: list[float] = []
+    x = 0.0
+    for op in ROWS:
+        start = x
+        for col in treatments:
+            for r in range(R):
+                layout.append((x, op, col, r))
+                x += bar_w
+            x += treat_gap
+        x -= treat_gap
+        op_centers.append((start + x) / 2.0)
+        x += op_gap
+    extent = x - op_gap
+
+    base_colors = plt.cm.tab10(np.linspace(0, 1, 10))[:T]
+    col_index = {c: i for i, c in enumerate(treatments)}
+
+    fig, axes = plt.subplots(
+        len(FORMATS), 1,
+        figsize=(max(14.0, extent * 0.16), 3 * len(FORMATS) + 0.2),
+        squeeze=False,
+    )
     axes = axes.flatten()
 
-    # Create a bar chart for each operation
-    for idx, op in enumerate(ROWS):
-        ax: plt.Axes = axes[idx]
+    for ax, fmt in zip(axes, FORMATS):
+        for (xpos, op, col, r) in layout:
+            height = speedups[(fmt, RMS[r])].get((op, col), math.nan)
+            if math.isnan(height):
+                continue  # e.g. FloppyFloat under FP16 (not run)
+            ax.bar(xpos, height, width=bar_w,
+                   color=_rm_shade(base_colors[col_index[col]], r),
+                   edgecolor='black', linewidth=0.3)
 
-        # Get overheads for this operation
-        overheads = [average_overheads[(op, col)] for col in DISPLAY_COLUMNS]
-
-        # Create bar chart with gradient colors
-        x = np.arange(len(DISPLAY_COLUMNS))
-        bars = ax.bar(x, overheads, color=colors, edgecolor='black', linewidth=0.5)
-
-        # Reference line at the baseline (1.0)
-        ax.axhline(1.0, color='red', linewidth=0.8, linestyle='--', alpha=0.6)
-
-        # Customize plot
-        ax.set_title(f'{op.upper()}', fontsize=12)
-        ax.set_xticks([])  # Remove x-axis ticks and labels
+        ax.axhline(1.0, color='red', linewidth=0.9, linestyle='--', alpha=0.7)
+        ax.set_xticks(op_centers)
+        ax.set_xticklabels([op.upper() for op in ROWS])
+        ax.set_xlim(-bar_w, extent)
+        ax.set_ylabel(f'Speedup vs. {NAMES[BASELINE]}')
+        ax.set_title(fmt.upper(), fontsize=13)
         ax.grid(axis='y', alpha=0.3, linestyle='--')
 
-        # Add value labels on top of bars ("n/a" for columns that were not run)
-        for bar, overhead in zip(bars, overheads):
-            if math.isnan(overhead):
-                ax.text(bar.get_x() + bar.get_width()/2., 0.0,
-                        'n/a', ha='center', va='bottom', fontsize=9, color='gray')
-            else:
-                ax.text(bar.get_x() + bar.get_width()/2., bar.get_height(),
-                        f'{overhead:.1f}x',
-                        ha='center', va='bottom', fontsize=10)
+    # two legends: hue distinguishes treatment, shade distinguishes rounding mode
+    treat_handles = [plt.Rectangle((0, 0), 1, 1, fc=_rm_shade(base_colors[i], R - 1),
+                                   edgecolor='black', linewidth=0.5) for i in range(T)]
+    treat_labels = [NAMES[c] for c in treatments]
+    rm_handles = [plt.Rectangle((0, 0), 1, 1, fc=_rm_shade(np.array([0.35, 0.35, 0.35, 1.0]), r),
+                                edgecolor='black', linewidth=0.5) for r in range(R)]
+    rm_labels = [rm.upper() for rm in RMS]
 
-    # Add common y-label for all subplots
-    fig.supylabel(f'Runtime relative to {NAMES[BASELINE]}', fontsize=12)
+    # `bare` mode strips the title and legend for figure inclusion. Otherwise
+    # lay out with the suptitle hugging the top row and the legends just beneath;
+    # bbox_inches='tight' crops the rest either way.
+    if bare:
+        plt.tight_layout(rect=[0.01, 0.0, 1, 0.98])
+    else:
+        plt.suptitle(f'Speedup Relative to {NAMES[BASELINE]}', fontsize=16, y=0.965)
+        plt.tight_layout(rect=[0.01, 0.0, 1, 0.93])
 
-    # Create legend with implementation names
-    legend_patches = [plt.Rectangle((0, 0), 1, 1, fc=colors[i], edgecolor='black', linewidth=0.5)
-                     for i in range(len(DISPLAY_COLUMNS))]
-    legend_labels = [NAMES[col] for col in DISPLAY_COLUMNS]
-    fig.legend(legend_patches, legend_labels, loc='center',
-              bbox_to_anchor=(0.5, -0.02), ncol=len(DISPLAY_COLUMNS), frameon=True,
-              fontsize=12, edgecolor='black')
+        leg1 = fig.legend(treat_handles, treat_labels, loc='upper center',
+                          bbox_to_anchor=(0.5, -0.005), ncol=T, frameon=True,
+                          fontsize=10, title='Treatment (color)')
+        fig.add_artist(leg1)
+        fig.legend(rm_handles, rm_labels, loc='upper center',
+                   bbox_to_anchor=(0.5, -0.055), ncol=R, frameon=True,
+                   fontsize=10, title='Rounding mode (shade: light→dark)')
 
-    plt.suptitle(f'Performance Overhead by Operation ({fmt}/{rm}, relative to {NAMES[BASELINE]})', fontsize=16)
-    plt.tight_layout(rect=[0.015, 0.03, 1, 0.96])
-
-    # Save combined plot
-    plot_file = plot_dir / f"overhead_{fmt}_{rm}.png"
+    plot_file = plot_dir / "speedup.png"
     plt.savefig(plot_file, dpi=150, bbox_inches='tight')
     plt.close()
 
@@ -347,6 +399,7 @@ if __name__ == "__main__":
     parser.add_argument('--threads', type=int, default=1, help='Number of parallel processes to use for benchmarking.')
     parser.add_argument('--num-inputs', type=int, default=10_000_000, help='Number of inputs per benchmark run.')
     parser.add_argument('--replot', action='store_true', help='Re-generate plots from existing benchmark data.')
+    parser.add_argument('--bare', action='store_true', help='Strip the plot title and legend (e.g. for paper figures).')
     args = parser.parse_args()
 
     # arguments
@@ -355,6 +408,7 @@ if __name__ == "__main__":
     threads: int = args.threads
     num_inputs: int = args.num_inputs
     replot: bool = args.replot
+    bare: bool = args.bare
 
     # log config
     print(f"Output Directory: {output_dir}")
@@ -374,11 +428,13 @@ if __name__ == "__main__":
         # then write all aggregated results to cache
         run_all(output_dir, iterations, threads, num_inputs)
 
-    # report and plot each (format, rounding mode) pair from cache
+    # report each (format, rounding mode) pair from cache
     for fmt in FORMATS:
         for rm in RMS:
             report_overhead(output_dir, fmt, rm)
-            plot_overhead(output_dir, fmt, rm)
+
+    # single merged speedup plot across all formats and rounding modes
+    plot_speedup(output_dir, bare=bare)
 
     # emit LaTeX table rows (speedup vs SoftFloat)
     report_tex(output_dir)
