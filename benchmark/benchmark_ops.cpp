@@ -226,7 +226,7 @@ double reference_op3(const std::vector<T>& x_vals, const std::vector<T>& y_vals,
 ////////////////////////////////////////////////////////////
 // MPFR implementations
 
-static mpfr_rnd_t cvt_rm(mpfx::RM rm) {
+static inline mpfr_rnd_t cvt_rm(mpfx::RM rm) {
     switch (rm) {
         case mpfx::RM::RNE:
             return MPFR_RNDN;
@@ -251,7 +251,7 @@ static constexpr mpfr_prec_t container_prec() {
 
 // Set an MPFR operand from a container-type value (exactly).
 template <std::floating_point T>
-static void mpfr_set_t(mpfr_t dst, T value) {
+static inline void mpfr_set_t(mpfr_t dst, T value) {
     if constexpr (std::is_same_v<T, float>) {
         mpfr_set_flt(dst, value, MPFR_RNDN);
     } else {
@@ -261,6 +261,8 @@ static void mpfr_set_t(mpfr_t dst, T value) {
 
 template <std::floating_point T, OP1 O>
 double mpfr_op1(const std::vector<T>& x_vals, const mpfx::Context& ctx, size_t N) {
+    const mpfr_rnd_t rnd = cvt_rm(ctx.rm());
+
     mpfr_t mx, mr;
     mpfr_init2(mx, container_prec<T>());
     mpfr_init2(mr, ctx.prec());
@@ -272,7 +274,7 @@ double mpfr_op1(const std::vector<T>& x_vals, const mpfx::Context& ctx, size_t N
     for (size_t i = 0; i < N; i++) {
         mpfr_set_t(mx, x_vals[i]);
         if constexpr (O == OP1::SQRT) {
-            mpfr_sqrt(mr, mx, cvt_rm(ctx.rm()));
+            mpfr_sqrt(mr, mx, rnd);
         } else {
             MPFX_STATIC_ASSERT(false, "unsupported OP1");
         }
@@ -291,6 +293,8 @@ double mpfr_op1(const std::vector<T>& x_vals, const mpfx::Context& ctx, size_t N
 
 template <std::floating_point T, OP2 O>
 double mpfr_op2(const std::vector<T>& x_vals, const std::vector<T>& y_vals, const mpfx::Context& ctx, size_t N) {
+    const mpfr_rnd_t rnd = cvt_rm(ctx.rm());
+
     mpfr_t mx, my, mr;
     mpfr_init2(mx, container_prec<T>());
     mpfr_init2(my, container_prec<T>());
@@ -304,13 +308,13 @@ double mpfr_op2(const std::vector<T>& x_vals, const std::vector<T>& y_vals, cons
         mpfr_set_t(mx, x_vals[i]);
         mpfr_set_t(my, y_vals[i]);
         if constexpr (O == OP2::ADD) {
-            mpfr_add(mr, mx, my, cvt_rm(ctx.rm()));
+            mpfr_add(mr, mx, my, rnd);
         } else if constexpr (O == OP2::SUB) {
-            mpfr_sub(mr, mx, my, cvt_rm(ctx.rm()));
+            mpfr_sub(mr, mx, my, rnd);
         } else if constexpr (O == OP2::MUL) {
-            mpfr_mul(mr, mx, my, cvt_rm(ctx.rm()));
+            mpfr_mul(mr, mx, my, rnd);
         } else if constexpr (O == OP2::DIV) {
-            mpfr_div(mr, mx, my, cvt_rm(ctx.rm()));
+            mpfr_div(mr, mx, my, rnd);
         } else {
             MPFX_STATIC_ASSERT(false, "unsupported OP2");
         }
@@ -330,6 +334,8 @@ double mpfr_op2(const std::vector<T>& x_vals, const std::vector<T>& y_vals, cons
 
 template <std::floating_point T, OP3 O>
 double mpfr_op3(const std::vector<T>& x_vals, const std::vector<T>& y_vals, const std::vector<T>& z_vals, const mpfx::Context& ctx, size_t N) {
+    const mpfr_rnd_t rnd = cvt_rm(ctx.rm());
+
     mpfr_t mx, my, mz, mr;
     mpfr_init2(mx, container_prec<T>());
     mpfr_init2(my, container_prec<T>());
@@ -345,7 +351,7 @@ double mpfr_op3(const std::vector<T>& x_vals, const std::vector<T>& y_vals, cons
         mpfr_set_t(my, y_vals[i]);
         mpfr_set_t(mz, z_vals[i]);
         if constexpr (O == OP3::FMA) {
-            mpfr_fma(mr, mx, my, mz, cvt_rm(ctx.rm()));
+            mpfr_fma(mr, mx, my, mz, rnd);
         } else {
             MPFX_STATIC_ASSERT(false, "unsupported OP3");
         }
@@ -367,7 +373,7 @@ double mpfr_op3(const std::vector<T>& x_vals, const std::vector<T>& y_vals, cons
 ////////////////////////////////////////////////////////////
 // SoftFloat implementations
 
-static uint8_t cvt_rm_softfloat(mpfx::RM rm) {
+static inline uint8_t cvt_rm_softfloat(mpfx::RM rm) {
     switch (rm) {
         case mpfx::RM::RNE:
             return softfloat_round_near_even;
@@ -494,7 +500,7 @@ double softfloat_op3(const std::vector<T>& x_vals, const std::vector<T>& y_vals,
 ////////////////////////////////////////////////////////////
 // FloppyFloat implementations
 
-static Vfpu::RoundingMode cvt_rm_floppyfloat(mpfx::RM rm) {
+static inline Vfpu::RoundingMode cvt_rm_floppyfloat(mpfx::RM rm) {
     switch (rm) {
         case mpfx::RM::RNE:
             return Vfpu::kRoundTiesToEven;
