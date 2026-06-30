@@ -338,7 +338,7 @@ def plot_speedup(output_dir: Path, bare: bool = False):
                    fontsize=10, title='Rounding mode (shade: light→dark)')
 
     plot_file = plot_dir / "speedup.png"
-    plt.savefig(plot_file, dpi=150, bbox_inches='tight')
+    plt.savefig(plot_file, dpi=300, bbox_inches='tight')
     plt.close()
 
     print(f"Saved plot: {plot_file}")
