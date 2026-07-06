@@ -215,7 +215,9 @@ std::vector<mx_block_t> mx_block_quantize(const std::array<double, N>& vec) {
     constexpr int MAX = mx_params<F>::MAX;
     int EMAX = std::ilogb(MAX);
 
-    const mpfx::Context ctx(P, NMIN, MAX, mpfx::RM::RNE);
+    // Quantize with round-toward-zero so an element can never round up past
+    // MAX into infinity (which would poison the FP128 accumulation with NaN).
+    const mpfx::Context ctx(P, NMIN, MAX, mpfx::RM::RTZ);
 
     // quantize vector into blocks
     std::vector<mx_block_t> blocks(num_blocks);
@@ -363,11 +365,13 @@ double mx_dot_prod_impl(const std::vector<mx_block_t>& a_blocks, const std::vect
 
         // compute scaled dot product
         if constexpr (FA == MX::E5M2 && FB == MX::E5M2) {
-            // unscaled dot product should be performed exactly
+            // unscaled dot product should be performed exactly. A single product
+            // can reach ~57344^2 * 2^32 > INT64_MAX, so accumulate the fixed-point
+            // terms in 128 bits (int64 would overflow before reaching `prod`).
             mpfx::int128_t prod = 0;
             for (size_t j = 0; j < a_elts.size(); j++) {
                 const double p = a_elts[j] * b_elts[j];
-                prod += mpfx::to_fixed(p, A_EXPMIN + B_EXPMIN);
+                prod += mpfx::to_fixed<mpfx::int128_t>(p, A_EXPMIN + B_EXPMIN);
             }
 
             // break up prod into 2 parts of 40 and 29 digits
