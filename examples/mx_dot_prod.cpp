@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cmath>
 #include <iomanip>
+#include <limits>
 #include <random>
 #include <sstream>
 #include <string>
@@ -62,10 +63,22 @@ struct mx_params<MX::E2M1> {
     static constexpr double MAX = 6.0;
 };
 
+enum class Mode {
+    Validate,
+    Time
+};
+
 struct TimingResult {
     std::string config;
     double sf_time;
     double mpfx_time;
+};
+
+struct ValidationResult {
+    std::string config;
+    size_t num_inputs;
+    size_t num_mismatches;
+    double max_abs_diff;
 };
 
 constexpr const char* mx_name(MX m) {
@@ -471,15 +484,90 @@ TimingResult time_dot_prod(
     return { config, sf_time, mpfx_time };
 }
 
+// Checks that the SoftFloat and MPFX implementations produce identical results
+// for every input, since they are meant to compute the same function.
+template <MX FA, MX FB, size_t LEN>
+ValidationResult validate_dot_prod(
+    const std::vector<std::array<double, LEN>>& x_vals,
+    const std::vector<std::array<double, LEN>>& y_vals
+) {
+    const size_t N = x_vals.size();
+    std::string config = std::string(mx_name(FA)) + "x" + mx_name(FB);
+    std::cout << "Validating dot product for config " << config << " with " << N << " inputs..." << std::endl;
+
+    // Only report the first few mismatches to avoid flooding the output.
+    static constexpr size_t MAX_REPORTED = 10;
+
+    size_t num_mismatches = 0;
+    double max_abs_diff = 0.0;
+    for (size_t i = 0; i < N; i++) {
+        // Quantize once and feed the same blocks to both implementations.
+        const auto x_blocks = mx_block_quantize<32, FA>(x_vals[i]);
+        const auto y_blocks = mx_block_quantize<32, FB>(y_vals[i]);
+
+        const double sf_result = mx_dot_prod_sf<FA, FB>(x_blocks, y_blocks);
+        const double mpfx_result = mx_dot_prod_impl<FA, FB>(x_blocks, y_blocks);
+
+        // Two NaNs are considered equal; otherwise require exact bitwise agreement.
+        const bool both_nan = std::isnan(sf_result) && std::isnan(mpfx_result);
+        if (!both_nan && sf_result != mpfx_result) {
+            num_mismatches++;
+            const double diff = std::abs(sf_result - mpfx_result);
+            max_abs_diff = std::isnan(diff) ? std::numeric_limits<double>::infinity()
+                                            : std::max(max_abs_diff, diff);
+            if (num_mismatches <= MAX_REPORTED) {
+                std::cout << "  mismatch at input " << i << ": sf="
+                          << std::setprecision(17) << sf_result
+                          << " mpfx=" << mpfx_result << std::endl;
+            }
+        }
+    }
+
+    if (num_mismatches > MAX_REPORTED) {
+        std::cout << "  ... and " << (num_mismatches - MAX_REPORTED)
+                  << " more mismatches" << std::endl;
+    }
+
+    return { config, N, num_mismatches, max_abs_diff };
+}
+
+// Runs a single configuration in the requested mode, appending to the
+// appropriate result vector.
+template <MX FA, MX FB, size_t LEN>
+void run_config(
+    Mode mode,
+    const std::vector<std::array<double, LEN>>& x_vals,
+    const std::vector<std::array<double, LEN>>& y_vals,
+    std::vector<TimingResult>& time_results,
+    std::vector<ValidationResult>& validation_results
+) {
+    if (mode == Mode::Time) {
+        time_results.push_back(time_dot_prod<FA, FB>(x_vals, y_vals));
+    } else {
+        validation_results.push_back(validate_dot_prod<FA, FB>(x_vals, y_vals));
+    }
+}
+
 
 int main(int argc, char* argv[]) {
-    // Command line argument specifies number of inputs to test
-    if (argc != 2) {
-        std::cerr << "Usage: " << argv[0] << " [num_inputs]" << std::endl;
+    // Command line: <mode> <num_inputs>, where mode is `validate` or `time`.
+    if (argc != 3) {
+        std::cerr << "Usage: " << argv[0] << " <validate|time> <num_inputs>" << std::endl;
         return 1;
     }
 
-    const size_t N = std::stoul(argv[1]);
+    const std::string mode_str = argv[1];
+    Mode mode;
+    if (mode_str == "validate") {
+        mode = Mode::Validate;
+    } else if (mode_str == "time") {
+        mode = Mode::Time;
+    } else {
+        std::cerr << "Unknown mode '" << mode_str << "'; expected 'validate' or 'time'" << std::endl;
+        return 1;
+    }
+
+    const size_t N = std::stoul(argv[2]);
 
     // Configuration
     static constexpr size_t LEN = 4096;
@@ -499,35 +587,63 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // Time implementations
-    std::vector<TimingResult> results;
-    results.push_back(time_dot_prod<MX::E5M2, MX::E5M2>(x_vals, y_vals));
-    results.push_back(time_dot_prod<MX::E5M2, MX::E4M3>(x_vals, y_vals));
-    results.push_back(time_dot_prod<MX::E4M3, MX::E4M3>(x_vals, y_vals));
-    // results.push_back(time_dot_prod<MX::E3M2, MX::E3M2>(x_vals, y_vals));
-    // results.push_back(time_dot_prod<MX::E2M3, MX::E2M3>(x_vals, y_vals));
-    // results.push_back(time_dot_prod<MX::E2M1, MX::E2M1>(x_vals, y_vals));
+    // Run each configuration in the requested mode.
+    std::vector<TimingResult> time_results;
+    std::vector<ValidationResult> validation_results;
+    run_config<MX::E5M2, MX::E5M2>(mode, x_vals, y_vals, time_results, validation_results);
+    run_config<MX::E5M2, MX::E4M3>(mode, x_vals, y_vals, time_results, validation_results);
+    run_config<MX::E4M3, MX::E4M3>(mode, x_vals, y_vals, time_results, validation_results);
+    // run_config<MX::E3M2, MX::E3M2>(mode, x_vals, y_vals, time_results, validation_results);
+    // run_config<MX::E2M3, MX::E2M3>(mode, x_vals, y_vals, time_results, validation_results);
+    // run_config<MX::E2M1, MX::E2M1>(mode, x_vals, y_vals, time_results, validation_results);
 
-    // Print table
     const int cw = 14; // column width
-    std::cout << std::left << std::setw(cw) << "Config"
-              << "| " << std::setw(cw) << "SoftFloat"
-              << "| " << std::setw(cw) << "MPFX"
-              << "| " << std::setw(cw) << "Speedup" << "|" << std::endl;
-    std::cout << std::string(cw, '-')
-              << "|" << std::string(cw + 1, '-')
-              << "|" << std::string(cw + 1, '-')
-              << "|" << std::string(cw + 1, '-') << "|" << std::endl;
-    for (const auto& r : results) {
-        const double speedup = r.sf_time / r.mpfx_time;
-        std::ostringstream sf_str, mpfx_str, speedup_str;
-        sf_str << std::fixed << std::setprecision(4) << r.sf_time << "s";
-        mpfx_str << std::fixed << std::setprecision(4) << r.mpfx_time << "s";
-        speedup_str << std::fixed << std::setprecision(2) << speedup << "x";
-        std::cout << std::left << std::setw(cw) << r.config
-                  << "| " << std::setw(cw) << sf_str.str()
-                  << "| " << std::setw(cw) << mpfx_str.str()
-                  << "| " << std::setw(cw) << speedup_str.str() << "|" << std::endl;
+    if (mode == Mode::Time) {
+        // Print timing table
+        std::cout << std::left << std::setw(cw) << "Config"
+                  << "| " << std::setw(cw) << "SoftFloat"
+                  << "| " << std::setw(cw) << "MPFX"
+                  << "| " << std::setw(cw) << "Speedup" << "|" << std::endl;
+        std::cout << std::string(cw, '-')
+                  << "|" << std::string(cw + 1, '-')
+                  << "|" << std::string(cw + 1, '-')
+                  << "|" << std::string(cw + 1, '-') << "|" << std::endl;
+        for (const auto& r : time_results) {
+            const double speedup = r.sf_time / r.mpfx_time;
+            std::ostringstream sf_str, mpfx_str, speedup_str;
+            sf_str << std::fixed << std::setprecision(4) << r.sf_time << "s";
+            mpfx_str << std::fixed << std::setprecision(4) << r.mpfx_time << "s";
+            speedup_str << std::fixed << std::setprecision(2) << speedup << "x";
+            std::cout << std::left << std::setw(cw) << r.config
+                      << "| " << std::setw(cw) << sf_str.str()
+                      << "| " << std::setw(cw) << mpfx_str.str()
+                      << "| " << std::setw(cw) << speedup_str.str() << "|" << std::endl;
+        }
+    } else {
+        // Print validation table
+        std::cout << std::left << std::setw(cw) << "Config"
+                  << "| " << std::setw(cw) << "Inputs"
+                  << "| " << std::setw(cw) << "Mismatches"
+                  << "| " << std::setw(cw) << "MaxAbsDiff"
+                  << "| " << std::setw(cw) << "Result" << "|" << std::endl;
+        std::cout << std::string(cw, '-')
+                  << "|" << std::string(cw + 1, '-')
+                  << "|" << std::string(cw + 1, '-')
+                  << "|" << std::string(cw + 1, '-')
+                  << "|" << std::string(cw + 1, '-') << "|" << std::endl;
+        bool all_pass = true;
+        for (const auto& r : validation_results) {
+            const bool pass = r.num_mismatches == 0;
+            all_pass = all_pass && pass;
+            std::ostringstream diff_str;
+            diff_str << std::setprecision(17) << r.max_abs_diff;
+            std::cout << std::left << std::setw(cw) << r.config
+                      << "| " << std::setw(cw) << r.num_inputs
+                      << "| " << std::setw(cw) << r.num_mismatches
+                      << "| " << std::setw(cw) << diff_str.str()
+                      << "| " << std::setw(cw) << (pass ? "PASS" : "FAIL") << "|" << std::endl;
+        }
+        return all_pass ? 0 : 1;
     }
 
     return 0;
