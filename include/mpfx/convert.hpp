@@ -103,10 +103,13 @@ inline std::tuple<bool, exp_t, typename float_params<T>::uint_t> unpack_float(T 
 
 /// @brief Converts a floating-point number `x` to a integer `m` such
 /// that `x = m * 2^exp` where `exp` is the given exponent.
-/// NOTE: does not check if `x` is representable in `int64_t`.
-inline int64_t to_fixed(double x, exp_t exp) {
+/// @tparam Int the integer type to return (defaults to `int64_t`). Use a wider
+/// type such as `int128_t` when `x * 2^-exp` may exceed the `int64_t` range.
+/// NOTE: does not check if `x` is representable in `Int`.
+template <typename Int = int64_t>
+inline Int to_fixed(double x, exp_t exp) {
     MPFX_DEBUG_ASSERT(std::isfinite(x), "to_fixed: input must be finite");
-    return x == 0.0 ? static_cast<int64_t>(0) : static_cast<int64_t>(std::ldexp(x, -exp));
+    return x == 0.0 ? static_cast<Int>(0) : static_cast<Int>(std::ldexp(x, -exp));
 }
 
 } // end namespace mpfx
