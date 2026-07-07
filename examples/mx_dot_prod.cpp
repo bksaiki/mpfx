@@ -92,6 +92,17 @@ constexpr const char* mx_name(MX m) {
     return "???";
 }
 
+// Exact power of two, 2^e, as a double. Constexpr so that fixed-point scale
+// factors fold into a single multiply instead of an out-of-line ldexp call.
+constexpr double exp2i(int e) {
+    double r = 1.0;
+    const double base = e < 0 ? 0.5 : 2.0;
+    for (int i = 0, n = e < 0 ? -e : e; i < n; i++) {
+        r *= base;
+    }
+    return r;
+}
+
 
 template <std::floating_point T>
 inline std::tuple<T, T> fast_two_sum(T x, T y) {
@@ -365,13 +376,18 @@ double mx_dot_prod_impl(const std::vector<mx_block_t>& a_blocks, const std::vect
 
         // compute scaled dot product
         if constexpr (FA == MX::E5M2 && FB == MX::E5M2) {
-            // unscaled dot product should be performed exactly. A single product
-            // can reach ~57344^2 * 2^32 > INT64_MAX, so accumulate the fixed-point
-            // terms in 128 bits (int64 would overflow before reaching `prod`).
+            // unscaled dot product should be performed exactly. Each element is an
+            // exact integer multiple of 2^EXPMIN, so convert to int64 (never larger
+            // than ~2^32) and multiply into int128. The product can reach
+            // ~57344^2 * 2^32 > INT64_MAX, so it must be accumulated in 128 bits.
+            constexpr auto A_TO_FIXED = exp2i(-A_EXPMIN);
+            constexpr auto B_TO_FIXED = exp2i(-B_EXPMIN);
+
             mpfx::int128_t prod = 0;
             for (size_t j = 0; j < a_elts.size(); j++) {
-                const double p = a_elts[j] * b_elts[j];
-                prod += mpfx::to_fixed<mpfx::int128_t>(p, A_EXPMIN + B_EXPMIN);
+                const int64_t a = static_cast<int64_t>(a_elts[j] * A_TO_FIXED);
+                const int64_t b = static_cast<int64_t>(b_elts[j] * B_TO_FIXED);
+                prod += static_cast<mpfx::int128_t>(a) * b;
             }
 
             // break up prod into 2 parts of 40 and 29 digits
@@ -395,11 +411,15 @@ double mx_dot_prod_impl(const std::vector<mx_block_t>& a_blocks, const std::vect
             // perform `scale * prod + result` using error-free transformations
             result = mpfx::add3(scaled_hi, scaled_lo, result, accum_ctx);
         } else if constexpr ((FA == MX::E5M2 && FB == MX::E4M3) || (FA == MX::E4M3 && FB == MX::E5M2)) {
-            // unscaled dot product should be performed with at least 2*P bits of precision
+            // unscaled dot product should be performed with at least 2*P bits of
+            // precision. The product fits in int64, and multiplying by the constant
+            // 2^-(A_EXPMIN+B_EXPMIN) folds at compile time (vs. an out-of-line ldexp).
+            constexpr double TO_FIXED = exp2i(-(A_EXPMIN + B_EXPMIN));
+
             int64_t prod = 0;
             for (size_t j = 0; j < a_elts.size(); j++) {
                 const double p = a_elts[j] * b_elts[j];
-                prod += mpfx::to_fixed(p, A_EXPMIN + B_EXPMIN);
+                prod += static_cast<int64_t>(p * TO_FIXED);
             }
 
             // break up prod into 2 parts of 32 digits each
