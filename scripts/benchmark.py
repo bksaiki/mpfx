@@ -51,6 +51,10 @@ BASELINE = 'softfloat'
 # Columns shown in tables/plots (everything except the baseline itself).
 DISPLAY_COLUMNS = [c for c in COLUMNS if c != BASELINE]
 
+# MPFX treatments (our implementations). The "fastest MPFX" summary picks the
+# best of these per (op, format, rounding mode).
+MPFX_COLUMNS = [c for c in COLUMNS if c.startswith('mpfx')]
+
 NAMES = {
     'mpfr': 'MPFR',
     'softfloat': 'SoftFloat',
@@ -229,6 +233,48 @@ def report_overhead(output_dir: Path, fmt: str, rm: str):
             cell = "n/a" if math.isnan(overhead) else f"{overhead:.2f}"
             print(f'{cell:>12}', end="")
         print()
+
+
+def report_fastest_mpfx(output_dir: Path):
+    # Summarize the speedup of the *fastest* MPFX treatment (the per-config best
+    # of MPFX_COLUMNS) relative to SoftFloat and MPFR, averaged over every
+    # (op, format, rounding mode). Reports both the arithmetic and geometric
+    # mean; the geometric mean is the appropriate summary for ratios.
+    cache_dir = output_dir / "cache"
+
+    baselines = ['softfloat', 'mpfr']
+    speedups: dict[str, list[float]] = {b: [] for b in baselines}
+    n = 0
+    for fmt in FORMATS:
+        for rm in RMS:
+            with (cache_dir / f"average_runtimes_{fmt}_{rm}.pkl").open('rb') as f:
+                rt: dict[tuple[str, str], float] = pickle.load(f)
+            for op in ROWS:
+                mpfx_times = [rt[(op, c)] for c in MPFX_COLUMNS
+                              if not math.isnan(rt[(op, c)])]
+                if not mpfx_times:
+                    continue
+                best = min(mpfx_times)
+                if best <= 0:
+                    continue
+                n += 1
+                for b in baselines:
+                    base = rt[(op, b)]
+                    speedups[b].append(base / best if not math.isnan(base) else math.nan)
+
+    def gmean(values: list[float]) -> float:
+        present = [v for v in values if not math.isnan(v) and v > 0]
+        if not present:
+            return math.nan
+        return math.exp(sum(math.log(v) for v in present) / len(present))
+
+    mpfx_label = "/".join(NAMES[c] for c in MPFX_COLUMNS)
+    print(f"\n# Fastest MPFX treatment (best of {mpfx_label}) speedup, "
+          f"averaged over {n} (op, format, rounding mode) configs")
+    print(f'{"baseline":<12}{"arith. mean":>14}{"geo. mean":>12}')
+    for b in baselines:
+        vals = speedups[b]
+        print(f"{NAMES[b]:<12}{nan_mean(vals):>13.2f}x{gmean(vals):>11.2f}x")
 
 
 def _rm_shade(base, r: int):
@@ -432,6 +478,9 @@ if __name__ == "__main__":
     for fmt in FORMATS:
         for rm in RMS:
             report_overhead(output_dir, fmt, rm)
+
+    # summarize the fastest MPFX treatment vs SoftFloat and MPFR
+    report_fastest_mpfx(output_dir)
 
     # single merged speedup plot across all formats and rounding modes
     plot_speedup(output_dir, bare=bare)
