@@ -22,14 +22,12 @@ using mpfx::exp_t;
 using mpfx::prec_t;
 using mpfx::RM;
 using mpfx::experimental::round_all_lost;
-using mpfx::experimental::scale_bits;
 
 namespace {
 
 // Iteration counts. These are unit tests, so the whole file is meant to stay in
 // the tens of milliseconds; the exhaustive sweep below is strided for the same
 // reason. Seeds are fixed, so a given count always covers the same inputs.
-constexpr size_t N_SCALE = 20'000;      // scaling helpers against `ldexp`
 constexpr size_t N_RANDOM = 25'000;     // uniform encodings, times 8 modes
 constexpr size_t N_SUBNORMAL = 10'000;  // subnormal encodings, times 8 modes
 constexpr size_t N_ALL_LOST = 10'000;   // `n >= e` encodings, times 8 modes
@@ -53,6 +51,10 @@ bool same_bits(T a, T b) {
     return bit_float<T>(a).to_bits() == bit_float<T>(b).to_bits();
 }
 
+constexpr RM MODES[] = {
+    RM::RNE, RM::RNA, RM::RTP, RM::RTN, RM::RTZ, RM::RAZ, RM::RTO, RM::RTE,
+};
+
 /// @brief The name of a rounding mode, for failure messages.
 const char* rm_name(RM rm) {
     switch (rm) {
@@ -67,63 +69,6 @@ const char* rm_name(RM rm) {
     default: return "???";
     }
 }
-
-//
-// scale_bits
-//
-
-/// @brief `scale_bits` must agree exactly with `ldexp` for every normal input
-/// whose result is also normal.
-template <std::floating_point T>
-void check_scale_bits_normal() {
-    using params_t = typename bit_float<T>::params_t;
-    using uint_t = typename bit_float<T>::uint_t;
-    static constexpr size_t N = N_SCALE;
-
-    std::mt19937_64 rng(0x5CA1E);
-    std::uniform_int_distribution<uint_t> bits_dist(0, ~static_cast<uint_t>(0));
-
-    for (size_t i = 0; i < N; i++) {
-        const bit_float<T> x(static_cast<uint_t>(bits_dist(rng)));
-        if (x.ebits() == 0 || x.is_nar()) {
-            continue; // subnormal, zero, or not a real
-        }
-
-        // pick `k` so that the result stays normal
-        const exp_t field = static_cast<exp_t>(x.ebits() >> params_t::M);
-        std::uniform_int_distribution<exp_t> k_dist(1 - field, static_cast<exp_t>(params_t::EONES) - 1 - field);
-        const exp_t k = k_dist(rng);
-
-        const T got = scale_bits(x, k).to_float();
-        const T want = std::ldexp(x.to_float(), k);
-        ASSERT_TRUE(same_bits(got, want))
-            << "scale_bits(" << describe(x.to_float()) << ", " << k << ") = "
-            << describe(got) << ", want " << describe(want);
-    }
-}
-
-TEST(TestRoundScaled, ScaleBitsNormalFloat) { check_scale_bits_normal<float>(); }
-TEST(TestRoundScaled, ScaleBitsNormalDouble) { check_scale_bits_normal<double>(); }
-
-/// @brief A carry out of the largest binade must saturate onto infinity, which
-/// is what the increment in the existing implementation also produces.
-template <std::floating_point T>
-void check_scale_bits_overflow() {
-    using params_t = typename bit_float<T>::params_t;
-    using limits = std::numeric_limits<T>;
-
-    // `2^EMAX * 2 == Inf`, and the same for the negative side
-    for (const bool s : {false, true}) {
-        const bit_float<T> max_pow2 = bit_float<T>::make_pow2(params_t::EMAX, s);
-        const T got = scale_bits(max_pow2, 1).to_float();
-        const T want = s ? -limits::infinity() : limits::infinity();
-        EXPECT_TRUE(same_bits(got, want))
-            << "scale_bits(" << describe(max_pow2.to_float()) << ", 1) = " << describe(got);
-    }
-}
-
-TEST(TestRoundScaled, ScaleBitsOverflowFloat) { check_scale_bits_overflow<float>(); }
-TEST(TestRoundScaled, ScaleBitsOverflowDouble) { check_scale_bits_overflow<double>(); }
 
 //
 // round_all_lost
@@ -153,9 +98,6 @@ void check_round_all_lost() {
     using params_t = typename bit_float<T>::params_t;
     using uint_t = typename bit_float<T>::uint_t;
     static constexpr size_t N = N_ALL_LOST;
-    static constexpr RM MODES[] = {
-        RM::RNE, RM::RNA, RM::RTP, RM::RTN, RM::RTZ, RM::RAZ, RM::RTO, RM::RTE,
-    };
 
     std::mt19937_64 rng(0xA110C);
     std::uniform_int_distribution<uint_t> bits_dist(0, ~static_cast<uint_t>(0));
@@ -196,10 +138,6 @@ TEST(TestRoundScaled, RoundAllLostDouble) { check_round_all_lost<double>(); }
 //
 // round_scaled
 //
-
-constexpr RM MODES[] = {
-    RM::RNE, RM::RNA, RM::RTP, RM::RTN, RM::RTZ, RM::RAZ, RM::RTO, RM::RTE,
-};
 
 /// @brief Renders an optional subnormalization point for failure messages.
 std::string describe_n(std::optional<exp_t> n) {
@@ -315,7 +253,7 @@ void check_round_scaled_halfway() {
 
 
 /// @brief Subnormal inputs shallow enough to keep a digit, which is where the
-/// multiplying scale must split its factor in two.
+/// scaling has to bias `x` into the normal range first.
 template <std::floating_point T>
 void check_round_scaled_deep_subnormal() {
     using params_t = typename bit_float<T>::params_t;
@@ -358,8 +296,8 @@ void check_round_scaled_random() {
 /// @brief Randomized differential test restricted to subnormal inputs.
 ///
 /// Uniform bit patterns are subnormal only about once in five thousand draws for
-/// `float` and once in two thousand for `double`, which leaves the multiplying
-/// scale and the `n_act < EXPMIN` fast path barely exercised by
+/// `float` and once in two thousand for `double`, which leaves the biased scale
+/// and the `n_act < EXPMIN` fast path barely exercised by
 /// `check_round_scaled_random`. Drawing subnormals directly fixes that.
 template <std::floating_point T>
 void check_round_scaled_random_subnormal() {
@@ -660,6 +598,68 @@ std::optional<T> legacy_round(bit_float<T> x, prec_t p, std::optional<exp_t> n, 
     }
     return static_cast<T>(r);
 }
+
+/// @brief The carry flag for subnormal inputs.
+///
+/// A subnormal `x` can carry onto a larger *subnormal* power of two, where the
+/// exponent field does not change and the mantissa field is non-zero. Both new
+/// implementations once missed that, so comparing them against each other cannot
+/// catch it.
+///
+/// The reference is the one `TestFlags.TestCarryFlag` uses - `x != 0 && y != 0 &&
+/// ye > xe && xe >= emin` - applied to the returned value, whose correctness the
+/// tests above establish independently. That test never reaches a container
+/// subnormal (it draws exponents in `[-4, 4]`), which is why it missed this. Here
+/// `n` is absent, so `emin` is unbounded below and `xe >= emin` holds; `p >= 1`
+/// with no subnormalization keeps at least one digit, so `y != 0` holds too.
+/// The legacy integer path is checked to agree, as a second witness.
+template <std::floating_point T>
+void check_carry_subnormal() {
+    using params_t = typename bit_float<T>::params_t;
+    using uint_t = typename bit_float<T>::uint_t;
+
+    std::mt19937_64 rng(0xCA881);
+    std::uniform_int_distribution<uint_t> mant_dist(1, static_cast<uint_t>(params_t::MMASK));
+    std::uniform_int_distribution<prec_t> prec_dist(1, params_t::P);
+    std::bernoulli_distribution coin(0.5);
+
+    for (size_t i = 0; i < N_SUBNORMAL; i++) {
+        uint_t bits = mant_dist(rng);
+        if (coin(rng)) {
+            bits |= static_cast<uint_t>(params_t::SMASK);
+        }
+        const bit_float<T> x(bits);
+        const prec_t p = prec_dist(rng);
+        const auto [s, exp, c] = x.unpack();
+        const auto mag = static_cast<int64_t>(c);
+
+        for (const RM rm : MODES) {
+            mpfx::flags.reset();
+            const bit_float<T> r =
+                mpfx::experimental::round<mpfx::Flags::ALL_FLAGS>(x, p, std::nullopt, rm);
+            const bool got_round = mpfx::flags.carry();
+            const bool want = r.e() > x.e();
+
+            mpfx::flags.reset();
+            mpfx::experimental::round_scaled<mpfx::Flags::ALL_FLAGS>(x, p, std::nullopt, rm);
+            const bool got_scaled = mpfx::flags.carry();
+
+            mpfx::flags.reset();
+            mpfx::round<mpfx::Flags::ALL_FLAGS>(s ? -mag : mag, exp, p, std::nullopt, rm);
+            const bool want_legacy = mpfx::flags.carry();
+
+            const std::string what = std::string("(") + describe(x.to_float())
+                                   + ", p=" + std::to_string(p) + ") in " + rm_name(rm)
+                                   + ", result " + describe(r.to_float());
+            ASSERT_EQ(want_legacy, want) << "carry: legacy path disagrees with the "
+                                            "definition for " << what;
+            ASSERT_EQ(got_round, want) << "carry: round " << what;
+            ASSERT_EQ(got_scaled, want) << "carry: round_scaled " << what;
+        }
+    }
+}
+
+ROUND_SCALED_TESTS(CarrySubnormal, check_carry_subnormal)
 
 /// @brief Randomized differential test against the legacy integer path.
 template <std::floating_point T>

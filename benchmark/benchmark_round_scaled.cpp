@@ -2,28 +2,23 @@
 /// @brief Compares the scale-and-truncate rounding implementations against the
 /// existing integer-domain one.
 ///
-/// Both implementations are measured twice, once computing no status flags and once
-/// computing all of them, since everything reachable from `Context` asks for
-/// `ALL_FLAGS` and the two implementations do not pay the same price for them:
+/// Each is measured with no status flags and with all of them, since everything
+/// reachable from `Context` asks for `ALL_FLAGS` and the two do not pay the same
+/// price for them:
 ///
 ///   base_nf, base_af      `experimental::round`, the integer-domain implementation
 ///   scaled_nf, scaled_af  `round_scaled`, the scaled implementation
 ///
-/// The `nf`/`af` pairs are what to compare - a flag-computing implementation against
-/// a flag-computing one. The relative table reports each against the matching
-/// baseline for that reason.
+/// Compare like with like: the relative table reports each against the baseline at
+/// the matching flag mask.
 ///
-/// The rounding mode is a compile-time parameter here, so the numbers isolate the
-/// cost of rounding rather than of the runtime mode dispatch that `Context::round`
-/// goes through. Timing follows the other benchmarks in this directory: a
-/// `volatile` sink per iteration, which serializes the loop and therefore reports
-/// something closer to latency than to throughput. That is the pessimistic reading
-/// and the one comparable to `benchmark_round.cpp`.
-///
-/// The working set is sized to stay in cache and is swept repeatedly, rather than
-/// allocating one enormous vector, so the measurement reflects computation rather
+/// The rounding mode is a compile-time parameter, so the numbers isolate rounding
+/// from the runtime mode dispatch `Context::round` goes through. As in the other
+/// benchmarks here, a `volatile` sink per iteration serializes the loop, so this
+/// reports something closer to latency than throughput. The working set stays in
+/// cache and is swept repeatedly, so the measurement reflects computation rather
 /// than memory bandwidth. Both the minimum and the median across repetitions are
-/// reported, because these timings are noisy and a single run is not trustworthy.
+/// reported, because these timings are noisy.
 ///
 /// Usage: benchmark_round_scaled [num_inputs] [reps]
 
@@ -132,26 +127,24 @@ struct Workload {
 
 /// @brief Builds the input distributions.
 ///
-/// `prec` and `emul` are the ordinary cases: values of moderate magnitude rounded
-/// to a middling precision, without and with subnormalization. `narrow` emulates
-/// an FP8-like format, whose smallest positive value is large enough that ordinary
+/// `prec` and `emul` are the ordinary cases: moderate magnitudes rounded to a
+/// middling precision, without and with subnormalization. `narrow` emulates an
+/// FP8-like format, whose smallest positive value is large enough that ordinary
 /// inputs fall below it, so it exercises the underflow-to-zero path heavily.
-/// `bits` draws whole encodings uniformly, which reaches subnormals and the far
-/// ends of the exponent range that the other three never touch.
+/// `bits` draws whole encodings uniformly, reaching subnormals and the far ends of
+/// the exponent range that the other three never touch.
 ///
-/// Those four draw a uniform *exponent*, which is deliberately hostile: it spreads
-/// magnitudes evenly across ~25 binades, so a test of the exponent against the
-/// subnormalization point comes out a coin flip. That test is the single largest
-/// cost in either implementation once flags are on - mispredicting it costs more
-/// than the rounding - so the spread of the inputs, not just their range, decides
-/// the result.
+/// Those four draw a uniform *exponent*, which is deliberately hostile: spreading
+/// magnitudes evenly across ~25 binades makes the test of the exponent against the
+/// subnormalization point a coin flip. That test is the single largest cost in
+/// either implementation once flags are on, so the spread of the inputs, not just
+/// their range, decides the result.
 ///
-/// Real data is far more concentrated, so the last three workloads draw the
+/// Real data is far more concentrated, so the last three draw the
 /// `uniform_real_distribution` the other benchmarks here use: [-1, 1] as in
 /// `benchmark_ops.cpp` and [-1e10, 1e10] as in `benchmark_round.cpp`. Half of
-/// U(-1, 1) lies in a single binade, so the same test predicts and the same code
-/// runs markedly faster. `unif_narrow` pairs that draw with the FP8-like format to
-/// isolate the effect: it differs from `narrow` only in the distribution.
+/// U(-1, 1) lies in a single binade, so the same test predicts. `unif_narrow`
+/// differs from `narrow` only in the distribution, isolating that effect.
 template <std::floating_point T>
 std::vector<Workload<T>> workloads(size_t n_inputs) {
     using params_t = typename bit_float<T>::params_t;

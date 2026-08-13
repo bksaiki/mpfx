@@ -89,21 +89,21 @@ constexpr int bit_width<uint128_t>(uint128_t x) {
 /// @brief Rounds to the nearest integral value, ties to even.
 /// @tparam T a floating-point type
 /// @param x the value to round
+/// @return `x` rounded to an integral value
 ///
-/// Unlike `std::nearbyint` and `std::rint`, which round according to the dynamic
-/// rounding mode, this is always ties-to-even. On x86 and ARM64 it is a single
-/// instruction with the mode pinned (`roundsd $8` / `frintn`), where the standard
-/// functions instead emit the "use the current mode" form.
-///
-/// This is `roundeven` from C23; the fallback keeps the same semantics for
-/// compilers that do not expose the builtin. `x - trunc(x)` is exact, so it
-/// recovers the fraction without error, and once the fraction is nonzero `x`
-/// cannot be so large that stepping one away from zero is inexact.
+/// This is `roundeven` from C23. Unlike `std::nearbyint` and `std::rint`, which
+/// round according to the dynamic rounding mode, it is always ties-to-even: on x86
+/// and ARM64 a single instruction with the mode pinned (`roundsd $8` / `frintn`),
+/// where the standard functions emit the "use the current mode" form instead. The
+/// fallback keeps the same semantics for compilers without the builtin; every step
+/// of it is exact.
 template <std::floating_point T>
 inline T round_even(T x) {
 #ifdef MPFX_HAS_ROUNDEVEN
     if constexpr (std::same_as<T, float>) {
         return __builtin_roundevenf(x);
+    } else if constexpr (std::same_as<T, long double>) {
+        return __builtin_roundevenl(x);
     } else {
         return __builtin_roundeven(x);
     }
