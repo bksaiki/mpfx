@@ -159,16 +159,16 @@ inline bool tiny_after_unbounded(bit_float<T> x, exp_t n_min, exp_t emin) {
 
     // Does this mode round up out of the last cell? The two candidates are `2^emin`
     // and its predecessor, the kept part, whose digits are all ones and so odd.
-    bool up;
+    bool increment;
     if constexpr (rm == RM::RNE || rm == RM::RNA) {
         // a tie goes to `2^emin` for both: it is the even candidate, and it is also
         // the one away from zero
-        up = lost >= (step >> 1);
+        increment = lost >= (step >> 1);
     } else {
         const bit_float<T> hi(static_cast<uint_t>(x.sbits() | (mag - lost)));
-        up = round_internal::round_increment_directed<rm>(hi, n_min);
+        increment = round_internal::round_increment_directed<rm>(hi, n_min);
     }
-    return !up;
+    return !increment;
 }
 
 /// @brief Raises the tiny- and underflow-after-rounding flags for an `x` that was
@@ -276,9 +276,11 @@ inline bool round_split(bit_float<T> x, exp_t n, bit_float<T>& out) {
         }
         increment = round_internal::round_increment_directed<rm>(hi, n);
     }
+
     if (increment) {
         out = out.next_away_zero(n + 1);
     }
+
     return true;
 }
 
@@ -547,11 +549,11 @@ inline bit_float<T> round_all_lost(bit_float<T> x, exp_t e, exp_t n) {
     using params_t = typename bit_float<T>::params_t;
     using uint_t = typename bit_float<T>::uint_t;
 
-    const exp_t k = n + 1;
-    const auto normal = static_cast<uint_t>(static_cast<uint_t>(k + params_t::BIAS) << params_t::M);
-    const auto shift = static_cast<unsigned>(std::max<exp_t>(params_t::EMIN - k, 0));
+    const exp_t exp = n + 1;
+    const auto normal = static_cast<uint_t>(static_cast<uint_t>(exp + params_t::BIAS) << params_t::M);
+    const auto shift = static_cast<uint32_t>(std::max<exp_t>(params_t::EMIN - exp, 0));
     const auto subnormal = static_cast<uint_t>(params_t::IMPLICIT1 >> shift);
-    const uint_t pow2 = k >= params_t::EMIN ? normal : subnormal;
+    const uint_t pow2 = exp >= params_t::EMIN ? normal : subnormal;
 
     const uint_t mag = increment ? pow2 : uint_t{0};
     return bit_float<T>(static_cast<uint_t>(x.sbits() | mag));
