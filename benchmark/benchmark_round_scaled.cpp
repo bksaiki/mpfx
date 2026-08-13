@@ -2,16 +2,13 @@
 /// @brief Compares the scale-and-truncate rounding implementations against the
 /// existing integer-domain one.
 ///
-/// Four implementations are measured, all with `NO_FLAGS` so that the comparison
+/// Both implementations are measured with `NO_FLAGS` so that the comparison
 /// is apples to apples - the existing implementation's flag work, `round_tiny_after`
 /// in particular, is a large part of its cost and `round_scaled` does not compute
 /// flags at all:
 ///
-///   base    `experimental::round`, the integer-domain implementation
-///   scaled  `round_scaled`, scaling plus a truncating cast to an integer
-///   scaled_fp  `round_scaled_fp`, scaling plus a round-to-integral instruction
-///   scaled_mul `round_scaled` forced onto multiplication instead of exponent
-///              arithmetic, which prices the exponent-field trick on its own
+///   base   `experimental::round`, the integer-domain implementation
+///   scaled `round_scaled`, the scaled implementation
 ///
 /// The rounding mode is a compile-time parameter here, so the numbers isolate the
 /// cost of rounding rather than of the runtime mode dispatch that `Context::round`
@@ -48,9 +45,9 @@ using mpfx::prec_t;
 using mpfx::RM;
 
 /// @brief Which implementation to measure.
-enum class Impl { BASE, SCALED, SCALED_FP, SCALED_MUL };
+enum class Impl { BASE, SCALED };
 
-constexpr Impl ALL_IMPLS[] = {Impl::BASE, Impl::SCALED, Impl::SCALED_FP, Impl::SCALED_MUL};
+constexpr Impl ALL_IMPLS[] = {Impl::BASE, Impl::SCALED};
 constexpr RM ALL_MODES[] = {
     RM::RNE, RM::RNA, RM::RTP, RM::RTN, RM::RTZ, RM::RAZ, RM::RTO, RM::RTE,
 };
@@ -59,8 +56,6 @@ const char* impl_name(Impl impl) {
     switch (impl) {
     case Impl::BASE: return "base";
     case Impl::SCALED: return "scaled";
-    case Impl::SCALED_FP: return "scaled_fp";
-    case Impl::SCALED_MUL: return "scaled_mul";
     }
     return "?";
 }
@@ -86,12 +81,8 @@ inline bit_float<T> apply(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
     static constexpr auto F = Flags::NO_FLAGS;
     if constexpr (impl == Impl::BASE) {
         return experimental::round<rm, F>(x, p, n);
-    } else if constexpr (impl == Impl::SCALED) {
-        return experimental::round_scaled<rm, F, true>(x, p, n);
-    } else if constexpr (impl == Impl::SCALED_FP) {
-        return experimental::round_scaled_fp<rm, F, true>(x, p, n);
     } else {
-        return experimental::round_scaled<rm, F, false>(x, p, n);
+        return experimental::round_scaled<rm, F>(x, p, n);
     }
 }
 
@@ -199,8 +190,6 @@ void run_row(const char* container, const Workload<T>& w, size_t reps,
     for (size_t r = 0; r < reps; r++) {
         passes[0].push_back(time_pass<Impl::BASE, rm>(w.xs, w.p, w.n));
         passes[1].push_back(time_pass<Impl::SCALED, rm>(w.xs, w.p, w.n));
-        passes[2].push_back(time_pass<Impl::SCALED_FP, rm>(w.xs, w.p, w.n));
-        passes[3].push_back(time_pass<Impl::SCALED_MUL, rm>(w.xs, w.p, w.n));
     }
 
     Timing t[N_IMPLS];
