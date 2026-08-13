@@ -1,11 +1,18 @@
 #pragma once
 
 #include <bit>
+#include <cmath>
 #include <concepts>
 #include <cstdint>
 #include <type_traits>
 
 #include "utils.hpp"
+
+#if defined(__has_builtin)
+    #if __has_builtin(__builtin_roundeven)
+        #define MPFX_HAS_ROUNDEVEN
+    #endif
+#endif
 
 namespace mpfx {
 
@@ -77,6 +84,44 @@ constexpr int bit_width<uint128_t>(uint128_t x) {
     const uint64_t low = static_cast<uint64_t>(x);
     const uint64_t high = static_cast<uint64_t>(x >> 64);
     return high ? 64 + std::bit_width(high) : std::bit_width(low);
+}
+
+/// @brief Rounds to the nearest integral value, ties to even.
+/// @tparam T a floating-point type
+/// @param x the value to round
+///
+/// Unlike `std::nearbyint` and `std::rint`, which round according to the dynamic
+/// rounding mode, this is always ties-to-even. On x86 and ARM64 it is a single
+/// instruction with the mode pinned (`roundsd $8` / `frintn`), where the standard
+/// functions instead emit the "use the current mode" form.
+///
+/// This is `roundeven` from C23; the fallback keeps the same semantics for
+/// compilers that do not expose the builtin. `x - trunc(x)` is exact, so it
+/// recovers the fraction without error, and once the fraction is nonzero `x`
+/// cannot be so large that stepping one away from zero is inexact.
+template <std::floating_point T>
+inline T round_even(T x) {
+#ifdef MPFX_HAS_ROUNDEVEN
+    if constexpr (std::same_as<T, float>) {
+        return __builtin_roundevenf(x);
+    } else {
+        return __builtin_roundeven(x);
+    }
+#else
+    const T t = std::trunc(x);
+    const T r = std::fabs(x - t);
+    if (r < static_cast<T>(0.5)) {
+        return t;
+    }
+    if (r > static_cast<T>(0.5)) {
+        return t + std::copysign(static_cast<T>(1), x);
+    }
+
+    // exactly halfway - step away from zero only if `t` is odd, which is
+    // exactly when halving it leaves a fraction
+    const T h = t * static_cast<T>(0.5);
+    return h == std::trunc(h) ? t : t + std::copysign(static_cast<T>(1), x);
+#endif
 }
 
 } // namespace mpfx

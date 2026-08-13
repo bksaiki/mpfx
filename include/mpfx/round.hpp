@@ -588,19 +588,94 @@ inline bit_float<T> round_scaled_split(bit_float<T> x, exp_t n) {
     }
 }
 
-/// @brief Rounding of a `bit_float` type by scaling and truncating.
+/// @brief Rounds `x` at split point `n` using a round-to-integral operation.
+/// @tparam rm the rounding mode
+/// @tparam FieldScale scale by exponent arithmetic rather than by multiplication
+///
+/// The same preconditions as `round_scaled_split`. Placing the split point on the
+/// binary point makes six of the eight rounding modes a single round-to-integral
+/// instruction, needing neither the residual nor the parity of the last kept
+/// digit. Only round-to-odd and round-to-even still need them.
+///
+/// Every case here is independent of the dynamic rounding mode, matching the
+/// existing implementation, which only ever adds values whose sum is exactly
+/// representable.
+template <RM rm, bool FieldScale, std::floating_point T>
+inline bit_float<T> round_scaled_split_fp(bit_float<T> x, exp_t n) {
+    // move the split point onto the binary point, as in `round_scaled_split`
+    const exp_t exp = n + 1;
+    T y;
+    if constexpr (FieldScale) {
+        y = scale_bits(x, -exp).to_float();
+    } else {
+        y = scale_mul(x.to_float(), -exp);
+    }
+
+    // case split on rounding mode
+    T t;
+    if constexpr (rm == RM::RNE) {
+        // ties to even on the last kept digit is exactly round-to-nearest-even
+        t = round_even(y);
+    } else if constexpr (rm == RM::RNA) {
+        // Ties away from zero has no round-to-integral instruction, and
+        // `std::round` is an out-of-line library call. Biasing by one half
+        // instead turns it into a truncation. The addition is exact unless it
+        // carries into the next binade, and in that case it perturbs the sum by
+        // less than one while leaving it at or above the integer it carried to,
+        // so the truncation is unaffected. Relies on `p < P`.
+        t = std::trunc(y + std::copysign(static_cast<T>(0.5), y));
+    } else if constexpr (rm == RM::RTP) {
+        // scaling by a positive power of two preserves order, so rounding
+        // toward positive infinity commutes with it
+        t = std::ceil(y);
+    } else if constexpr (rm == RM::RTN) {
+        t = std::floor(y);
+    } else if constexpr (rm == RM::RTZ) {
+        t = std::trunc(y);
+    } else if constexpr (rm == RM::RAZ) {
+        t = std::copysign(std::ceil(std::fabs(y)), y);
+    } else if constexpr (rm == RM::RTO || rm == RM::RTE) {
+        // these still need the lost digits and the last kept digit
+        t = std::trunc(y);
+        const T r = y - t;
+        if (r != static_cast<T>(0)) {
+            // `t` is integral, so halving it is exact and leaves a fraction
+            // exactly when the last kept digit is odd
+            const T h = t * static_cast<T>(0.5);
+            const bool odd = h != std::trunc(h);
+            if (rm == RM::RTO ? !odd : odd) {
+                t += std::copysign(static_cast<T>(1), y);
+            }
+        }
+    } else {
+        MPFX_DEBUG_ASSERT(false, "unreachable");
+        t = y;
+    }
+
+    // scale back; `|t| >= 1`, so no sign is lost on the way
+    if constexpr (FieldScale) {
+        return scale_bits(bit_float<T>(t), exp);
+    } else {
+        return bit_float<T>(scale_mul(t, exp));
+    }
+}
+
+/// @brief Rounding of a `bit_float` type by scaling.
 /// @tparam rm the rounding mode
 /// @tparam FlagMask the mask of flags to set; only `NO_FLAGS` is supported
 /// @tparam FieldScale scale by exponent arithmetic rather than by multiplication
+/// @tparam FpReduce reduce to an integer with a round-to-integral operation
+/// rather than with a truncating cast to an integer type
 /// @param x the `bit_float` value to round
 /// @param p the target precision to round to
 /// @param n optional minimum normalized exponent for subnormalization
 ///
 /// An alternative to `round` with identical results but a floating-point rather
 /// than an integer formulation. See `scale_bits` for the fast path and
-/// `round_all_lost` for the underflow-to-zero path.
-template <RM rm, flag_mask_t FlagMask = Flags::NO_FLAGS, bool FieldScale = true, std::floating_point T>
-bit_float<T> round_scaled(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
+/// `round_all_lost` for the underflow-to-zero path. Prefer the `round_scaled`
+/// and `round_scaled_fp` wrappers below.
+template <RM rm, flag_mask_t FlagMask, bool FieldScale, bool FpReduce, std::floating_point T>
+bit_float<T> round_scaled_impl(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
     using params_t = typename bit_float<T>::params_t;
     MPFX_STATIC_ASSERT(FlagMask == Flags::NO_FLAGS, "round_scaled does not compute flags");
     MPFX_DEBUG_ASSERT(p < params_t::P, "target precision must be less than the precision of the container type");
@@ -637,42 +712,73 @@ bit_float<T> round_scaled(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
     // subnormal results they produce, so they take the multiplying path.
     if constexpr (FieldScale) {
         if (x.ebits() != 0) {
-            return round_scaled_split<rm, true>(x, n_act);
+            if constexpr (FpReduce) {
+                return round_scaled_split_fp<rm, true>(x, n_act);
+            } else {
+                return round_scaled_split<rm, true>(x, n_act);
+            }
         }
     }
-    return round_scaled_split<rm, false>(x, n_act);
+    if constexpr (FpReduce) {
+        return round_scaled_split_fp<rm, false>(x, n_act);
+    } else {
+        return round_scaled_split<rm, false>(x, n_act);
+    }
 }
 
-/// @brief Rounding of a `bit_float` type by scaling and truncating.
-/// @tparam FlagMask the mask of flags to set; only `NO_FLAGS` is supported
-/// @tparam FieldScale scale by exponent arithmetic rather than by multiplication
-/// @param x the `bit_float` value to round
-/// @param p the target precision to round to
-/// @param n optional minimum normalized exponent for subnormalization
-/// @param rm the rounding mode
-template <flag_mask_t FlagMask = Flags::NO_FLAGS, bool FieldScale = true, std::floating_point T>
-bit_float<T> round_scaled(bit_float<T> x, prec_t p, std::optional<exp_t> n, RM rm) {
+/// @brief Rounding of a `bit_float` type by scaling, dispatching on a runtime
+/// rounding mode. Prefer the `round_scaled` and `round_scaled_fp` wrappers.
+template <flag_mask_t FlagMask, bool FieldScale, bool FpReduce, std::floating_point T>
+bit_float<T> round_scaled_impl(bit_float<T> x, prec_t p, std::optional<exp_t> n, RM rm) {
     switch (rm) {
     case RM::RNE:
-        return round_scaled<RM::RNE, FlagMask, FieldScale>(x, p, n);
+        return round_scaled_impl<RM::RNE, FlagMask, FieldScale, FpReduce>(x, p, n);
     case RM::RNA:
-        return round_scaled<RM::RNA, FlagMask, FieldScale>(x, p, n);
+        return round_scaled_impl<RM::RNA, FlagMask, FieldScale, FpReduce>(x, p, n);
     case RM::RTP:
-        return round_scaled<RM::RTP, FlagMask, FieldScale>(x, p, n);
+        return round_scaled_impl<RM::RTP, FlagMask, FieldScale, FpReduce>(x, p, n);
     case RM::RTN:
-        return round_scaled<RM::RTN, FlagMask, FieldScale>(x, p, n);
+        return round_scaled_impl<RM::RTN, FlagMask, FieldScale, FpReduce>(x, p, n);
     case RM::RTZ:
-        return round_scaled<RM::RTZ, FlagMask, FieldScale>(x, p, n);
+        return round_scaled_impl<RM::RTZ, FlagMask, FieldScale, FpReduce>(x, p, n);
     case RM::RAZ:
-        return round_scaled<RM::RAZ, FlagMask, FieldScale>(x, p, n);
+        return round_scaled_impl<RM::RAZ, FlagMask, FieldScale, FpReduce>(x, p, n);
     case RM::RTO:
-        return round_scaled<RM::RTO, FlagMask, FieldScale>(x, p, n);
+        return round_scaled_impl<RM::RTO, FlagMask, FieldScale, FpReduce>(x, p, n);
     case RM::RTE:
-        return round_scaled<RM::RTE, FlagMask, FieldScale>(x, p, n);
+        return round_scaled_impl<RM::RTE, FlagMask, FieldScale, FpReduce>(x, p, n);
     default:
         MPFX_DEBUG_ASSERT(false, "round_scaled: invalid rounding mode");
         return x; // default return to avoid warnings
     }
+}
+
+/// @brief Rounding of a `bit_float` type by scaling and truncating with a cast
+/// to an integer type. See `round_scaled_impl`.
+template <RM rm, flag_mask_t FlagMask = Flags::NO_FLAGS, bool FieldScale = true, std::floating_point T>
+bit_float<T> round_scaled(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
+    return round_scaled_impl<rm, FlagMask, FieldScale, false>(x, p, n);
+}
+
+/// @brief Rounding of a `bit_float` type by scaling and truncating with a cast
+/// to an integer type. See `round_scaled_impl`.
+template <flag_mask_t FlagMask = Flags::NO_FLAGS, bool FieldScale = true, std::floating_point T>
+bit_float<T> round_scaled(bit_float<T> x, prec_t p, std::optional<exp_t> n, RM rm) {
+    return round_scaled_impl<FlagMask, FieldScale, false>(x, p, n, rm);
+}
+
+/// @brief Rounding of a `bit_float` type by scaling and rounding to integral.
+/// See `round_scaled_impl` and `round_scaled_split_fp`.
+template <RM rm, flag_mask_t FlagMask = Flags::NO_FLAGS, bool FieldScale = true, std::floating_point T>
+bit_float<T> round_scaled_fp(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
+    return round_scaled_impl<rm, FlagMask, FieldScale, true>(x, p, n);
+}
+
+/// @brief Rounding of a `bit_float` type by scaling and rounding to integral.
+/// See `round_scaled_impl` and `round_scaled_split_fp`.
+template <flag_mask_t FlagMask = Flags::NO_FLAGS, bool FieldScale = true, std::floating_point T>
+bit_float<T> round_scaled_fp(bit_float<T> x, prec_t p, std::optional<exp_t> n, RM rm) {
+    return round_scaled_impl<FlagMask, FieldScale, true>(x, p, n, rm);
 }
 
 } // namespace experimental

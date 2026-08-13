@@ -277,14 +277,19 @@ std::string describe_n(std::optional<exp_t> n) {
 
 /// @brief `round_scaled` must agree with `round` bit for bit, in every rounding
 /// mode, for one `(x, p, n)` triple.
-template <std::floating_point T, bool FieldScale>
+template <std::floating_point T, bool FieldScale, bool FpReduce>
 void expect_matches(bit_float<T> x, prec_t p, std::optional<exp_t> n, const std::string& label) {
     for (const RM rm : MODES) {
         const bit_float<T> want = mpfx::experimental::round<mpfx::Flags::NO_FLAGS>(x, p, n, rm);
-        const bit_float<T> got =
-            mpfx::experimental::round_scaled<mpfx::Flags::NO_FLAGS, FieldScale>(x, p, n, rm);
+        bit_float<T> got;
+        if constexpr (FpReduce) {
+            got = mpfx::experimental::round_scaled_fp<mpfx::Flags::NO_FLAGS, FieldScale>(x, p, n, rm);
+        } else {
+            got = mpfx::experimental::round_scaled<mpfx::Flags::NO_FLAGS, FieldScale>(x, p, n, rm);
+        }
         ASSERT_EQ(got.to_bits(), want.to_bits())
-            << "round_scaled<" << rm_name(rm) << ">(" << describe(x.to_float())
+            << "round_scaled" << (FpReduce ? "_fp" : "") << "<" << rm_name(rm) << ">("
+            << describe(x.to_float())
             << ", p=" << p << ", n=" << describe_n(n) << ") = " << describe(got.to_float())
             << ", want " << describe(want.to_float())
             << " [" << label << ", field_scale=" << FieldScale << "]";
@@ -322,7 +327,7 @@ std::vector<std::pair<std::string, bit_float<T>>> edge_values() {
 }
 
 /// @brief Every interesting value crossed with every interesting `(p, n)`.
-template <std::floating_point T, bool FieldScale>
+template <std::floating_point T, bool FieldScale, bool FpReduce>
 void check_round_scaled_edges() {
     using params_t = typename bit_float<T>::params_t;
     static constexpr prec_t P = params_t::P;
@@ -340,21 +345,17 @@ void check_round_scaled_edges() {
     for (const auto& [name, x] : edge_values<T>()) {
         for (const prec_t p : precs) {
             for (const auto& n : ns) {
-                expect_matches<T, FieldScale>(x, p, n, name);
+                expect_matches<T, FieldScale, FpReduce>(x, p, n, name);
             }
         }
     }
 }
 
-TEST(TestRoundScaled, EdgesFloat) { check_round_scaled_edges<float, true>(); }
-TEST(TestRoundScaled, EdgesDouble) { check_round_scaled_edges<double, true>(); }
-TEST(TestRoundScaled, EdgesFloatScaleMul) { check_round_scaled_edges<float, false>(); }
-TEST(TestRoundScaled, EdgesDoubleScaleMul) { check_round_scaled_edges<double, false>(); }
 
 /// @brief Values sitting exactly at, just above, and just below the halfway
 /// point for each target precision - the cases where the tie-breaking rules and
 /// the parity of the last kept digit actually matter.
-template <std::floating_point T, bool FieldScale>
+template <std::floating_point T, bool FieldScale, bool FpReduce>
 void check_round_scaled_halfway() {
     using params_t = typename bit_float<T>::params_t;
     using uint_t = typename bit_float<T>::uint_t;
@@ -364,34 +365,30 @@ void check_round_scaled_halfway() {
     for (prec_t p = 1; p < params_t::P; p++) {
         const uint_t one = params_t::IMPLICIT1;
         const auto at = static_cast<uint_t>(one | (static_cast<uint_t>(1) << (M - p)));
-        expect_matches<T, FieldScale>(bit_float<T>(at), p, std::nullopt, "halfway, even");
-        expect_matches<T, FieldScale>(
+        expect_matches<T, FieldScale, FpReduce>(bit_float<T>(at), p, std::nullopt, "halfway, even");
+        expect_matches<T, FieldScale, FpReduce>(
             bit_float<T>(static_cast<uint_t>(params_t::SMASK | at)), p, std::nullopt, "-halfway, even");
 
         // set the last kept digit to make it odd
         if (p >= 2) {
             const auto odd = static_cast<uint_t>(at | (static_cast<uint_t>(1) << (M - p + 1)));
-            expect_matches<T, FieldScale>(bit_float<T>(odd), p, std::nullopt, "halfway, odd");
+            expect_matches<T, FieldScale, FpReduce>(bit_float<T>(odd), p, std::nullopt, "halfway, odd");
         }
 
         // one digit below the halfway digit puts the value off the tie
         if (p + 1 <= M) {
             const auto above = static_cast<uint_t>(at | (static_cast<uint_t>(1) << (M - p - 1)));
             const auto below = static_cast<uint_t>(one | (static_cast<uint_t>(1) << (M - p - 1)));
-            expect_matches<T, FieldScale>(bit_float<T>(above), p, std::nullopt, "above halfway");
-            expect_matches<T, FieldScale>(bit_float<T>(below), p, std::nullopt, "below halfway");
+            expect_matches<T, FieldScale, FpReduce>(bit_float<T>(above), p, std::nullopt, "above halfway");
+            expect_matches<T, FieldScale, FpReduce>(bit_float<T>(below), p, std::nullopt, "below halfway");
         }
     }
 }
 
-TEST(TestRoundScaled, HalfwayFloat) { check_round_scaled_halfway<float, true>(); }
-TEST(TestRoundScaled, HalfwayDouble) { check_round_scaled_halfway<double, true>(); }
-TEST(TestRoundScaled, HalfwayFloatScaleMul) { check_round_scaled_halfway<float, false>(); }
-TEST(TestRoundScaled, HalfwayDoubleScaleMul) { check_round_scaled_halfway<double, false>(); }
 
 /// @brief Subnormal inputs shallow enough to keep a digit, which is where the
 /// multiplying scale must split its factor in two.
-template <std::floating_point T, bool FieldScale>
+template <std::floating_point T, bool FieldScale, bool FpReduce>
 void check_round_scaled_deep_subnormal() {
     using params_t = typename bit_float<T>::params_t;
 
@@ -400,18 +397,16 @@ void check_round_scaled_deep_subnormal() {
         const T v = bit_float<T>::make_pow2(e).to_float()
                   + bit_float<T>::make_pow2(params_t::EXPMIN).to_float();
         for (prec_t p = 1; p < params_t::P; p++) {
-            expect_matches<T, FieldScale>(bit_float<T>(v), p, std::nullopt, "deep subnormal");
-            expect_matches<T, FieldScale>(bit_float<T>(-v), p, std::nullopt, "-deep subnormal");
-            expect_matches<T, FieldScale>(bit_float<T>(v), p, params_t::EXPMIN - 1, "deep subnormal");
+            expect_matches<T, FieldScale, FpReduce>(bit_float<T>(v), p, std::nullopt, "deep subnormal");
+            expect_matches<T, FieldScale, FpReduce>(bit_float<T>(-v), p, std::nullopt, "-deep subnormal");
+            expect_matches<T, FieldScale, FpReduce>(bit_float<T>(v), p, params_t::EXPMIN - 1, "deep subnormal");
         }
     }
 }
 
-TEST(TestRoundScaled, DeepSubnormalFloat) { check_round_scaled_deep_subnormal<float, true>(); }
-TEST(TestRoundScaled, DeepSubnormalDouble) { check_round_scaled_deep_subnormal<double, true>(); }
 
 /// @brief Randomized differential test against the existing implementation.
-template <std::floating_point T, bool FieldScale>
+template <std::floating_point T, bool FieldScale, bool FpReduce>
 void check_round_scaled_random() {
     using params_t = typename bit_float<T>::params_t;
     using uint_t = typename bit_float<T>::uint_t;
@@ -428,7 +423,7 @@ void check_round_scaled_random() {
         const prec_t p = prec_dist(rng);
         const std::optional<exp_t> n =
             has_n_dist(rng) ? std::optional<exp_t>(n_dist(rng)) : std::nullopt;
-        expect_matches<T, FieldScale>(x, p, n, "random");
+        expect_matches<T, FieldScale, FpReduce>(x, p, n, "random");
     }
 }
 
@@ -438,7 +433,7 @@ void check_round_scaled_random() {
 /// `float` and once in two thousand for `double`, which leaves the multiplying
 /// scale and the `n_act < EXPMIN` fast path barely exercised by
 /// `check_round_scaled_random`. Drawing subnormals directly fixes that.
-template <std::floating_point T, bool FieldScale>
+template <std::floating_point T, bool FieldScale, bool FpReduce>
 void check_round_scaled_random_subnormal() {
     using params_t = typename bit_float<T>::params_t;
     using uint_t = typename bit_float<T>::uint_t;
@@ -460,18 +455,10 @@ void check_round_scaled_random_subnormal() {
         const prec_t p = prec_dist(rng);
         const std::optional<exp_t> n =
             coin(rng) ? std::optional<exp_t>(n_dist(rng)) : std::nullopt;
-        expect_matches<T, FieldScale>(x, p, n, "random subnormal");
+        expect_matches<T, FieldScale, FpReduce>(x, p, n, "random subnormal");
     }
 }
 
-TEST(TestRoundScaled, RandomSubnormalFloat) { check_round_scaled_random_subnormal<float, true>(); }
-TEST(TestRoundScaled, RandomSubnormalDouble) { check_round_scaled_random_subnormal<double, true>(); }
-TEST(TestRoundScaled, RandomSubnormalFloatScaleMul) {
-    check_round_scaled_random_subnormal<float, false>();
-}
-TEST(TestRoundScaled, RandomSubnormalDoubleScaleMul) {
-    check_round_scaled_random_subnormal<double, false>();
-}
 
 /// @brief Confirms the randomized test actually reaches every path in
 /// `round_scaled`, so that coverage cannot quietly disappear if the input
@@ -552,9 +539,22 @@ void check_round_scaled_coverage() {
 TEST(TestRoundScaled, RandomCoverageFloat) { check_round_scaled_coverage<float>(); }
 TEST(TestRoundScaled, RandomCoverageDouble) { check_round_scaled_coverage<double>(); }
 
-TEST(TestRoundScaled, RandomFloat) { check_round_scaled_random<float, true>(); }
-TEST(TestRoundScaled, RandomDouble) { check_round_scaled_random<double, true>(); }
-TEST(TestRoundScaled, RandomFloatScaleMul) { check_round_scaled_random<float, false>(); }
-TEST(TestRoundScaled, RandomDoubleScaleMul) { check_round_scaled_random<double, false>(); }
+/// @brief Instantiates a check for both container types, both scaling
+/// strategies, and both ways of reducing the scaled value to an integer.
+#define ROUND_SCALED_TESTS(name, fn)                                            \
+    TEST(TestRoundScaled, name##Float) { fn<float, true, false>(); }            \
+    TEST(TestRoundScaled, name##Double) { fn<double, true, false>(); }          \
+    TEST(TestRoundScaled, name##FloatScaleMul) { fn<float, false, false>(); }   \
+    TEST(TestRoundScaled, name##DoubleScaleMul) { fn<double, false, false>(); } \
+    TEST(TestRoundScaled, name##FloatFp) { fn<float, true, true>(); }           \
+    TEST(TestRoundScaled, name##DoubleFp) { fn<double, true, true>(); }         \
+    TEST(TestRoundScaled, name##FloatFpScaleMul) { fn<float, false, true>(); }  \
+    TEST(TestRoundScaled, name##DoubleFpScaleMul) { fn<double, false, true>(); }
+
+ROUND_SCALED_TESTS(Edges, check_round_scaled_edges)
+ROUND_SCALED_TESTS(Halfway, check_round_scaled_halfway)
+ROUND_SCALED_TESTS(DeepSubnormal, check_round_scaled_deep_subnormal)
+ROUND_SCALED_TESTS(Random, check_round_scaled_random)
+ROUND_SCALED_TESTS(RandomSubnormal, check_round_scaled_random_subnormal)
 
 } // namespace
