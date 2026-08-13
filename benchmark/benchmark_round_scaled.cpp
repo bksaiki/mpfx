@@ -138,6 +138,20 @@ struct Workload {
 /// inputs fall below it, so it exercises the underflow-to-zero path heavily.
 /// `bits` draws whole encodings uniformly, which reaches subnormals and the far
 /// ends of the exponent range that the other three never touch.
+///
+/// Those four draw a uniform *exponent*, which is deliberately hostile: it spreads
+/// magnitudes evenly across ~25 binades, so a test of the exponent against the
+/// subnormalization point comes out a coin flip. That test is the single largest
+/// cost in either implementation once flags are on - mispredicting it costs more
+/// than the rounding - so the spread of the inputs, not just their range, decides
+/// the result.
+///
+/// Real data is far more concentrated, so the last three workloads draw the
+/// `uniform_real_distribution` the other benchmarks here use: [-1, 1] as in
+/// `benchmark_ops.cpp` and [-1e10, 1e10] as in `benchmark_round.cpp`. Half of
+/// U(-1, 1) lies in a single binade, so the same test predicts and the same code
+/// runs markedly faster. `unif_narrow` pairs that draw with the FP8-like format to
+/// isolate the effect: it differs from `narrow` only in the distribution.
 template <std::floating_point T>
 std::vector<Workload<T>> workloads(size_t n_inputs) {
     using params_t = typename bit_float<T>::params_t;
@@ -158,6 +172,19 @@ std::vector<Workload<T>> workloads(size_t n_inputs) {
         return v;
     };
 
+    // uniform over a range, as the other benchmarks in this directory draw. A zero
+    // takes a fast path in both implementations, so it is nudged off zero rather
+    // than left to dilute the measurement.
+    const auto uniform = [&](double lo, double hi) {
+        std::uniform_real_distribution<double> d(lo, hi);
+        std::vector<T> v(n_inputs);
+        for (auto& x : v) {
+            const auto y = static_cast<T>(d(rng));
+            x = y == static_cast<T>(0) ? static_cast<T>(1) : y;
+        }
+        return v;
+    };
+
     // whole encodings, skipping NaN and infinity: both implementations return
     // those immediately, so including them would only dilute the measurement
     const auto encodings = [&]() {
@@ -174,11 +201,16 @@ std::vector<Workload<T>> workloads(size_t n_inputs) {
         return v;
     };
 
+    static constexpr exp_t EMUL_N = params_t::EMIN - static_cast<exp_t>(HALF_P);
+
     std::vector<Workload<T>> out;
     out.push_back({"prec", HALF_P, std::nullopt, reals(-20, 5)});
-    out.push_back({"emul", HALF_P, params_t::EMIN - static_cast<exp_t>(HALF_P), reals(-20, 5)});
+    out.push_back({"emul", HALF_P, EMUL_N, reals(-20, 5)});
     out.push_back({"narrow", 4, -10, reals(-30, 5)});
     out.push_back({"bits", HALF_P, params_t::EXPMIN - 1, encodings()});
+    out.push_back({"unif", HALF_P, EMUL_N, uniform(-1.0, 1.0)});
+    out.push_back({"unif_wide", HALF_P, EMUL_N, uniform(-1e10, 1e10)});
+    out.push_back({"unif_narrow", 4, -10, uniform(-1.0, 1.0)});
     return out;
 }
 
