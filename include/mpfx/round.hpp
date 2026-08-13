@@ -396,44 +396,6 @@ inline bit_float<T> scale_bits(bit_float<T> x, exp_t k) {
     return bit_float<T>(static_cast<uint_t>(x.to_bits() + d));
 }
 
-/// @brief Computes `x * 2^k`, exact whenever the true product is representable.
-///
-/// The general fallback for `scale_bits`, needed when `x` is subnormal (its
-/// exponent field is zero, so adding to it would fabricate an implicit bit) or
-/// when the result is subnormal. Assumes `x` is finite.
-///
-/// A single multiply does not suffice: `exp` reaches down to `EXPMIN + 1`, and
-/// the corresponding scale factor `2^-exp` is not representable. Two factors are
-/// used instead, which supports `2 * EMIN <= k <= 2 * EMAX` - wider than every
-/// scale rounding can ask for, as the static assertion below checks. Note this
-/// is narrower than the range over which the product can be representable, so
-/// this is not a general-purpose `ldexp`.
-///
-/// Both multiplies are exact. `k2` always carries the sign of the part of `k`
-/// that was clamped away, so the intermediate holds the same significand as the
-/// final result with its magnitude on the safe side of it: if the final result
-/// is representable the intermediate is too, and neither over- nor underflows.
-template <std::floating_point T>
-inline T scale_mul(T x, exp_t k) {
-    using params_t = typename float_params<T>::params;
-    using uint_t = typename float_params<T>::uint_t;
-
-    // rounding scales by `2^-exp` then by `2^exp`, for `exp` in
-    // `[EXPMIN + 1, EMAX]`, so `k` never leaves `[EXPMIN + 1, -EXPMIN - 1]`
-    MPFX_STATIC_ASSERT(2 * params_t::EMIN <= params_t::EXPMIN + 1,
-                       "scale_mul cannot reach every scale rounding needs");
-    MPFX_STATIC_ASSERT(2 * params_t::EMAX >= -params_t::EXPMIN - 1,
-                       "scale_mul cannot reach every scale rounding needs");
-    MPFX_DEBUG_ASSERT(k >= 2 * params_t::EMIN, "scale factor is too small");
-    MPFX_DEBUG_ASSERT(k <= 2 * params_t::EMAX, "scale factor is too large");
-
-    const exp_t k1 = std::clamp(k, params_t::EMIN, params_t::EMAX);
-    const exp_t k2 = k - k1; // also within `[EMIN, EMAX]`
-    const T c1 = std::bit_cast<T>(static_cast<uint_t>(k1 + params_t::BIAS) << params_t::M);
-    const T c2 = std::bit_cast<T>(static_cast<uint_t>(k2 + params_t::BIAS) << params_t::M);
-    return x * c1 * c2;
-}
-
 /// @brief Rounds `x` when every digit is unrepresentable, i.e. `n >= e`.
 /// @tparam rm the rounding mode
 /// @param x the value to round, neither zero nor NaN/Inf
@@ -518,11 +480,6 @@ inline bit_float<T> round_all_lost(bit_float<T> x, exp_t e, exp_t n) {
 /// @brief Rounds `x` at split point `n`, where `n` is strictly below the
 /// normalized exponent of `x` so that at least one digit is representable.
 /// @tparam rm the rounding mode
-/// @tparam Normal scale by exponent arithmetic rather than by multiplication
-///
-/// `Normal` selects exponent-field scaling, which requires `x` to be normal and
-/// then makes the result normal too. That is the fast path; subnormal inputs take
-/// the multiplying version instead. `round_scaled` picks between them.
 ///
 /// Placing the split point on the binary point turns six of the eight rounding
 /// modes into a single round-to-integral instruction, and the remaining two into
@@ -532,18 +489,37 @@ inline bit_float<T> round_all_lost(bit_float<T> x, exp_t e, exp_t n) {
 /// Every case here is independent of the dynamic rounding mode, matching the
 /// existing implementation, which only ever adds values whose sum is exactly
 /// representable.
-template <RM rm, bool Normal, std::floating_point T>
+///
+/// Subnormals are handled by biasing rather than by a separate path. Exponent
+/// arithmetic cannot scale a subnormal directly - its exponent field is zero, so
+/// adding to it would fabricate an implicit bit - and neither can it produce the
+/// subnormal results that subnormal inputs give rise to. Multiplying instead is
+/// correct but costs about 30 ns per operation, because the hardware takes a
+/// microcode assist for a multiply with a denormal operand and again for any
+/// operation with a denormal result.
+///
+/// Adding `IMPLICIT1` to the *encoding* of a subnormal yields exactly
+/// `x + sgn(x) * 2^EMIN`, which is normal, and the encoding stays linear in the
+/// value across the boundary, so subtracting it again afterwards recovers the
+/// result. Both steps are integer arithmetic on the encoding, so no denormal ever
+/// reaches the floating-point unit. The bias in the scaled domain is
+/// `2^(EMIN-exp)`, an *even* integer, and every rounding mode here commutes with
+/// adding an even integer of the same sign - including the parity that RTO and RTE
+/// depend on and the ties that RNE breaks - so there is nothing to undo in
+/// between. For a normal `x` the bias is zero and the whole thing vanishes, which
+/// is why one code path serves both.
+template <RM rm, bool Biased, std::floating_point T>
 inline bit_float<T> round_scaled_split(bit_float<T> x, exp_t n) {
+    using params_t = typename bit_float<T>::params_t;
+    using uint_t = typename bit_float<T>::uint_t;
+
     // Move the split point onto the binary point. Every representable digit of
     // `x` is then integral and every unrepresentable digit is fractional, so the
-    // scaled value lies in `[1, 2^p)`.
+    // scaled value lies in `[1, 2^p)`, offset by the bias when `x` is subnormal.
     const exp_t exp = n + 1;
-    T y;
-    if constexpr (Normal) {
-        y = scale_bits(x, -exp).to_float();
-    } else {
-        y = scale_mul(x.to_float(), -exp);
-    }
+    static constexpr uint_t bias = Biased ? static_cast<uint_t>(params_t::IMPLICIT1) : uint_t{0};
+    const bit_float<T> xb(static_cast<uint_t>(x.to_bits() + bias));
+    const T y = scale_bits(xb, -exp).to_float();
 
     // case split on rounding mode
     T t;
@@ -603,11 +579,12 @@ inline bit_float<T> round_scaled_split(bit_float<T> x, exp_t n) {
         t = y;
     }
 
-    // scale back; `|t| >= 1`, so no sign is lost on the way
-    if constexpr (Normal) {
-        return scale_bits(bit_float<T>(t), exp);
+    // scale back and remove the bias; `|t| >= 1`, so no sign is lost on the way
+    const bit_float<T> ub = scale_bits(bit_float<T>(t), exp);
+    if constexpr (Biased) {
+        return bit_float<T>(static_cast<uint_t>(ub.to_bits() - bias));
     } else {
-        return bit_float<T>(scale_mul(t, exp));
+        return ub;
     }
 }
 
@@ -655,13 +632,17 @@ bit_float<T> round_scaled(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
         return round_all_lost<rm>(x, e, n_act);
     }
 
+    // A subnormal is biased into the normal range first; see `round_scaled_split`.
+    // Biasing unconditionally would remove this branch, and was measured: it costs
+    // about 20% on every input, and only pays off once more than roughly one input
+    // in sixteen is subnormal, where the misprediction starts to dominate. Container
+    // subnormals need `|x| < 2^EMIN`, which emulating a narrower format in a wider
+    // container never reaches, so the branch stays.
     if (x.ebits() != 0) {
-        // Subnormals cannot be scaled by exponent arithmetic, and neither can the
-        // subnormal results they produce, so they take the multiplying path.
-        return round_scaled_split<rm, true>(x, n_act);
-    } else {
         return round_scaled_split<rm, false>(x, n_act);
     }
+
+    return round_scaled_split<rm, true>(x, n_act);
 }
 
 /// @brief Rounding of a `bit_float` type by scaling, dispatching on a runtime

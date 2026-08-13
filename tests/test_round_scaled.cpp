@@ -23,7 +23,6 @@ using mpfx::prec_t;
 using mpfx::RM;
 using mpfx::experimental::round_all_lost;
 using mpfx::experimental::scale_bits;
-using mpfx::experimental::scale_mul;
 
 namespace {
 
@@ -125,85 +124,6 @@ void check_scale_bits_overflow() {
 
 TEST(TestRoundScaled, ScaleBitsOverflowFloat) { check_scale_bits_overflow<float>(); }
 TEST(TestRoundScaled, ScaleBitsOverflowDouble) { check_scale_bits_overflow<double>(); }
-
-//
-// scale_mul
-//
-
-/// @brief `scale_mul` must agree exactly with `ldexp` whenever the true product
-/// is representable, including for subnormal inputs and subnormal results.
-template <std::floating_point T>
-void check_scale_mul() {
-    using params_t = typename bit_float<T>::params_t;
-    using uint_t = typename bit_float<T>::uint_t;
-    static constexpr size_t N = N_SCALE;
-
-    std::mt19937_64 rng(0xB1A5E);
-    std::uniform_int_distribution<uint_t> bits_dist(0, ~static_cast<uint_t>(0));
-    std::uniform_int_distribution<exp_t> k_dist(2 * params_t::EMIN, 2 * params_t::EMAX);
-
-    size_t checked = 0;
-    for (size_t i = 0; i < N; i++) {
-        const bit_float<T> x(static_cast<uint_t>(bits_dist(rng)));
-        if (x.is_nar() || x.is_zero()) {
-            continue;
-        }
-
-        const exp_t k = k_dist(rng);
-        const T v = x.to_float();
-        const T want = std::ldexp(v, k);
-
-        // only exercise `k` for which the true product is representable: the
-        // round trip back through `ldexp` recovers `v` exactly in that case
-        if (!std::isfinite(want) || want == static_cast<T>(0) || !same_bits(std::ldexp(want, -k), v)) {
-            continue;
-        }
-
-        checked++;
-        const T got = scale_mul(v, k);
-        ASSERT_TRUE(same_bits(got, want))
-            << "scale_mul(" << describe(v) << ", " << k << ") = "
-            << describe(got) << ", want " << describe(want);
-    }
-
-    EXPECT_GT(checked, N / 100) << "too few representable cases were exercised";
-}
-
-TEST(TestRoundScaled, ScaleMulFloat) { check_scale_mul<float>(); }
-TEST(TestRoundScaled, ScaleMulDouble) { check_scale_mul<double>(); }
-
-/// @brief The cases that a single multiply cannot handle, because the scale
-/// factor `2^k` is itself unrepresentable. These are exactly the scales that
-/// rounding needs at the extremes, so they must be exact.
-template <std::floating_point T>
-void check_scale_mul_unrepresentable_factor() {
-    using params_t = typename bit_float<T>::params_t;
-
-    // scaling the smallest subnormal up, for every `k` above `EMAX`
-    const T min_sub = bit_float<T>::make_pow2(params_t::EXPMIN).to_float();
-    for (exp_t k = params_t::EMAX + 1; k <= -params_t::EXPMIN - 1; k++) {
-        const T want = std::ldexp(min_sub, k);
-        ASSERT_TRUE(same_bits(scale_mul(min_sub, k), want))
-            << "scale_mul(min subnormal, " << k << ") = " << describe(scale_mul(min_sub, k))
-            << ", want " << describe(want);
-    }
-
-    // and scaling back down, for every `k` below `EMIN`
-    const T one = static_cast<T>(1);
-    for (exp_t k = params_t::EMIN - 1; k >= params_t::EXPMIN + 1; k--) {
-        const T want = std::ldexp(one, k);
-        ASSERT_TRUE(same_bits(scale_mul(one, k), want))
-            << "scale_mul(1, " << k << ") = " << describe(scale_mul(one, k))
-            << ", want " << describe(want);
-    }
-}
-
-TEST(TestRoundScaled, ScaleMulUnrepresentableFactorFloat) {
-    check_scale_mul_unrepresentable_factor<float>();
-}
-TEST(TestRoundScaled, ScaleMulUnrepresentableFactorDouble) {
-    check_scale_mul_unrepresentable_factor<double>();
-}
 
 //
 // round_all_lost
@@ -471,7 +391,7 @@ void check_round_scaled_random_subnormal() {
 /// @brief Which path through `round_scaled` an input takes, and what kind of
 /// rounding it asks for.
 struct PathCounts {
-    size_t nar_or_zero = 0, below_split = 0, all_lost = 0, field_scale = 0, mul_scale = 0;
+    size_t nar_or_zero = 0, below_split = 0, all_lost = 0, normal = 0, biased = 0;
     size_t exact = 0, halfway = 0, inexact = 0;
 };
 
@@ -499,9 +419,9 @@ void classify(bit_float<T> x, prec_t p, std::optional<exp_t> n, PathCounts& c) {
     }
 
     if (x.ebits() != 0) {
-        c.field_scale++;
+        c.normal++;
     } else {
-        c.mul_scale++;
+        c.biased++;   // subnormal: biased into the normal range before scaling
     }
 
     // classify the lost digits using the existing split
@@ -522,8 +442,8 @@ void classify(bit_float<T> x, prec_t p, std::optional<exp_t> n, PathCounts& c) {
 ///
 /// Both generators are classified together, because neither covers everything on
 /// its own: uniform encodings are subnormal only about once in two thousand draws,
-/// which at these counts leaves the multiplying scale and the `n_act < EXPMIN`
-/// path to the subnormal generator. The counts and seeds mirror
+/// which at these counts leaves the biased path and the `n_act < EXPMIN` path to
+/// the subnormal generator. The counts and seeds mirror
 /// `check_round_scaled_random` and `check_round_scaled_random_subnormal`.
 template <std::floating_point T>
 void check_round_scaled_coverage() {
@@ -564,15 +484,15 @@ void check_round_scaled_coverage() {
     }
 
     std::cout << "  coverage: nar/zero=" << c.nar_or_zero << " below_split=" << c.below_split
-              << " all_lost=" << c.all_lost << " field_scale=" << c.field_scale
-              << " mul_scale=" << c.mul_scale << " | exact=" << c.exact
+              << " all_lost=" << c.all_lost << " normal=" << c.normal
+              << " biased=" << c.biased << " | exact=" << c.exact
               << " halfway=" << c.halfway << " inexact=" << c.inexact << std::endl;
 
     EXPECT_GT(c.nar_or_zero, 0u);
     EXPECT_GT(c.below_split, 0u) << "the `n_act < EXPMIN` fast path is never taken";
     EXPECT_GT(c.all_lost, 0u) << "the underflow-to-zero path is never taken";
-    EXPECT_GT(c.field_scale, 0u) << "the exponent-field scaling path is never taken";
-    EXPECT_GT(c.mul_scale, 0u) << "the multiplying scaling path is never taken";
+    EXPECT_GT(c.normal, 0u) << "the unbiased path is never taken";
+    EXPECT_GT(c.biased, 0u) << "the biased (subnormal) path is never taken";
     EXPECT_GT(c.exact, 0u) << "no exact rounding is exercised";
     EXPECT_GT(c.halfway, 0u) << "no exact ties are exercised";
     EXPECT_GT(c.inexact, 0u) << "no inexact rounding is exercised";
