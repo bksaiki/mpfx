@@ -557,4 +557,136 @@ ROUND_SCALED_TESTS(DeepSubnormal, check_round_scaled_deep_subnormal)
 ROUND_SCALED_TESTS(Random, check_round_scaled_random)
 ROUND_SCALED_TESTS(RandomSubnormal, check_round_scaled_random_subnormal)
 
+//
+// a second, independent oracle
+//
+
+/// @brief Rounds `x` through the legacy integer-significand path, which is a
+/// genuinely different algorithm from `experimental::round`.
+///
+/// This matters because the public `round(T, ...)` now delegates to
+/// `experimental::round`, so comparing the two only exercises one algorithm. The
+/// integer overload still reaches `round_finalize`/`encode` instead.
+///
+/// Returns nothing for the cases the integer path cannot express: NaN and
+/// infinity have no `(m, exp)` form, signed zero loses its sign through an
+/// integer significand, and a result outside the range of `T` comes back as a
+/// finite `double` rather than saturating.
+template <std::floating_point T>
+std::optional<T> legacy_round(bit_float<T> x, prec_t p, std::optional<exp_t> n, RM rm) {
+    using limits = std::numeric_limits<T>;
+    if (x.is_nar() || x.is_zero()) {
+        return std::nullopt;
+    }
+
+    const auto [s, exp, c] = x.unpack();
+    const auto mag = static_cast<int64_t>(c);
+    const double r = mpfx::round<mpfx::Flags::NO_FLAGS>(s ? -mag : mag, exp, p, n, rm);
+    if (std::abs(r) > static_cast<double>(limits::max())) {
+        return std::nullopt;
+    }
+    return static_cast<T>(r);
+}
+
+/// @brief Randomized differential test against the legacy integer path.
+template <std::floating_point T, bool FieldScale, bool FpReduce>
+void check_round_scaled_legacy() {
+    using params_t = typename bit_float<T>::params_t;
+    using uint_t = typename bit_float<T>::uint_t;
+    static constexpr size_t N = 100'000;
+
+    std::mt19937_64 rng(0x1EACADEU);
+    std::uniform_int_distribution<uint_t> bits_dist(0, ~static_cast<uint_t>(0));
+    std::uniform_int_distribution<prec_t> prec_dist(1, params_t::P - 1);
+    std::uniform_int_distribution<exp_t> n_dist(params_t::EXPMIN - 1, params_t::EMAX - 1);
+    std::bernoulli_distribution coin(0.5);
+
+    size_t checked = 0;
+    for (size_t i = 0; i < N; i++) {
+        const bit_float<T> x(static_cast<uint_t>(bits_dist(rng)));
+        const prec_t p = prec_dist(rng);
+        const std::optional<exp_t> n =
+            coin(rng) ? std::optional<exp_t>(n_dist(rng)) : std::nullopt;
+
+        for (const RM rm : MODES) {
+            const std::optional<T> want = legacy_round(x, p, n, rm);
+            if (!want.has_value()) {
+                continue;
+            }
+
+            checked++;
+            bit_float<T> got;
+            if constexpr (FpReduce) {
+                got = mpfx::experimental::round_scaled_fp<mpfx::Flags::NO_FLAGS, FieldScale>(x, p, n, rm);
+            } else {
+                got = mpfx::experimental::round_scaled<mpfx::Flags::NO_FLAGS, FieldScale>(x, p, n, rm);
+            }
+            ASSERT_TRUE(same_bits(got.to_float(), *want))
+                << "round_scaled" << (FpReduce ? "_fp" : "") << "<" << rm_name(rm) << ">("
+                << describe(x.to_float()) << ", p=" << p << ", n=" << describe_n(n) << ") = "
+                << describe(got.to_float()) << ", legacy path says " << describe(*want);
+        }
+    }
+
+    EXPECT_GT(checked, N) << "too few cases were comparable against the legacy path";
+}
+
+ROUND_SCALED_TESTS(Legacy, check_round_scaled_legacy)
+
+//
+// exhaustive sweeps over the `float` encoding
+//
+
+/// @brief Compares every `stride`-th `float` encoding against `round`, for a
+/// handful of representative configurations in every rounding mode.
+///
+/// The comparison is hand-rolled rather than going through `expect_matches` so
+/// that no gtest machinery runs in the inner loop; only a mismatch reports.
+template <bool FieldScale, bool FpReduce>
+void check_exhaustive_float(uint64_t stride) {
+    using params_t = typename bit_float<float>::params_t;
+    struct Cfg { prec_t p; std::optional<exp_t> n; };
+    const Cfg cfgs[] = {
+        {12, std::nullopt},                                   // precision only
+        {params_t::P - 1, params_t::EMIN - static_cast<exp_t>(params_t::P)}, // IEEE 754 f32
+        {4, -10},                                             // narrow, subnormalizing
+    };
+
+    for (const auto& cfg : cfgs) {
+        for (const RM rm : MODES) {
+            for (uint64_t i = 0; i < (1ULL << 32); i += stride) {
+                const bit_float<float> x(static_cast<uint32_t>(i));
+                const bit_float<float> want =
+                    mpfx::experimental::round<mpfx::Flags::NO_FLAGS>(x, cfg.p, cfg.n, rm);
+                bit_float<float> got;
+                if constexpr (FpReduce) {
+                    got = mpfx::experimental::round_scaled_fp<mpfx::Flags::NO_FLAGS, FieldScale>(
+                        x, cfg.p, cfg.n, rm);
+                } else {
+                    got = mpfx::experimental::round_scaled<mpfx::Flags::NO_FLAGS, FieldScale>(
+                        x, cfg.p, cfg.n, rm);
+                }
+                if (got.to_bits() != want.to_bits()) [[unlikely]] {
+                    FAIL() << "round_scaled" << (FpReduce ? "_fp" : "") << "<" << rm_name(rm)
+                           << ">(" << describe(x.to_float()) << ", p=" << cfg.p
+                           << ", n=" << describe_n(cfg.n) << ") = " << describe(got.to_float())
+                           << ", want " << describe(want.to_float());
+                }
+            }
+        }
+    }
+}
+
+// A stride keeps the default suite quick while still covering the whole
+// encoding uniformly, including every exponent and both signs.
+TEST(TestRoundScaled, ExhaustiveStridedFloat) { check_exhaustive_float<true, false>(4099); }
+TEST(TestRoundScaled, ExhaustiveStridedFloatFp) { check_exhaustive_float<true, true>(4099); }
+TEST(TestRoundScaled, ExhaustiveStridedFloatScaleMul) { check_exhaustive_float<false, false>(4099); }
+TEST(TestRoundScaled, ExhaustiveStridedFloatFpScaleMul) { check_exhaustive_float<false, true>(4099); }
+
+// Every `float` encoding, on demand only - this takes minutes. Run with
+//   run_tests --gtest_also_run_disabled_tests --gtest_filter='*DISABLED_Exhaustive*'
+TEST(TestRoundScaled, DISABLED_ExhaustiveFloat) { check_exhaustive_float<true, false>(1); }
+TEST(TestRoundScaled, DISABLED_ExhaustiveFloatFp) { check_exhaustive_float<true, true>(1); }
+
 } // namespace

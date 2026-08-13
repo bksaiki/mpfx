@@ -919,7 +919,9 @@ double round_finalize(bool s, exp_t e, T c, prec_t p, const std::optional<exp_t>
     static constexpr bool CHECK_INEXACT = FlagMask & Flags::INEXACT_FLAG;
     static constexpr bool CHECK_CARRY = FlagMask & Flags::CARRY_FLAG;
 
-    MPFX_DEBUG_ASSERT(p <= FP::P, "cannot keep the requested precision" << p);
+    // `MPFX_ASSERT` builds its message by concatenation, so the operand must be
+    // a string rather than something streamed
+    MPFX_DEBUG_ASSERT(p <= FP::P, "cannot keep the requested precision: " + std::to_string(p));
 
     if (c == 0) [[unlikely]] {
         // fast path: zero value
