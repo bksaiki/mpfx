@@ -361,6 +361,135 @@ bit_float<T> round(bit_float<T> x, prec_t p, std::optional<exp_t> n, RM rm) {
     }
 }
 
+///
+/// Scale-and-truncate rounding.
+///
+/// An alternative formulation of `round` that works in the floating-point
+/// domain rather than the integer domain. Setting `exp = n + 1` and scaling `x`
+/// by `2^-exp` puts the split point exactly at the binary point: the
+/// representable digits of `x` become the integer part of the scaled value and
+/// the unrepresentable digits become its fraction. Rounding is then a
+/// round-to-integral operation, and the residual `y - trunc(y)` - which is
+/// exact, with magnitude in `(0, 1)` and the sign of `x` - summarizes every
+/// lost digit.
+///
+
+/// @brief Computes `x * 2^k` by adding `k` to the exponent field.
+///
+/// Assumes `x` is normal and that the result is normal or exactly `+/-Inf`.
+/// Under those assumptions the mantissa is untouched and the sign bit is never
+/// disturbed, so the scaling is exact. Both assumptions hold throughout
+/// `round_scaled` whenever its input is normal: the scaled value `x * 2^-exp`
+/// lands in `[1, 2^p)`, and rounding cannot change the normalized exponent
+/// except by a carry to `e + 1`. In the carry-to-overflow case the significand
+/// is a power of two, so the exponent field saturates onto `Inf` exactly.
+template <std::floating_point T>
+inline bit_float<T> scale_bits(bit_float<T> x, exp_t k) {
+    using params_t = typename bit_float<T>::params_t;
+    using uint_t = typename bit_float<T>::uint_t;
+    MPFX_DEBUG_ASSERT(!x.is_nar(), "cannot scale NaN or Inf");
+    MPFX_DEBUG_ASSERT(x.ebits() != 0, "cannot scale a subnormal by exponent arithmetic");
+
+    // `k` is cast before shifting so that negative `k` wraps in a
+    // well-defined way; the wrapped value is the two's complement of `|k| * 2^M`
+    const uint_t d = static_cast<uint_t>(k) << params_t::M;
+    return bit_float<T>(static_cast<uint_t>(x.to_bits() + d));
+}
+
+/// @brief Computes `x * 2^k`, exact whenever the true product is representable.
+///
+/// The general fallback for `scale_bits`, needed when `x` is subnormal (its
+/// exponent field is zero, so adding to it would fabricate an implicit bit) or
+/// when the result is subnormal. Assumes `x` is finite.
+///
+/// A single multiply does not suffice: `exp` reaches down to `EXPMIN + 1`, and
+/// the corresponding scale factor `2^-exp` is not representable. Two factors are
+/// used instead, which supports `2 * EMIN <= k <= 2 * EMAX` - wider than every
+/// scale rounding can ask for, as the static assertion below checks. Note this
+/// is narrower than the range over which the product can be representable, so
+/// this is not a general-purpose `ldexp`.
+///
+/// Both multiplies are exact. `k2` always carries the sign of the part of `k`
+/// that was clamped away, so the intermediate holds the same significand as the
+/// final result with its magnitude on the safe side of it: if the final result
+/// is representable the intermediate is too, and neither over- nor underflows.
+template <std::floating_point T>
+inline T scale_mul(T x, exp_t k) {
+    using params_t = typename float_params<T>::params;
+    using uint_t = typename float_params<T>::uint_t;
+
+    // rounding scales by `2^-exp` then by `2^exp`, for `exp` in
+    // `[EXPMIN + 1, EMAX]`, so `k` never leaves `[EXPMIN + 1, -EXPMIN - 1]`
+    MPFX_STATIC_ASSERT(2 * params_t::EMIN <= params_t::EXPMIN + 1,
+                       "scale_mul cannot reach every scale rounding needs");
+    MPFX_STATIC_ASSERT(2 * params_t::EMAX >= -params_t::EXPMIN - 1,
+                       "scale_mul cannot reach every scale rounding needs");
+    MPFX_DEBUG_ASSERT(k >= 2 * params_t::EMIN, "scale factor is too small");
+    MPFX_DEBUG_ASSERT(k <= 2 * params_t::EMAX, "scale factor is too large");
+
+    const exp_t k1 = std::clamp(k, params_t::EMIN, params_t::EMAX);
+    const exp_t k2 = k - k1; // also within `[EMIN, EMAX]`
+    const T c1 = std::bit_cast<T>(static_cast<uint_t>(k1 + params_t::BIAS) << params_t::M);
+    const T c2 = std::bit_cast<T>(static_cast<uint_t>(k2 + params_t::BIAS) << params_t::M);
+    return x * c1 * c2;
+}
+
+/// @brief Rounds `x` when every digit is unrepresentable, i.e. `n >= x.e()`.
+/// @tparam rm the rounding mode
+/// @param x the value to round, neither zero nor NaN/Inf
+/// @param n the actual split point, at or above the normalized exponent of `x`
+///
+/// The scaled formulation cannot be used here: `x * 2^-(n+1)` has magnitude
+/// below one, at an exponent low enough to underflow and silently destroy the
+/// residual. It is not needed either. The kept part is `+/-0`, so its least
+/// significant digit is even, and the lost part is nonzero because `x` is not
+/// zero, which leaves the halfway comparison as `|x|` against `2^n`. The result
+/// is therefore either `+/-0` or `+/-2^(n+1)`.
+template <RM rm, std::floating_point T>
+bit_float<T> round_all_lost(bit_float<T> x, exp_t n) {
+    using params_t = typename bit_float<T>::params_t;
+    MPFX_DEBUG_ASSERT(!x.is_nar(), "cannot round NaN or Inf");
+    MPFX_DEBUG_ASSERT(!x.is_zero(), "cannot round zero");
+    MPFX_DEBUG_ASSERT(n >= x.e(), "not every digit is unrepresentable");
+
+    // should we round away from zero?
+    bool increment;
+    if constexpr (rm == RM::RNE || rm == RM::RNA) {
+        // compare `|x|` against the halfway point `2^n`; above `EMAX` the
+        // halfway point exceeds every finite value, so `x` is below it
+        const int cmp = n > params_t::EMAX ? -1 : x.compare_mag(bit_float<T>::make_pow2(n));
+        if (cmp != 0) {
+            increment = cmp > 0;
+        } else {
+            // exactly halfway, and the kept digit is even
+            increment = rm == RM::RNA;
+        }
+    } else if constexpr (rm == RM::RTP) {
+        increment = !x.s();
+    } else if constexpr (rm == RM::RTN) {
+        increment = x.s();
+    } else if constexpr (rm == RM::RTZ) {
+        increment = false;
+    } else if constexpr (rm == RM::RAZ) {
+        increment = true;
+    } else if constexpr (rm == RM::RTO) {
+        // the kept digit is even, so round to odd increments
+        increment = true;
+    } else if constexpr (rm == RM::RTE) {
+        // the kept digit is already even
+        increment = false;
+    } else {
+        MPFX_DEBUG_ASSERT(false, "unreachable");
+        increment = false;
+    }
+
+    if (increment) {
+        return bit_float<T>::make_pow2(n + 1, x.s());
+    } else {
+        return bit_float<T>(x.sbits());
+    }
+}
+
 } // namespace experimental
 
 namespace {
