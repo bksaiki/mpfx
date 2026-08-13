@@ -77,34 +77,13 @@ inline RoundingDirection get_direction(RoundingMode mode, bool sign) {
     return table[idx];
 }
 
-namespace experimental {
-
-/// @brief Should we increment to round, for the nearest modes?
-/// @tparam rm the rounding mode
-/// @tparam T the floating-point container type
-/// @param hi the high part of the split significand
-/// @param n the split point
-/// @param rs the low part of the significand, in a round-sticky scheme
-/// @return should we increment the significand?
-template <RM rm, std::floating_point T>
-inline bool round_increment_nearest(bit_float<T> hi, exp_t n, RoundRS rs) {
-    // case split on rounding mode
-    if constexpr (rm == RM::RNE) {
-        if (rs == RoundRS::EXACT_HALFWAY) {
-            // exactly halfway - increment if the LSB is odd
-            return hi.bit(n + 1);
-        } else {
-            // increment only if strictly above halfway
-            return rs == RoundRS::ABOVE_HALFWAY;
-        }
-    } else if constexpr (rm == RM::RNA) {
-        // above or exactly at halfway - increment
-        return static_cast<uint8_t>(rs) >= static_cast<uint8_t>(RoundRS::EXACT_HALFWAY);
-    } else {
-        MPFX_DEBUG_ASSERT(false, "unreachable");
-        return false;
-    }
-}
+/// Shared primitives for the rounding implementations below. Both `reference` and
+/// `round_scaled` build on these, so a differential test between the two does not
+/// exercise them independently - they are covered by the exhaustive sweeps instead.
+/// Primitives shared by `round_bits` and `round_scaled`. This is deliberately
+/// small: a differential test between those two cannot check anything in here,
+/// since both sides use it. It is covered by the exhaustive sweeps instead.
+namespace round_internal {
 
 /// @brief Should we increment to round, for the directed modes?
 /// @tparam rm the rounding mode
@@ -137,50 +116,6 @@ inline bool round_increment_directed(bit_float<T> hi, exp_t n) {
         MPFX_DEBUG_ASSERT(false, "unreachable");
         return false;
     }
-}
-
-/// @brief A rounded value together with what the status flags need to know about
-/// how it was reached.
-/// @tparam T the floating-point container type
-template <std::floating_point T>
-struct RoundResult {
-    bit_float<T> value;
-    bool inexact; // digits were discarded
-};
-
-/// @brief Rounds `x` at split point `n` in the integer domain.
-/// @tparam rm the rounding mode
-/// @tparam T the floating-point container type
-/// @param x the value to round, neither NaN nor Inf
-/// @param n the split point
-/// @param out the rounded value
-/// @return were any digits discarded?
-///
-/// The value leaves through `out` rather than as a returned pair: a struct returned
-/// from several `return` sites defeats the compiler's scalar replacement, and the
-/// spill costs more than the rounding on the callers' hot paths.
-template <RM rm, std::floating_point T>
-inline bool round_split(bit_float<T> x, exp_t n, bit_float<T>& out) {
-    bool increment;
-    if constexpr (rm == RM::RNE || rm == RM::RNA) {
-        const auto [hi, rs] = x.split_rs(n);
-        out = hi;
-        if (rs == RoundRS::EXACT) {
-            return false;
-        }
-        increment = round_increment_nearest<rm>(hi, n, rs);
-    } else {
-        const auto [hi, sticky] = x.split_sticky(n);
-        out = hi;
-        if (!sticky) {
-            return false;
-        }
-        increment = round_increment_directed<rm>(hi, n);
-    }
-    if (increment) {
-        out = out.next_away_zero(n + 1);
-    }
-    return true;
 }
 
 /// @brief Whether rounding `x` at `n_min` with an unbounded exponent range still
@@ -231,7 +166,7 @@ inline bool tiny_after_unbounded(bit_float<T> x, exp_t n_min, exp_t emin) {
         up = lost >= (step >> 1);
     } else {
         const bit_float<T> hi(static_cast<uint_t>(x.sbits() | (mag - lost)));
-        up = round_increment_directed<rm>(hi, n_min);
+        up = round_internal::round_increment_directed<rm>(hi, n_min);
     }
     return !up;
 }
@@ -269,6 +204,82 @@ inline void set_tiny_after(bit_float<T> x, exp_t e, exp_t n_min, exp_t emin, boo
             }
         }
     }
+}
+
+} // namespace round_internal
+
+/// Rounds by manipulating the `bit_float` encoding directly, never decoding it into
+/// a significand triple. `round_scaled` is what production code uses; this is the
+/// oracle the test suite rounds against, since a differential test needs two
+/// genuinely different algorithms. It is the better oracle of the two available:
+/// unlike `round_reference` it can express NaN, infinity, and signed zero.
+///
+/// Note that unlike `round_scaled`, this path is *not* independent of the host
+/// rounding mode: its increment is a real floating-point add, so a carry that
+/// overflows to infinity is decided by the host mode. Differential tests must run
+/// under the default mode.
+namespace round_bits {
+
+/// @brief Should we increment to round, for the nearest modes?
+/// @tparam rm the rounding mode
+/// @tparam T the floating-point container type
+/// @param hi the high part of the split significand
+/// @param n the split point
+/// @param rs the low part of the significand, in a round-sticky scheme
+/// @return should we increment the significand?
+template <RM rm, std::floating_point T>
+inline bool round_increment_nearest(bit_float<T> hi, exp_t n, RoundRS rs) {
+    // case split on rounding mode
+    if constexpr (rm == RM::RNE) {
+        if (rs == RoundRS::EXACT_HALFWAY) {
+            // exactly halfway - increment if the LSB is odd
+            return hi.bit(n + 1);
+        } else {
+            // increment only if strictly above halfway
+            return rs == RoundRS::ABOVE_HALFWAY;
+        }
+    } else if constexpr (rm == RM::RNA) {
+        // above or exactly at halfway - increment
+        return static_cast<uint8_t>(rs) >= static_cast<uint8_t>(RoundRS::EXACT_HALFWAY);
+    } else {
+        MPFX_DEBUG_ASSERT(false, "unreachable");
+        return false;
+    }
+}
+
+/// @brief Rounds `x` at split point `n` in the integer domain.
+/// @tparam rm the rounding mode
+/// @tparam T the floating-point container type
+/// @param x the value to round, neither NaN nor Inf
+/// @param n the split point
+/// @param out the rounded value
+/// @return were any digits discarded?
+///
+/// The value leaves through `out` rather than as a returned pair: a struct returned
+/// from several `return` sites defeats the compiler's scalar replacement, and the
+/// spill costs more than the rounding on the callers' hot paths.
+template <RM rm, std::floating_point T>
+inline bool round_split(bit_float<T> x, exp_t n, bit_float<T>& out) {
+    bool increment;
+    if constexpr (rm == RM::RNE || rm == RM::RNA) {
+        const auto [hi, rs] = x.split_rs(n);
+        out = hi;
+        if (rs == RoundRS::EXACT) {
+            return false;
+        }
+        increment = round_increment_nearest<rm>(hi, n, rs);
+    } else {
+        const auto [hi, sticky] = x.split_sticky(n);
+        out = hi;
+        if (!sticky) {
+            return false;
+        }
+        increment = round_internal::round_increment_directed<rm>(hi, n);
+    }
+    if (increment) {
+        out = out.next_away_zero(n + 1);
+    }
+    return true;
 }
 
 /// @brief The general path of `round`: handles every input.
@@ -347,7 +358,7 @@ bit_float<T> round_general(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
         if constexpr (CHECK_UNDERFLOW_BEFORE) {
             flags.set_underflow_before_rounding();
         }
-        set_tiny_after<rm, FlagMask>(x, e, n_min, emin, true);
+        round_internal::set_tiny_after<rm, FlagMask>(x, e, n_min, emin, true);
     } else if constexpr (CHECK_CARRY) {
         // A carry raises the normalized exponent, given `x` not tiny - see
         // `TestFlags.TestCarryFlag` - and can only do so by landing exactly on a
@@ -374,7 +385,7 @@ bit_float<T> round_general(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
 ///
 /// Handles only the common shape - finite, normal, above the subnormalization
 /// point, with at least one representable digit - and delegates the rest to
-/// `round_general`, mirroring `round_scaled`; see there for why.
+/// `round_general`, mirroring `round_scaled::round`; see there for why.
 template <RM rm, flag_mask_t FlagMask = Flags::ALL_FLAGS, std::floating_point T>
 bit_float<T> round(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
     using params_t = typename bit_float<T>::params_t;
@@ -386,7 +397,7 @@ bit_float<T> round(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
     MPFX_DEBUG_ASSERT(!n.has_value() || *n + 1 >= params_t::EXPMIN, "subnormalization point must be at least EMIN - 1");
 
     // Zero, subnormal, infinity, and NaN all leave through the general path;
-    // see `round_scaled` for how one comparison covers all four.
+    // see `round_scaled::round` for how one comparison covers all four.
     const uint_t bits = x.to_bits();
     const uint_t ebits = static_cast<uint_t>(bits & params_t::EMASK);
     if (static_cast<uint_t>(ebits - 1) >= static_cast<uint_t>(params_t::EMASK) - 1) {
@@ -394,7 +405,7 @@ bit_float<T> round(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
     }
 
     // bounds on the biased exponent, built from `p` and `n` alone; these are
-    // the tininess/subnormalization and exactness tests of `round_scaled`
+    // the tininess/subnormalization and exactness tests of `round_scaled::round`
     const int64_t eb = static_cast<int64_t>(ebits >> params_t::M);
     if (n.has_value() && eb < *n + static_cast<int64_t>(p) + params_t::BIAS) {
         return round_general<rm, FlagMask>(x, p, n);
@@ -464,6 +475,13 @@ bit_float<T> round(bit_float<T> x, prec_t p, std::optional<exp_t> n, RM rm) {
     }
 }
 
+} // namespace round_bits
+
+/// The scale-and-truncate implementation - what the public `round` uses. Works in
+/// the floating-point rather than the integer domain, and unlike
+/// `round_bits::round` it is independent of the host rounding mode.
+namespace round_scaled {
+
 ///
 /// Scale-and-truncate rounding.
 ///
@@ -474,6 +492,15 @@ bit_float<T> round(bit_float<T> x, prec_t p, std::optional<exp_t> n, RM rm) {
 /// round-to-integral operation. The scaling is exponent arithmetic on the
 /// encoding, which leaves the mantissa and sign untouched and so is exact.
 ///
+
+/// @brief A rounded value together with what the status flags need to know about
+/// how it was reached.
+/// @tparam T the floating-point container type
+template <std::floating_point T>
+struct RoundResult {
+    bit_float<T> value;
+    bool inexact; // digits were discarded
+};
 
 /// @brief Rounds `x` when every digit is unrepresentable, i.e. `n >= e`.
 /// @tparam rm the rounding mode
@@ -510,7 +537,7 @@ inline bit_float<T> round_all_lost(bit_float<T> x, exp_t e, exp_t n) {
         // the directed modes read only the sign and the last kept digit, and the
         // kept part `+/-0` supplies both: its significand is zero, so every digit
         // reads even
-        increment = round_increment_directed<rm>(bit_float<T>(x.sbits()), n);
+        increment = round_internal::round_increment_directed<rm>(bit_float<T>(x.sbits()), n);
     }
 
     // Select the magnitude rather than branching on it, and encode `2^(n+1)` inline
@@ -604,7 +631,7 @@ inline T round_to_integral(T y) {
 /// RTE depend on and the ties RNE breaks included - so nothing needs undoing in
 /// between. For a normal `x` the bias is zero and the whole thing vanishes.
 template <RM rm, bool Biased, std::floating_point T>
-inline RoundResult<T> round_scaled_split(bit_float<T> x, exp_t n) {
+inline RoundResult<T> round_split(bit_float<T> x, exp_t n) {
     using params_t = typename bit_float<T>::params_t;
     using uint_t = typename bit_float<T>::uint_t;
 
@@ -631,7 +658,7 @@ inline RoundResult<T> round_scaled_split(bit_float<T> x, exp_t n) {
     return {bit_float<T>(static_cast<uint_t>(tb + d - bias)), inexact};
 }
 
-/// @brief The subnormal path of `round_scaled`: `x` is a non-zero subnormal.
+/// @brief The subnormal path of `round`: `x` is a non-zero subnormal.
 /// @tparam rm the rounding mode
 /// @tparam FlagMask the mask of flags to set
 /// @tparam T the floating-point container type
@@ -640,7 +667,7 @@ inline RoundResult<T> round_scaled_split(bit_float<T> x, exp_t n) {
 /// @param n optional minimum normalized exponent for subnormalization
 /// @return the rounded value
 template <RM rm, flag_mask_t FlagMask, std::floating_point T>
-bit_float<T> round_scaled_subnormal(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
+bit_float<T> round_subnormal(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
     using params_t = typename bit_float<T>::params_t;
 
     // which flags to check
@@ -686,7 +713,7 @@ bit_float<T> round_scaled_subnormal(bit_float<T> x, prec_t p, std::optional<exp_
         r = {round_all_lost<rm>(x, e, n_act), true};
     } else {
         // only subnormal `x` reaches here, so the split is always biased
-        r = round_scaled_split<rm, true>(x, n_act);
+        r = round_split<rm, true>(x, n_act);
     }
 
     // set inexact flag if requested
@@ -704,7 +731,7 @@ bit_float<T> round_scaled_subnormal(bit_float<T> x, prec_t p, std::optional<exp_
             }
         }
 
-        set_tiny_after<rm, FlagMask>(x, e, n_min, emin, r.inexact);
+        round_internal::set_tiny_after<rm, FlagMask>(x, e, n_min, emin, r.inexact);
     } else if constexpr (CHECK_CARRY) {
         // see `round_general`; `x` is subnormal here, so this is exactly the case
         // a zero-mantissa-field test would miss
@@ -717,7 +744,7 @@ bit_float<T> round_scaled_subnormal(bit_float<T> x, prec_t p, std::optional<exp_
     return r.value;
 }
 
-/// @brief The tiny path of `round_scaled`: a normal `x` whose split point is
+/// @brief The tiny path of `round`: a normal `x` whose split point is
 /// subnormalized, `e - p < n`.
 /// @tparam rm the rounding mode
 /// @tparam FlagMask the mask of flags to set
@@ -728,7 +755,7 @@ bit_float<T> round_scaled_subnormal(bit_float<T> x, prec_t p, std::optional<exp_
 /// @param e the normalized exponent of `x`, which the caller already holds
 /// @return the rounded value
 template <RM rm, flag_mask_t FlagMask, std::floating_point T>
-bit_float<T> round_scaled_tiny(bit_float<T> x, prec_t p, exp_t n, exp_t e) {
+bit_float<T> round_tiny(bit_float<T> x, prec_t p, exp_t n, exp_t e) {
     using params_t = typename bit_float<T>::params_t;
 
     // which flags to check
@@ -764,7 +791,7 @@ bit_float<T> round_scaled_tiny(bit_float<T> x, prec_t p, exp_t n, exp_t e) {
         r = {round_all_lost<rm>(x, e, n), true};
     } else {
         // `x` is normal, so the split needs no bias
-        r = round_scaled_split<rm, false>(x, n);
+        r = round_split<rm, false>(x, n);
     }
 
     // set inexact flag if requested
@@ -783,13 +810,13 @@ bit_float<T> round_scaled_tiny(bit_float<T> x, prec_t p, exp_t n, exp_t e) {
 
     const exp_t n_min = e - static_cast<exp_t>(p);
     const exp_t emin = n + static_cast<exp_t>(p);
-    set_tiny_after<rm, FlagMask>(x, e, n_min, emin, r.inexact);
+    round_internal::set_tiny_after<rm, FlagMask>(x, e, n_min, emin, r.inexact);
 
     // no carry check: the carry flag is only defined for results that are not tiny
     return r.value;
 }
 
-/// @brief The normal path of `round_scaled`: a finite normal `x` whose split
+/// @brief The normal path of `round`: a finite normal `x` whose split
 /// point is not subnormalized, `n_min = e - p`.
 /// @tparam rm the rounding mode
 /// @tparam FlagMask the mask of flags to set
@@ -799,7 +826,7 @@ bit_float<T> round_scaled_tiny(bit_float<T> x, prec_t p, exp_t n, exp_t e) {
 /// @param ebits the exponent field of `x`, which the caller already holds
 /// @return the rounded value
 template <RM rm, flag_mask_t FlagMask, std::floating_point T>
-inline bit_float<T> round_scaled_normal(bit_float<T> x, prec_t p, typename bit_float<T>::uint_t ebits) {
+inline bit_float<T> round_normal(bit_float<T> x, prec_t p, typename bit_float<T>::uint_t ebits) {
     using params_t = typename bit_float<T>::params_t;
     using uint_t = typename bit_float<T>::uint_t;
     static constexpr bool CHECK_INEXACT = FlagMask & Flags::INEXACT_FLAG;
@@ -829,7 +856,7 @@ inline bit_float<T> round_scaled_normal(bit_float<T> x, prec_t p, typename bit_f
     // scale back
     const bit_float<T> r(static_cast<uint_t>(tb + scale));
 
-    // set inexact flag if requested; exactness is bitwise, see `round_scaled_split`
+    // set inexact flag if requested; exactness is bitwise, see `round_split`
     if constexpr (CHECK_INEXACT) {
         if (tb != yb) {
             flags.set_inexact();
@@ -848,8 +875,10 @@ inline bit_float<T> round_scaled_normal(bit_float<T> x, prec_t p, typename bit_f
     return r;
 }
 
-/// @brief Rounding of a `bit_float` type by scaling: an alternative to `round`
-/// with identical results, in the floating-point rather than the integer domain.
+/// @brief Rounding of a `bit_float` type by scaling - the implementation the public
+/// `round` uses. Works in the floating-point rather than the integer domain, and is
+/// independent of the host rounding mode. See `reference::round` for the oracle it
+/// is checked against.
 /// @tparam rm the rounding mode
 /// @tparam FlagMask the mask of flags to set
 /// @tparam T the floating-point container type
@@ -865,7 +894,7 @@ inline bit_float<T> round_scaled_normal(bit_float<T> x, prec_t p, typename bit_f
 /// instruction in it, and only bodies this small dissolve. The rarer handlers stay
 /// real calls, so their cost falls only on the rare shapes.
 template <RM rm, flag_mask_t FlagMask = Flags::ALL_FLAGS, std::floating_point T>
-bit_float<T> round_scaled(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
+bit_float<T> round(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
     using params_t = typename bit_float<T>::params_t;
     using uint_t = typename bit_float<T>::uint_t;
     MPFX_DEBUG_ASSERT(p >= 1, "target precision must be at least one digit");
@@ -898,7 +927,7 @@ bit_float<T> round_scaled(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
             return x;
         }
 
-        return round_scaled_subnormal<rm, FlagMask>(x, p, n);
+        return round_subnormal<rm, FlagMask>(x, p, n);
     }
 
     // A subnormalized split of a normal `x`: subnormalization wins the `max` exactly
@@ -906,11 +935,11 @@ bit_float<T> round_scaled(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
     // this one comparison rules out every underflow concern at once.
     const int64_t eb = static_cast<int64_t>(ebits >> params_t::M);
     if (n.has_value() && eb < *n + static_cast<int64_t>(p) + params_t::BIAS) {
-        return round_scaled_tiny<rm, FlagMask>(x, p, *n, static_cast<exp_t>(eb) - params_t::BIAS);
+        return round_tiny<rm, FlagMask>(x, p, *n, static_cast<exp_t>(eb) - params_t::BIAS);
     }
 
     // everything else
-    return round_scaled_normal<rm, FlagMask>(x, p, ebits);
+    return round_normal<rm, FlagMask>(x, p, ebits);
 }
 
 /// @brief Rounding of a `bit_float` type by scaling, dispatching on a runtime
@@ -923,33 +952,40 @@ bit_float<T> round_scaled(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
 /// @param rm the rounding mode
 /// @return the rounded value
 template <flag_mask_t FlagMask = Flags::ALL_FLAGS, std::floating_point T>
-bit_float<T> round_scaled(bit_float<T> x, prec_t p, std::optional<exp_t> n, RM rm) {
+bit_float<T> round(bit_float<T> x, prec_t p, std::optional<exp_t> n, RM rm) {
     switch (rm) {
     case RM::RNE:
-        return round_scaled<RM::RNE, FlagMask>(x, p, n);
+        return round<RM::RNE, FlagMask>(x, p, n);
     case RM::RNA:
-        return round_scaled<RM::RNA, FlagMask>(x, p, n);
+        return round<RM::RNA, FlagMask>(x, p, n);
     case RM::RTP:
-        return round_scaled<RM::RTP, FlagMask>(x, p, n);
+        return round<RM::RTP, FlagMask>(x, p, n);
     case RM::RTN:
-        return round_scaled<RM::RTN, FlagMask>(x, p, n);
+        return round<RM::RTN, FlagMask>(x, p, n);
     case RM::RTZ:
-        return round_scaled<RM::RTZ, FlagMask>(x, p, n);
+        return round<RM::RTZ, FlagMask>(x, p, n);
     case RM::RAZ:
-        return round_scaled<RM::RAZ, FlagMask>(x, p, n);
+        return round<RM::RAZ, FlagMask>(x, p, n);
     case RM::RTO:
-        return round_scaled<RM::RTO, FlagMask>(x, p, n);
+        return round<RM::RTO, FlagMask>(x, p, n);
     case RM::RTE:
-        return round_scaled<RM::RTE, FlagMask>(x, p, n);
+        return round<RM::RTE, FlagMask>(x, p, n);
     default:
         MPFX_DEBUG_ASSERT(false, "round_scaled: invalid rounding mode");
         return x; // default return to avoid warnings
     }
 }
 
-} // namespace experimental
 
-namespace {
+} // namespace round_scaled
+
+
+/// The original rounding implementation, and the ancestor of the two above: it
+/// decodes into a `(sign, exponent, significand)` triple and rounds with integer
+/// arithmetic on the significand. Slowest of the three, and still what the
+/// `round(m, exp, ...)` overload uses. Kept as a third, independent witness - it
+/// shares no code with either of the others.
+namespace round_reference {
 
 /// @brief Encodes the result of rounding as a double-precision
 /// floating-point number. This is an optimized version of `make_float<double>`
@@ -1233,15 +1269,15 @@ double round_finalize(bool s, exp_t e, T c, prec_t p, const std::optional<exp_t>
     return encode<P>(s, e, c);
 }
 
-} // anonymous namespace
+} // namespace round_reference
 
-/// @brief Optimized rounding to round a floating-point number of type `T`
+/// @brief Rounds a floating-point number of type `T`
 /// to a value of the same type with target precision `p` and first
 /// unrepresentable digit `n`. Rounding happens in `T`'s own container, so a
 /// `float` argument is not widened to `double` (which would double-round).
 template<flag_mask_t FlagMask = Flags::ALL_FLAGS, std::floating_point T>
 T round(T x, prec_t p, const std::optional<exp_t>& n, RM rm) {
-    return experimental::round<FlagMask>(bit_float<T>(x), p, n, rm).to_float();
+    return round_scaled::round<FlagMask>(bit_float<T>(x), p, n, rm).to_float();
 }
 
 /// @brief Optimized rounding to round `m * 2^exp`
@@ -1280,7 +1316,7 @@ double round(T m, exp_t exp, prec_t p, const std::optional<exp_t>& n, RM rm) {
     const exp_t e = exp + (PREC - 1);
 
     // finalize rounding (mantissa has precision 63)
-    return round_finalize<PREC, U, FlagMask>(s, e, c, p, n, rm);
+    return round_reference::round_finalize<PREC, U, FlagMask>(s, e, c, p, n, rm);
 }
 
 } // namespace mpfx

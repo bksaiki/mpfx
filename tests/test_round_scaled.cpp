@@ -21,7 +21,7 @@ using mpfx::bit_float;
 using mpfx::exp_t;
 using mpfx::prec_t;
 using mpfx::RM;
-using mpfx::experimental::round_all_lost;
+using mpfx::round_scaled::round_all_lost;
 
 namespace {
 
@@ -31,7 +31,7 @@ namespace {
 constexpr size_t N_RANDOM = 25'000;     // uniform encodings, times 8 modes
 constexpr size_t N_SUBNORMAL = 10'000;  // subnormal encodings, times 8 modes
 constexpr size_t N_ALL_LOST = 10'000;   // `n >= e` encodings, times 8 modes
-constexpr size_t N_LEGACY = 10'000;     // against the legacy integer path
+constexpr size_t N_REFERENCE = 10'000;  // against `round_reference`
 constexpr uint64_t EXHAUSTIVE_STRIDE = 65'537;
 
 /// @brief Renders a value as `<hex bits> (<decimal>)` for failure messages.
@@ -92,7 +92,7 @@ bit_float<T> all_lost(bit_float<T> x, exp_t n, RM rm) {
 }
 
 /// @brief For split points at or above the normalized exponent, `round_all_lost`
-/// must match the existing implementation in every rounding mode.
+/// must match `round_bits::round` in every rounding mode.
 template <std::floating_point T>
 void check_round_all_lost() {
     using params_t = typename bit_float<T>::params_t;
@@ -120,9 +120,9 @@ void check_round_all_lost() {
         const prec_t p = prec_dist(rng);
 
         for (const RM rm : MODES) {
-            // `n >= e >= e - p`, so the existing implementation splits at `n` too
+            // `n >= e >= e - p`, so the reference splits at `n` too
             const bit_float<T> want =
-                mpfx::experimental::round<mpfx::Flags::NO_FLAGS>(x, p, n, rm);
+                mpfx::round_bits::round<mpfx::Flags::NO_FLAGS>(x, p, n, rm);
             const bit_float<T> got = all_lost(x, n, rm);
             ASSERT_EQ(got.to_bits(), want.to_bits())
                 << "round_all_lost<" << rm_name(rm) << ">(" << describe(x.to_float())
@@ -144,14 +144,14 @@ std::string describe_n(std::optional<exp_t> n) {
     return n.has_value() ? std::to_string(*n) : std::string("none");
 }
 
-/// @brief `round_scaled` must agree with `round` bit for bit, in every rounding
-/// mode, for one `(x, p, n)` triple.
+/// @brief `round_scaled::round` must agree with `round_bits::round` bit for
+/// bit, in every rounding mode, for one `(x, p, n)` triple.
 template <std::floating_point T>
 void expect_matches(bit_float<T> x, prec_t p, std::optional<exp_t> n, const std::string& label) {
     for (const RM rm : MODES) {
-        const bit_float<T> want = mpfx::experimental::round<mpfx::Flags::NO_FLAGS>(x, p, n, rm);
+        const bit_float<T> want = mpfx::round_bits::round<mpfx::Flags::NO_FLAGS>(x, p, n, rm);
         const bit_float<T> got =
-            mpfx::experimental::round_scaled<mpfx::Flags::NO_FLAGS>(x, p, n, rm);
+            mpfx::round_scaled::round<mpfx::Flags::NO_FLAGS>(x, p, n, rm);
         ASSERT_EQ(got.to_bits(), want.to_bits())
             << "round_scaled<" << rm_name(rm) << ">("
             << describe(x.to_float())
@@ -271,7 +271,7 @@ void check_round_scaled_deep_subnormal() {
 }
 
 
-/// @brief Randomized differential test against the existing implementation.
+/// @brief Randomized differential test against `round_bits::round`.
 template <std::floating_point T>
 void check_round_scaled_random() {
     using params_t = typename bit_float<T>::params_t;
@@ -489,17 +489,18 @@ std::string describe_flags(uint32_t w) {
     return out;
 }
 
-/// @brief `round_scaled` must raise exactly the flags that `round` raises, and
+/// @brief `round_scaled::round` must raise exactly the flags `round_bits::round`
+/// raises, and
 /// return the same value, for one `(x, p, n)` triple in every rounding mode.
 template <std::floating_point T>
 void expect_flags_match(bit_float<T> x, prec_t p, std::optional<exp_t> n, const std::string& label) {
     for (const RM rm : MODES) {
         mpfx::flags.reset();
-        const bit_float<T> want = mpfx::experimental::round<mpfx::Flags::ALL_FLAGS>(x, p, n, rm);
+        const bit_float<T> want = mpfx::round_bits::round<mpfx::Flags::ALL_FLAGS>(x, p, n, rm);
         const uint32_t want_flags = flag_snapshot();
 
         mpfx::flags.reset();
-        const bit_float<T> got = mpfx::experimental::round_scaled<mpfx::Flags::ALL_FLAGS>(x, p, n, rm);
+        const bit_float<T> got = mpfx::round_scaled::round<mpfx::Flags::ALL_FLAGS>(x, p, n, rm);
         const uint32_t got_flags = flag_snapshot();
 
         ASSERT_EQ(got.to_bits(), want.to_bits())
@@ -572,19 +573,19 @@ ROUND_SCALED_TESTS(FlagsRandom, check_flags_random)
 // a second, independent oracle
 //
 
-/// @brief Rounds `x` through the legacy integer-significand path, which is a
-/// genuinely different algorithm from `experimental::round`.
+/// @brief Rounds `x` through `round_reference`, the original integer-significand
+/// implementation, which shares no code with either of the other two.
 ///
-/// This matters because the public `round(T, ...)` now delegates to
-/// `experimental::round`, so comparing the two only exercises one algorithm. The
-/// integer overload still reaches `round_finalize`/`encode` instead.
+/// This matters as a third witness: the tests above compare `round_scaled::round`
+/// against `round_bits::round`, and the `(m, exp)` overload of the public and the integer overload of the public
+/// `round` reaches `round_reference::round_finalize`, which is neither of them.
 ///
-/// Returns nothing for the cases the integer path cannot express: NaN and
+/// Returns nothing for the cases it cannot express: NaN and
 /// infinity have no `(m, exp)` form, signed zero loses its sign through an
 /// integer significand, and a result outside the range of `T` comes back as a
 /// finite `double` rather than saturating.
 template <std::floating_point T>
-std::optional<T> legacy_round(bit_float<T> x, prec_t p, std::optional<exp_t> n, RM rm) {
+std::optional<T> reference_round(bit_float<T> x, prec_t p, std::optional<exp_t> n, RM rm) {
     using limits = std::numeric_limits<T>;
     if (x.is_nar() || x.is_zero()) {
         return std::nullopt;
@@ -612,7 +613,7 @@ std::optional<T> legacy_round(bit_float<T> x, prec_t p, std::optional<exp_t> n, 
 /// subnormal (it draws exponents in `[-4, 4]`), which is why it missed this. Here
 /// `n` is absent, so `emin` is unbounded below and `xe >= emin` holds; `p >= 1`
 /// with no subnormalization keeps at least one digit, so `y != 0` holds too.
-/// The legacy integer path is checked to agree, as a second witness.
+/// `round_reference` is checked to agree, as a second witness.
 template <std::floating_point T>
 void check_carry_subnormal() {
     using params_t = typename bit_float<T>::params_t;
@@ -636,22 +637,22 @@ void check_carry_subnormal() {
         for (const RM rm : MODES) {
             mpfx::flags.reset();
             const bit_float<T> r =
-                mpfx::experimental::round<mpfx::Flags::ALL_FLAGS>(x, p, std::nullopt, rm);
+                mpfx::round_bits::round<mpfx::Flags::ALL_FLAGS>(x, p, std::nullopt, rm);
             const bool got_round = mpfx::flags.carry();
             const bool want = r.e() > x.e();
 
             mpfx::flags.reset();
-            mpfx::experimental::round_scaled<mpfx::Flags::ALL_FLAGS>(x, p, std::nullopt, rm);
+            mpfx::round_scaled::round<mpfx::Flags::ALL_FLAGS>(x, p, std::nullopt, rm);
             const bool got_scaled = mpfx::flags.carry();
 
             mpfx::flags.reset();
             mpfx::round<mpfx::Flags::ALL_FLAGS>(s ? -mag : mag, exp, p, std::nullopt, rm);
-            const bool want_legacy = mpfx::flags.carry();
+            const bool want_reference = mpfx::flags.carry();
 
             const std::string what = std::string("(") + describe(x.to_float())
                                    + ", p=" + std::to_string(p) + ") in " + rm_name(rm)
                                    + ", result " + describe(r.to_float());
-            ASSERT_EQ(want_legacy, want) << "carry: legacy path disagrees with the "
+            ASSERT_EQ(want_reference, want) << "carry: `round_reference` disagrees with the "
                                             "definition for " << what;
             ASSERT_EQ(got_round, want) << "carry: round " << what;
             ASSERT_EQ(got_scaled, want) << "carry: round_scaled " << what;
@@ -661,12 +662,12 @@ void check_carry_subnormal() {
 
 ROUND_SCALED_TESTS(CarrySubnormal, check_carry_subnormal)
 
-/// @brief Randomized differential test against the legacy integer path.
+/// @brief Randomized differential test against `round_reference`.
 template <std::floating_point T>
-void check_round_scaled_legacy() {
+void check_round_scaled_reference() {
     using params_t = typename bit_float<T>::params_t;
     using uint_t = typename bit_float<T>::uint_t;
-    static constexpr size_t N = N_LEGACY;
+    static constexpr size_t N = N_REFERENCE;
 
     std::mt19937_64 rng(0x1EACADEU);
     std::uniform_int_distribution<uint_t> bits_dist(0, ~static_cast<uint_t>(0));
@@ -682,24 +683,24 @@ void check_round_scaled_legacy() {
             coin(rng) ? std::optional<exp_t>(n_dist(rng)) : std::nullopt;
 
         for (const RM rm : MODES) {
-            const std::optional<T> want = legacy_round(x, p, n, rm);
+            const std::optional<T> want = reference_round(x, p, n, rm);
             if (!want.has_value()) {
                 continue;
             }
 
             checked++;
             const bit_float<T> got =
-                mpfx::experimental::round_scaled<mpfx::Flags::NO_FLAGS>(x, p, n, rm);
+                mpfx::round_scaled::round<mpfx::Flags::NO_FLAGS>(x, p, n, rm);
             ASSERT_TRUE(same_bits(got.to_float(), *want))
                 << "round_scaled<" << rm_name(rm) << ">(" << describe(x.to_float()) << ", p=" << p << ", n=" << describe_n(n) << ") = "
-                << describe(got.to_float()) << ", legacy path says " << describe(*want);
+                << describe(got.to_float()) << ", `round_reference` says " << describe(*want);
         }
     }
 
-    EXPECT_GT(checked, N) << "too few cases were comparable against the legacy path";
+    EXPECT_GT(checked, N) << "too few cases were comparable against `round_reference`";
 }
 
-ROUND_SCALED_TESTS(Legacy, check_round_scaled_legacy)
+ROUND_SCALED_TESTS(Reference, check_round_scaled_reference)
 
 //
 // exhaustive sweeps over the `float` encoding
@@ -725,9 +726,9 @@ void check_exhaustive_float(uint64_t stride) {
             for (uint64_t i = 0; i < (1ULL << 32); i += stride) {
                 const bit_float<float> x(static_cast<uint32_t>(i));
                 const bit_float<float> want =
-                    mpfx::experimental::round<mpfx::Flags::NO_FLAGS>(x, cfg.p, cfg.n, rm);
+                    mpfx::round_bits::round<mpfx::Flags::NO_FLAGS>(x, cfg.p, cfg.n, rm);
                 const bit_float<float> got =
-                    mpfx::experimental::round_scaled<mpfx::Flags::NO_FLAGS>(
+                    mpfx::round_scaled::round<mpfx::Flags::NO_FLAGS>(
                         x, cfg.p, cfg.n, rm);
                 if (got.to_bits() != want.to_bits()) [[unlikely]] {
                     FAIL() << "round_scaled<" << rm_name(rm)

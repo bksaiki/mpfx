@@ -1,13 +1,13 @@
 /// @file benchmark_round_scaled.cpp
-/// @brief Compares the scale-and-truncate rounding implementations against the
-/// existing integer-domain one.
+/// @brief Compares the scale-and-truncate rounding implementation, which the public
+/// `round` uses, against the integer-domain reference.
 ///
 /// Each is measured with no status flags and with all of them, since everything
 /// reachable from `Context` asks for `ALL_FLAGS` and the two do not pay the same
 /// price for them:
 ///
-///   base_nf, base_af      `experimental::round`, the integer-domain implementation
-///   scaled_nf, scaled_af  `round_scaled`, the scaled implementation
+///   base_nf, base_af      `round_bits::round`, the integer-domain implementation
+///   scaled_nf, scaled_af  `round_scaled::round`, the scaled implementation
 ///
 /// Compare like with like: the relative table reports each against the baseline at
 /// the matching flag mask.
@@ -79,13 +79,13 @@ template <Impl impl, RM rm, std::floating_point T>
 inline bit_float<T> apply(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
     using namespace mpfx;
     if constexpr (impl == Impl::BASE_NF) {
-        return experimental::round<rm, Flags::NO_FLAGS>(x, p, n);
+        return round_bits::round<rm, Flags::NO_FLAGS>(x, p, n);
     } else if constexpr (impl == Impl::BASE_AF) {
-        return experimental::round<rm, Flags::ALL_FLAGS>(x, p, n);
+        return round_bits::round<rm, Flags::ALL_FLAGS>(x, p, n);
     } else if constexpr (impl == Impl::SCALED_NF) {
-        return experimental::round_scaled<rm, Flags::NO_FLAGS>(x, p, n);
+        return round_scaled::round<rm, Flags::NO_FLAGS>(x, p, n);
     } else {
-        return experimental::round_scaled<rm, Flags::ALL_FLAGS>(x, p, n);
+        return round_scaled::round<rm, Flags::ALL_FLAGS>(x, p, n);
     }
 }
 

@@ -259,15 +259,15 @@ TEST(TestRound, TestRoundWithNFixed) {
 
 TEST(TestRound, TestRoundBitFloat) {
     EXPECT_EQ(
-        experimental::round<RM::RNE>(bit_float<float>(0.0f), 1, std::nullopt).to_float(),
+        round_bits::round<RM::RNE>(bit_float<float>(0.0f), 1, std::nullopt).to_float(),
         bit_float<float>(0.0f).to_float()
     );
     EXPECT_EQ(
-        experimental::round<RM::RNE>(bit_float<float>(1.0f), 1, std::nullopt).to_float(),
+        round_bits::round<RM::RNE>(bit_float<float>(1.0f), 1, std::nullopt).to_float(),
         bit_float<float>(1.0f).to_float()
     );
     EXPECT_EQ(
-        experimental::round<RM::RTZ>(bit_float<float>(3.0f), 1, std::nullopt).to_float(),
+        round_bits::round<RM::RTZ>(bit_float<float>(3.0f), 1, std::nullopt).to_float(),
         bit_float<float>(2.0f).to_float()
     );
 }
@@ -303,7 +303,7 @@ TEST(TestRound, TestRoundBitFloatCompareRNE) {
 
         // round via both methods and compare results
         float y_expect = round(v, prec, n, rm);
-        float y = experimental::round<rm>(bf, prec, n).to_float();
+        float y = round_bits::round<rm>(bf, prec, n).to_float();
         EXPECT_EQ(y, y_expect);
     }
 }
@@ -339,7 +339,7 @@ TEST(TestRound, TestRoundBitFloatCompareRTZ) {
 
         // round via both methods and compare results
         float y_expect = round(v, prec, n, rm);
-        float y = experimental::round<rm>(bf, prec, n).to_float();
+        float y = round_bits::round<rm>(bf, prec, n).to_float();
         EXPECT_EQ(y, y_expect);
     }
 }
@@ -375,7 +375,7 @@ TEST(TestRound, TestRoundBitFloatCompareRAZ) {
 
         // round via both methods and compare results
         float y_expect = round(v, prec, n, rm);
-        float y = experimental::round<rm>(bf, prec, n).to_float();
+        float y = round_bits::round<rm>(bf, prec, n).to_float();
         EXPECT_EQ(y, y_expect);
     }
 }
@@ -411,7 +411,7 @@ TEST(TestRound, TestRoundBitFloatCompareRTO) {
 
         // round via both methods and compare results
         float y_expect = round(v, prec, n, rm);
-        float y = experimental::round<rm>(bf, prec, n).to_float();
+        float y = round_bits::round<rm>(bf, prec, n).to_float();
         EXPECT_EQ(y, y_expect);
     }
 }
