@@ -9,6 +9,7 @@ set(TEST_SOURCES
     test_flags.cpp
     test_ops.cpp
     test_round.cpp
+    test_round_scaled.cpp
     test_eft.cpp
 )
 

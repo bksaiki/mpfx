@@ -437,13 +437,15 @@ public:
 
     /// @brief Computes `self + sgn(self) * 2^exp`.
     ///
-    /// Assumes that `self != 0` and that `self + sgn(self) * 2^exp`
-    /// is representable in the type of `self`.
+    /// Assumes that `self + sgn(self) * 2^exp` is representable in the type of
+    /// `self`. Zero is permitted, unlike in `next_toward_zero`: the increment
+    /// takes its direction from the sign bit, so `+/-0` gives `+/-2^exp`. That is
+    /// the case rounding reaches when no digit is representable and the kept part
+    /// is a signed zero.
     ///
     /// @param exp the exponent of the increment
     /// @return the result of the increment as a `bit_float`
     constexpr bit_float next_away_zero(exp_t exp) const {
-        MPFX_DEBUG_ASSERT(!is_zero(), "self must be nonzero");
         MPFX_DEBUG_ASSERT(!is_nar(), "self must not be NaN or Inf");
 
         // compute the increment

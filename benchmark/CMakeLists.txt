@@ -12,6 +12,12 @@ target_link_libraries(benchmark_round
     ${MPFR_LIBRARY}
 )
 
+# Rounding-layer microbenchmark: the scale-and-truncate implementation against
+# the integer-domain one, swept over both container types, every rounding mode,
+# and several input distributions (CSV output). Needs no reference oracle.
+add_executable(benchmark_round_scaled benchmark_round_scaled.cpp)
+target_link_libraries(benchmark_round_scaled mpfx)
+
 # Comprehensive per-op benchmark: every MPFX engine vs MPFR/SoftFloat/FloppyFloat,
 # swept over the f32 and f64 container types (CSV output).
 add_executable(benchmark_ops benchmark_ops.cpp)
