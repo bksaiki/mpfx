@@ -2,13 +2,16 @@
 /// @brief Compares the scale-and-truncate rounding implementations against the
 /// existing integer-domain one.
 ///
-/// Both implementations are measured with `NO_FLAGS` so that the comparison
-/// is apples to apples - the existing implementation's flag work, `round_tiny_after`
-/// in particular, is a large part of its cost and `round_scaled` does not compute
-/// flags at all:
+/// Both implementations are measured twice, once computing no status flags and once
+/// computing all of them, since everything reachable from `Context` asks for
+/// `ALL_FLAGS` and the two implementations do not pay the same price for them:
 ///
-///   base   `experimental::round`, the integer-domain implementation
-///   scaled `round_scaled`, the scaled implementation
+///   base_nf, base_af      `experimental::round`, the integer-domain implementation
+///   scaled_nf, scaled_af  `round_scaled`, the scaled implementation
+///
+/// The `nf`/`af` pairs are what to compare - a flag-computing implementation against
+/// a flag-computing one. The relative table reports each against the matching
+/// baseline for that reason.
 ///
 /// The rounding mode is a compile-time parameter here, so the numbers isolate the
 /// cost of rounding rather than of the runtime mode dispatch that `Context::round`
@@ -45,17 +48,19 @@ using mpfx::prec_t;
 using mpfx::RM;
 
 /// @brief Which implementation to measure.
-enum class Impl { BASE, SCALED };
+enum class Impl { BASE_NF, BASE_AF, SCALED_NF, SCALED_AF };
 
-constexpr Impl ALL_IMPLS[] = {Impl::BASE, Impl::SCALED};
+constexpr Impl ALL_IMPLS[] = {Impl::BASE_NF, Impl::BASE_AF, Impl::SCALED_NF, Impl::SCALED_AF};
 constexpr RM ALL_MODES[] = {
     RM::RNE, RM::RNA, RM::RTP, RM::RTN, RM::RTZ, RM::RAZ, RM::RTO, RM::RTE,
 };
 
 const char* impl_name(Impl impl) {
     switch (impl) {
-    case Impl::BASE: return "base";
-    case Impl::SCALED: return "scaled";
+    case Impl::BASE_NF: return "base_nf";
+    case Impl::BASE_AF: return "base_af";
+    case Impl::SCALED_NF: return "scaled_nf";
+    case Impl::SCALED_AF: return "scaled_af";
     }
     return "?";
 }
@@ -78,11 +83,14 @@ const char* rm_name(RM rm) {
 template <Impl impl, RM rm, std::floating_point T>
 inline bit_float<T> apply(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
     using namespace mpfx;
-    static constexpr auto F = Flags::NO_FLAGS;
-    if constexpr (impl == Impl::BASE) {
-        return experimental::round<rm, F>(x, p, n);
+    if constexpr (impl == Impl::BASE_NF) {
+        return experimental::round<rm, Flags::NO_FLAGS>(x, p, n);
+    } else if constexpr (impl == Impl::BASE_AF) {
+        return experimental::round<rm, Flags::ALL_FLAGS>(x, p, n);
+    } else if constexpr (impl == Impl::SCALED_NF) {
+        return experimental::round_scaled<rm, Flags::NO_FLAGS>(x, p, n);
     } else {
-        return experimental::round_scaled<rm, F>(x, p, n);
+        return experimental::round_scaled<rm, Flags::ALL_FLAGS>(x, p, n);
     }
 }
 
@@ -188,8 +196,10 @@ void run_row(const char* container, const Workload<T>& w, size_t reps,
     std::vector<double> passes[N_IMPLS];
 
     for (size_t r = 0; r < reps; r++) {
-        passes[0].push_back(time_pass<Impl::BASE, rm>(w.xs, w.p, w.n));
-        passes[1].push_back(time_pass<Impl::SCALED, rm>(w.xs, w.p, w.n));
+        passes[0].push_back(time_pass<Impl::BASE_NF, rm>(w.xs, w.p, w.n));
+        passes[1].push_back(time_pass<Impl::BASE_AF, rm>(w.xs, w.p, w.n));
+        passes[2].push_back(time_pass<Impl::SCALED_NF, rm>(w.xs, w.p, w.n));
+        passes[3].push_back(time_pass<Impl::SCALED_AF, rm>(w.xs, w.p, w.n));
     }
 
     Timing t[N_IMPLS];
@@ -205,11 +215,9 @@ void run_row(const char* container, const Workload<T>& w, size_t reps,
     raw += line;
     raw += "\n";
 
-    // speedup relative to the existing implementation, on the minimums
-    k = snprintf(line, sizeof(line), "%s,%s,%s", container, w.name, rm_name(rm));
-    for (const auto& x : t) {
-        k += snprintf(line + k, sizeof(line) - k, ",%.2f", t[0].min / x.min);
-    }
+    // speedup over the existing implementation at the same flag mask, on the minimums
+    snprintf(line, sizeof(line), "%s,%s,%s,%.2f,%.2f", container, w.name, rm_name(rm),
+             t[0].min / t[2].min, t[1].min / t[3].min);
     rel += line;
     rel += "\n";
 }
@@ -250,11 +258,7 @@ int main(int argc, char** argv) {
     }
     std::printf("\n%s\n", raw.c_str());
 
-    std::printf("# speedup over base, on the minimums (higher is better)\n");
-    std::printf("container,workload,mode");
-    for (const auto impl : ALL_IMPLS) {
-        std::printf(",%s", impl_name(impl));
-    }
-    std::printf("\n%s\n", rel.c_str());
+    std::printf("# speedup of scaled over base at the same flag mask, on the minimums\n");
+    std::printf("container,workload,mode,no_flags,all_flags\n%s\n", rel.c_str());
     return 0;
 }
