@@ -1,5 +1,8 @@
 #pragma once
 
+#include <concepts>
+#include <cstdint>
+
 // Architecture-specific includes and definitions
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
     #include <xmmintrin.h>
@@ -105,32 +108,35 @@ namespace arch {
     static constexpr unsigned int EXCEPT_UNDERFLOW = 0x08;
     static constexpr unsigned int EXCEPT_INEXACT = 0x10;
 
+    // FPCR and FPSR are 64-bit system registers and `mrs`/`msr` take an X
+    // register, so the asm operands below must be 64-bit wide to match.
+
     /// @brief Get the current floating-point status and control register.
     /// @return Architecture-specific floating-point status register value.
     inline unsigned int get_fpscr() {
-        unsigned int fpcr;
+        uint64_t fpcr;
         __asm__ volatile("mrs %0, fpcr" : "=r"(fpcr));
-        return fpcr;
+        return static_cast<unsigned int>(fpcr);
     }
-    
+
     /// @brief Set the floating-point status and control register.
     /// @param csr Architecture-specific floating-point status register value to set.
     inline void set_fpscr(unsigned int csr) {
-        __asm__ volatile("msr fpcr, %0" : : "r"(csr));
+        const uint64_t fpcr = csr;
+        __asm__ volatile("msr fpcr, %0" : : "r"(fpcr));
     }
-    
+
     /// @brief Clear floating-point exception flags.
     inline void clear_exceptions() {
-        unsigned int fpsr = 0;
-        __asm__ volatile("msr fpsr, %0" : : "r"(fpsr));
+        __asm__ volatile("msr fpsr, xzr");
     }
 
     /// @brief Get the current floating-point exception flags.
     /// @return Current exception flags.
     inline unsigned int get_exceptions() {
-        unsigned int fpsr;
+        uint64_t fpsr;
         __asm__ volatile("mrs %0, fpsr" : "=r"(fpsr));
-        return fpsr & 0x1F; // Extract exception flags (bits 0-4)
+        return static_cast<unsigned int>(fpsr) & 0x1F; // Extract exception flags (bits 0-4)
     }
 
     /// @brief Get the current rounding mode.
@@ -151,12 +157,12 @@ namespace arch {
     /// the rounding mode to RTZ and clearing exceptions.
     /// @return Previous rounding mode.
     inline int prepare_rto() {
-        unsigned int fpcr;
+        uint64_t fpcr;
         __asm__ volatile("mrs %0, fpcr" : "=r"(fpcr));
-        const int old_mode = (fpcr >> 22) & 0x3;  // Extract old rounding mode
-        fpcr = (fpcr & ~0xC00000) | (0x3 << 22);  // Set RTZ mode
+        const int old_mode = (fpcr >> 22) & 0x3;        // Extract old rounding mode
+        fpcr = (fpcr & ~0xC00000ull) | (0x3ull << 22);  // Set RTZ mode
         __asm__ volatile("msr fpcr, %0" : : "r"(fpcr));
-        __asm__ volatile("msr fpsr, %0" : : "r"(0)); // Clear exceptions
+        __asm__ volatile("msr fpsr, xzr"); // Clear exceptions
         return old_mode;
     }
 
@@ -164,11 +170,11 @@ namespace arch {
     /// @param old_mode Previous rounding mode.
     /// @return Exception flags.
     inline int rto_status(int old_mode) {
-        unsigned int fpsr, fpcr;
+        uint64_t fpsr, fpcr;
         __asm__ volatile("mrs %0, fpsr" : "=r"(fpsr));
         __asm__ volatile("mrs %0, fpcr" : "=r"(fpcr));
         const int exceptions = fpsr & 0x1E;       // Extract overflow, underflow, inexact flags
-        fpcr = (fpcr & ~0xC00000) | ((old_mode & 0x3) << 22);  // Restore rounding mode
+        fpcr = (fpcr & ~0xC00000ull) | (static_cast<uint64_t>(old_mode & 0x3) << 22);  // Restore rounding mode
         __asm__ volatile("msr fpcr, %0" : : "r"(fpcr));
         return exceptions;
     }
@@ -243,6 +249,37 @@ namespace arch {
     }
 
 #endif
+
+/// Tells the compiler that the enclosing block inspects the floating-point
+/// environment, so it may not assume the default rounding mode or that the status
+/// flags go unread. Clang honors this by emitting constrained FP operations, which
+/// carry side effects and cannot drift across the register accesses. GCC does not
+/// implement the pragma (it warns and ignores it), so `fp_barrier` below remains
+/// the only protection there.
+#if defined(__clang__)
+    #define MPFX_FENV_ACCESS_ON _Pragma("STDC FENV_ACCESS ON")
+#else
+    #define MPFX_FENV_ACCESS_ON
+#endif
+
+/// @brief Forces `v` to be materialized here, ordering its computation against
+/// neighboring `asm volatile` statements.
+///
+/// Floating-point arithmetic carries no dependency on the register accesses that
+/// bracket a round-to-odd operation, and `FENV_ACCESS` is off by default, so the
+/// compiler is otherwise free to schedule the operation outside that window and
+/// test status flags it never set.
+template <std::floating_point T>
+inline void fp_barrier(T& v) {
+#if defined(MPFX_ARCH_X86)
+    __asm__ volatile("" : "+x"(v));
+#elif defined(MPFX_ARCH_ARM64)
+    __asm__ volatile("" : "+w"(v));
+#else
+    volatile T tmp = v;
+    v = tmp;
+#endif
+}
 
 } // end namespace arch
 } // end namespace mpfx

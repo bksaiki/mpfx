@@ -6,6 +6,7 @@ jobs:
   build-and-test:
     name: ${{ matrix.os }} (${{ matrix.arch }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -51,7 +52,8 @@ jobs:
       - name: Run tests
         run: |
           cd build
-          ctest --output-on-failure --verbose
+          set -o pipefail
+          ctest --output-on-failure --timeout 300 2>&1 | head -c 2000000
 
       - name: Run examples
         run: |

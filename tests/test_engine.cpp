@@ -1,3 +1,5 @@
+#include <bit>
+#include <cstdint>
 #include <random>
 
 #include <mpfx.hpp>
@@ -109,4 +111,32 @@ TEST(TestEngine, TestEFTEngineFma) {
         const double w = mpfx::engine_eft::fma(x, y, z, 53);
         EXPECT_EQ(w_ref, w);
     }
+}
+
+// `engine_fp` reads the hardware status flags, so only the operation itself may
+// run between clearing and reading them. Operands are deliberately produced by
+// inexact arithmetic here: if that arithmetic drifts into the window its rounding
+// is read back as the operation's and exact results grow a sticky bit, and if the
+// operation drifts out the flags are read before it runs and the sticky bit is
+// lost. Both are scheduling artifacts, so this pins the resulting values.
+TEST(TestEngine, TestFPEngineFlagIsolation) {
+    volatile double vone = 1.0, vthree = 3.0, vtiny = 0x1p-60;
+    const double third = vone / vthree; // inexact
+    const double one = vone;
+
+    // exact operations must come back untouched
+    EXPECT_EQ(std::bit_cast<uint64_t>(mpfx::engine_fp::add(third, -third, 53)),
+              std::bit_cast<uint64_t>(0.0));
+    EXPECT_EQ(std::bit_cast<uint64_t>(mpfx::engine_fp::mul(third, vone, 53)),
+              std::bit_cast<uint64_t>(third));
+
+    // 1 + 2^-60 truncates to 1.0, whose LSB is clear, so the sticky bit must show
+    EXPECT_EQ(std::bit_cast<uint64_t>(mpfx::engine_fp::add(one, vtiny, 53)),
+              std::bit_cast<uint64_t>(1.0) | 1);
+
+    // and either way the two engines must agree
+    EXPECT_EQ(mpfx::engine_fp::add(third, -third, 53), mpfx::engine_eft::add(third, -third, 53));
+    EXPECT_EQ(mpfx::engine_fp::add(one, vtiny, 53), mpfx::engine_eft::add(one, vtiny, 53));
+    EXPECT_EQ(mpfx::engine_fp::mul(third, vthree, 53), mpfx::engine_eft::mul(third, vthree, 53));
+    EXPECT_EQ(mpfx::engine_fp::div(one, vthree, 53), mpfx::engine_eft::div(one, vthree, 53));
 }
