@@ -517,25 +517,13 @@ struct ScaledResult {
     bool inexact; // digits were discarded
 };
 
-template <RM rm, bool Biased, std::floating_point T>
-inline ScaledResult<T> round_scaled_split(bit_float<T> x, exp_t n) {
-    using params_t = typename bit_float<T>::params_t;
-    using uint_t = typename bit_float<T>::uint_t;
-
-    // Move the split point onto the binary point. Every representable digit of
-    // `x` is then integral and every unrepresentable digit is fractional, so the
-    // scaled value lies in `[1, 2^p)`, offset by the bias when `x` is subnormal.
-    //
-    // Both scalings are exponent arithmetic on the encoding, as in `scale_bits`,
-    // and one shifted constant serves both directions: subtracting `d` is the
-    // scaling by `-exp` and adding it back is the scaling by `exp`, since the
-    // wrapped sum is the two's complement either way.
-    const exp_t exp = n + 1;
-    static constexpr uint_t bias = Biased ? static_cast<uint_t>(params_t::IMPLICIT1) : uint_t{0};
-    const uint_t d = static_cast<uint_t>(exp) << params_t::M;
-    const uint_t yb = static_cast<uint_t>(x.to_bits() + bias - d);
-    const T y = bit_float<T>(yb).to_float();
-
+/// @brief Rounds `y` to an integral value in mode `rm`, with every mode pinned
+/// rather than read from the dynamic rounding state. This is the kernel of the
+/// scaled formulation: with the split point on the binary point, six of the
+/// eight modes are a single round-to-integral instruction and the other two
+/// have a closed form. Assumes `1 <= |y| <= 2^P`, as the scaling guarantees.
+template <RM rm, std::floating_point T>
+inline T round_to_integral(T y) {
     // case split on rounding mode
     T t;
     if constexpr (rm == RM::RNE) {
@@ -602,12 +590,33 @@ inline ScaledResult<T> round_scaled_split(bit_float<T> x, exp_t n) {
         MPFX_DEBUG_ASSERT(false, "unreachable");
         t = y;
     }
+    return t;
+}
+
+template <RM rm, bool Biased, std::floating_point T>
+inline ScaledResult<T> round_scaled_split(bit_float<T> x, exp_t n) {
+    using params_t = typename bit_float<T>::params_t;
+    using uint_t = typename bit_float<T>::uint_t;
+
+    // Move the split point onto the binary point. Every representable digit of
+    // `x` is then integral and every unrepresentable digit is fractional, so the
+    // scaled value lies in `[1, 2^p)`, offset by the bias when `x` is subnormal.
+    //
+    // Both scalings are exponent arithmetic on the encoding, as in `scale_bits`,
+    // and one shifted constant serves both directions: subtracting `d` is the
+    // scaling by `-exp` and adding it back is the scaling by `exp`, since the
+    // wrapped sum is the two's complement either way.
+    const exp_t exp = n + 1;
+    static constexpr uint_t bias = Biased ? static_cast<uint_t>(params_t::IMPLICIT1) : uint_t{0};
+    const uint_t d = static_cast<uint_t>(exp) << params_t::M;
+    const uint_t yb = static_cast<uint_t>(x.to_bits() + bias - d);
+    const T t = round_to_integral<rm>(bit_float<T>(yb).to_float());
 
     // `t` is integral, so `y` differs from it exactly when digits were discarded,
     // and this survives the bias, which shifts `y` and `t` by the same integer.
     // The comparison is on the encodings, which `t` needs to extract anyway: every
-    // exact case above reproduces `y` bit for bit, and neither zero nor NaN can
-    // appear here, so distinct encodings mean distinct values.
+    // exact case in `round_to_integral` reproduces `y` bit for bit, and neither
+    // zero nor NaN can appear here, so distinct encodings mean distinct values.
     const uint_t tb = bit_float<T>(t).to_bits();
     const bool inexact = tb != yb;
 
@@ -871,49 +880,62 @@ bit_float<T> round_scaled(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
     // Zero and subnormal `x` have a zero exponent field, whose decrement wraps
     // to the top, and Inf/NaN sit exactly at `EMASK`, so one unsigned
     // comparison covers all four.
-    const uint_t ebits = x.ebits();
+    const uint_t bits = x.to_bits();
+    const uint_t ebits = static_cast<uint_t>(bits & params_t::EMASK);
     if (static_cast<uint_t>(ebits - 1) >= static_cast<uint_t>(params_t::EMASK) - 1) {
         return round_scaled_general<rm, FlagMask>(x, p, n);
     }
 
-    // the split point of the unsubnormalized format; `x` is normal, so this
-    // needs no `countl_zero`. `p >= 1` keeps `n_min` strictly below `e`, which
-    // the split at the bottom relies on.
-    const exp_t e = static_cast<exp_t>(ebits >> params_t::M) - params_t::BIAS;
-    const exp_t n_min = e - static_cast<exp_t>(p);
+    // Every remaining test lives on the biased exponent `ebits >> M`. A normal
+    // `x` has `e = (ebits >> M) - BIAS`, so any bound on `e` or on the split
+    // point `n_min = e - p` is a bound on `ebits >> M` by a value built from
+    // `p` and `n` alone - the arguments a caller holds fixed - never from `x`.
+    const int64_t eb = static_cast<int64_t>(ebits >> params_t::M);
 
-    // Subnormalization wins the `max` exactly when `n_min < *n`, which is also
+    // subnormalization wins the `max` exactly when `n_min < *n`, which is also
     // exactly when `x` is tiny before rounding, so one comparison rules out
-    // every subnormal-format and underflow concern at once.
-    if (n.has_value() && n_min < *n) {
+    // every subnormal-format and underflow concern at once
+    if (n.has_value() && eb < *n + static_cast<int64_t>(p) + params_t::BIAS) {
         return round_scaled_general<rm, FlagMask>(x, p, n);
     }
 
     // fast path: the split point is below every digit `x` can hold, so `x` is
     // already representable. Exact and not tiny, so no flag can raise.
-    if (n_min < params_t::EXPMIN) {
+    if (eb < params_t::EXPMIN + static_cast<int64_t>(p) + params_t::BIAS) {
         return x;
     }
 
-    // `x` is normal with `EXPMIN <= n_min < e`: exactly the split's fast shape
-    const ScaledResult<T> r = round_scaled_split<rm, false>(x, n_min);
+    // `x` is normal with `EXPMIN <= n_min < e`: the split's fast shape, where
+    // scaling by `2^-(n_min + 1)` sends every `x` to the same binade. `|y|`
+    // lands in `[2^(p-1), 2^p)`, so the scaled exponent field is the constant
+    // `BIAS + p - 1` (`p >= 1` keeps it a valid normal field) and the whole
+    // scale factor is `ebits` minus that constant - the same quantity
+    // `round_scaled_split` builds from the split point, without needing `e`.
+    const uint_t y_field = static_cast<uint_t>(params_t::BIAS + p - 1) << params_t::M;
+    const uint_t scale = static_cast<uint_t>(ebits - y_field);
+    const uint_t yb = static_cast<uint_t>(bits - scale);
+    const T t = round_to_integral<rm>(bit_float<T>(yb).to_float());
+    const uint_t tb = bit_float<T>(t).to_bits();
+    const bit_float<T> r(static_cast<uint_t>(tb + scale));
 
-    // set inexact flag if requested
+    // set inexact flag if requested; exactness is bitwise, see `round_scaled_split`
     if constexpr (CHECK_INEXACT) {
-        if (r.inexact) {
+        if (tb != yb) {
             flags.set_inexact();
         }
     }
 
-    // not tiny, so only the carry flag remains; see `round_scaled_general` for
-    // why the power-of-two test comes first
+    // Not tiny, so only the carry flag remains. Rounding here never leaves the
+    // binade downward - `|y| >= 2^(p-1)` keeps every mode's result at or above
+    // it - so a carry is exactly a changed exponent field, the saturation onto
+    // Inf included.
     if constexpr (CHECK_CARRY) {
-        if (r.value.mbits() == 0 && r.value.compare_mag(x) > 0) {
+        if ((r.to_bits() & params_t::EMASK) != ebits) {
             flags.set_carry();
         }
     }
 
-    return r.value;
+    return r;
 }
 
 /// @brief Rounding of a `bit_float` type by scaling, dispatching on a runtime
