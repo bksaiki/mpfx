@@ -513,6 +513,124 @@ ROUND_SCALED_TESTS(Random, check_round_scaled_random)
 ROUND_SCALED_TESTS(RandomSubnormal, check_round_scaled_random_subnormal)
 
 //
+// status flags
+//
+
+/// @brief Snapshots the status flags that rounding is responsible for.
+uint32_t flag_snapshot() {
+    uint32_t w = 0;
+    if (mpfx::flags.tiny_before_rounding())       { w |= mpfx::Flags::TINY_BEFORE_ROUNDING_FLAG; }
+    if (mpfx::flags.tiny_after_rounding())        { w |= mpfx::Flags::TINY_AFTER_ROUNDING_FLAG; }
+    if (mpfx::flags.underflow_before_rounding())  { w |= mpfx::Flags::UNDERFLOW_BEFORE_ROUNDING_FLAG; }
+    if (mpfx::flags.underflow_after_rounding())   { w |= mpfx::Flags::UNDERFLOW_AFTER_ROUNDING_FLAG; }
+    if (mpfx::flags.inexact())                    { w |= mpfx::Flags::INEXACT_FLAG; }
+    if (mpfx::flags.carry())                      { w |= mpfx::Flags::CARRY_FLAG; }
+    return w;
+}
+
+/// @brief Names the flags in a mask, for failure messages.
+std::string describe_flags(uint32_t w) {
+    if (w == 0) {
+        return "none";
+    }
+    std::string out;
+    const std::pair<uint32_t, const char*> names[] = {
+        {mpfx::Flags::TINY_BEFORE_ROUNDING_FLAG, "tiny_before"},
+        {mpfx::Flags::TINY_AFTER_ROUNDING_FLAG, "tiny_after"},
+        {mpfx::Flags::UNDERFLOW_BEFORE_ROUNDING_FLAG, "underflow_before"},
+        {mpfx::Flags::UNDERFLOW_AFTER_ROUNDING_FLAG, "underflow_after"},
+        {mpfx::Flags::INEXACT_FLAG, "inexact"},
+        {mpfx::Flags::CARRY_FLAG, "carry"},
+    };
+    for (const auto& [bit, nm] : names) {
+        if (w & bit) {
+            if (!out.empty()) { out += "|"; }
+            out += nm;
+        }
+    }
+    return out;
+}
+
+/// @brief `round_scaled` must raise exactly the flags that `round` raises, and
+/// return the same value, for one `(x, p, n)` triple in every rounding mode.
+template <std::floating_point T>
+void expect_flags_match(bit_float<T> x, prec_t p, std::optional<exp_t> n, const std::string& label) {
+    for (const RM rm : MODES) {
+        mpfx::flags.reset();
+        const bit_float<T> want = mpfx::experimental::round<mpfx::Flags::ALL_FLAGS>(x, p, n, rm);
+        const uint32_t want_flags = flag_snapshot();
+
+        mpfx::flags.reset();
+        const bit_float<T> got = mpfx::experimental::round_scaled<mpfx::Flags::ALL_FLAGS>(x, p, n, rm);
+        const uint32_t got_flags = flag_snapshot();
+
+        ASSERT_EQ(got.to_bits(), want.to_bits())
+            << "value: round_scaled<" << rm_name(rm) << ">(" << describe(x.to_float())
+            << ", p=" << p << ", n=" << describe_n(n) << ") [" << label << "]";
+        ASSERT_EQ(got_flags, want_flags)
+            << "flags: round_scaled<" << rm_name(rm) << ">(" << describe(x.to_float())
+            << ", p=" << p << ", n=" << describe_n(n) << ") raised {" << describe_flags(got_flags)
+            << "}, round raised {" << describe_flags(want_flags) << "} [" << label << "]";
+    }
+}
+
+/// @brief Flags over the interesting values, crossed with the interesting `(p, n)`.
+template <std::floating_point T>
+void check_flags_edges() {
+    using params_t = typename bit_float<T>::params_t;
+    static constexpr prec_t P = params_t::P;
+    const std::vector<prec_t> precs = {1, 2, P / 2, P - 1, P};
+    // The tininess flags are defined against `emin = n + p`, the target format's
+    // smallest normalized exponent, so `n` is kept low enough that `emin` stays
+    // representable in the container. Above that both implementations return
+    // artifacts of infinity arithmetic - `2^emin` is not a number the container
+    // holds - and the configuration is meaningless anyway.
+    const std::vector<std::optional<exp_t>> ns = {
+        std::nullopt, params_t::EXPMIN - 1, params_t::EXPMIN + 1,
+        params_t::EMIN - static_cast<exp_t>(P), -1,
+        params_t::EMAX - static_cast<exp_t>(P),
+    };
+    for (const auto& [name, x] : edge_values<T>()) {
+        for (const prec_t p : precs) {
+            for (const auto& n : ns) {
+                expect_flags_match<T>(x, p, n, name);
+            }
+        }
+    }
+}
+
+/// @brief Flags over uniform and subnormal random encodings.
+template <std::floating_point T>
+void check_flags_random() {
+    using params_t = typename bit_float<T>::params_t;
+    using uint_t = typename bit_float<T>::uint_t;
+
+    std::mt19937_64 rng(0xF1A65U);
+    std::uniform_int_distribution<uint_t> bits_dist(0, ~static_cast<uint_t>(0));
+    std::uniform_int_distribution<uint_t> mant_dist(1, static_cast<uint_t>(params_t::MMASK));
+    std::uniform_int_distribution<prec_t> prec_dist(1, params_t::P);
+    std::bernoulli_distribution coin(0.5);
+
+    // `n` is drawn near the bottom of the format, since the tininess flags only
+    // engage when `n` is present and `x` falls below `2^(n+p)`
+    std::uniform_int_distribution<exp_t> n_low(params_t::EXPMIN - 1, params_t::EMIN + 4);
+    std::uniform_int_distribution<exp_t> n_any(params_t::EXPMIN - 1,
+                                              params_t::EMAX - static_cast<exp_t>(params_t::P));
+
+    for (size_t i = 0; i < N_RANDOM; i++) {
+        const bool subnormal = coin(rng);
+        const bit_float<T> x(static_cast<uint_t>(subnormal ? mant_dist(rng) : bits_dist(rng)));
+        const prec_t p = prec_dist(rng);
+        const std::optional<exp_t> n =
+            coin(rng) ? std::optional<exp_t>(coin(rng) ? n_low(rng) : n_any(rng)) : std::nullopt;
+        expect_flags_match<T>(x, p, n, subnormal ? "random subnormal" : "random");
+    }
+}
+
+ROUND_SCALED_TESTS(FlagsEdges, check_flags_edges)
+ROUND_SCALED_TESTS(FlagsRandom, check_flags_random)
+
+//
 // a second, independent oracle
 //
 

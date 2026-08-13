@@ -508,8 +508,17 @@ inline bit_float<T> round_all_lost(bit_float<T> x, exp_t e, exp_t n) {
 /// depend on and the ties that RNE breaks - so there is nothing to undo in
 /// between. For a normal `x` the bias is zero and the whole thing vanishes, which
 /// is why one code path serves both.
+/// @brief A rounded value together with what the status flags need to know about
+/// how it was reached. `inexact` falls out of a comparison the scaled form already
+/// has in hand, and constant-folds away when no flag asks for it.
+template <std::floating_point T>
+struct ScaledResult {
+    bit_float<T> value;
+    bool inexact; // digits were discarded
+};
+
 template <RM rm, bool Biased, std::floating_point T>
-inline bit_float<T> round_scaled_split(bit_float<T> x, exp_t n) {
+inline ScaledResult<T> round_scaled_split(bit_float<T> x, exp_t n) {
     using params_t = typename bit_float<T>::params_t;
     using uint_t = typename bit_float<T>::uint_t;
 
@@ -579,18 +588,22 @@ inline bit_float<T> round_scaled_split(bit_float<T> x, exp_t n) {
         t = y;
     }
 
+    // `t` is integral, so `y` differs from it exactly when digits were discarded.
+    // This survives the bias, which shifts `y` and `t` by the same integer.
+    const bool inexact = y != t;
+
     // scale back and remove the bias; `|t| >= 1`, so no sign is lost on the way
     const bit_float<T> ub = scale_bits(bit_float<T>(t), exp);
     if constexpr (Biased) {
-        return bit_float<T>(static_cast<uint_t>(ub.to_bits() - bias));
+        return {bit_float<T>(static_cast<uint_t>(ub.to_bits() - bias)), inexact};
     } else {
-        return ub;
+        return {ub, inexact};
     }
 }
 
 /// @brief Rounding of a `bit_float` type by scaling.
 /// @tparam rm the rounding mode
-/// @tparam FlagMask the mask of flags to set; only `NO_FLAGS` is supported
+/// @tparam FlagMask the mask of flags to set
 /// @param x the `bit_float` value to round
 /// @param p the target precision to round to
 /// @param n optional minimum normalized exponent for subnormalization
@@ -598,10 +611,17 @@ inline bit_float<T> round_scaled_split(bit_float<T> x, exp_t n) {
 /// An alternative to `round` with identical results but a floating-point rather
 /// than an integer formulation. See `scale_bits` for the fast path and
 /// `round_all_lost` for the underflow-to-zero path.
-template <RM rm, flag_mask_t FlagMask = Flags::NO_FLAGS, std::floating_point T>
+template <RM rm, flag_mask_t FlagMask = Flags::ALL_FLAGS, std::floating_point T>
 bit_float<T> round_scaled(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
     using params_t = typename bit_float<T>::params_t;
-    MPFX_STATIC_ASSERT(FlagMask == Flags::NO_FLAGS, "round_scaled does not compute flags");
+
+    // which flags to check
+    static constexpr bool CHECK_TINY_BEFORE = FlagMask & Flags::TINY_BEFORE_ROUNDING_FLAG;
+    static constexpr bool CHECK_TINY_AFTER = FlagMask & Flags::TINY_AFTER_ROUNDING_FLAG;
+    static constexpr bool CHECK_UNDERFLOW_BEFORE = FlagMask & Flags::UNDERFLOW_BEFORE_ROUNDING_FLAG;
+    static constexpr bool CHECK_UNDERFLOW_AFTER = FlagMask & Flags::UNDERFLOW_AFTER_ROUNDING_FLAG;
+    static constexpr bool CHECK_INEXACT = FlagMask & Flags::INEXACT_FLAG;
+    static constexpr bool CHECK_CARRY = FlagMask & Flags::CARRY_FLAG;
     MPFX_DEBUG_ASSERT(p <= params_t::P, "target precision cannot exceed the precision of the container type");
     MPFX_DEBUG_ASSERT(!n.has_value() || *n + 1 >= params_t::EXPMIN, "subnormalization point must be at least EMIN - 1");
 
@@ -612,6 +632,13 @@ bit_float<T> round_scaled(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
 
     // fast path: zero
     if (x.is_zero()) {
+        // zero counts as tiny, both before and after
+        if constexpr (CHECK_TINY_BEFORE) {
+            flags.set_tiny_before_rounding();
+        }
+        if constexpr (CHECK_TINY_AFTER) {
+            flags.set_tiny_after_rounding();
+        }
         return x;
     }
 
@@ -619,19 +646,35 @@ bit_float<T> round_scaled(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
     const exp_t e = x.e();
     const exp_t n_min = e - static_cast<exp_t>(p);
     const exp_t n_act = n.has_value() ? std::max(n_min, *n) : n_min;
+    const exp_t emin = n.has_value() ? *n + static_cast<exp_t>(p) : std::numeric_limits<exp_t>::min();
+
+    // set tiny before rounding flag if requested
+    const bool tiny_before = e < emin;
+    if constexpr (CHECK_TINY_BEFORE) {
+        if (tiny_before) {
+            flags.set_tiny_before_rounding();
+        }
+    }
 
     // fast path: the split point is below every digit `x` can hold, so `x` is
     // already representable. This also keeps `n_act + 1` at or above `EXPMIN`,
     // which the scaling relies on. Only reachable for subnormal `x`.
     if (n_act < params_t::EXPMIN) {
+        // exact, so tininess after rounding matches tininess before
+        if constexpr (CHECK_TINY_AFTER) {
+            if (tiny_before) {
+                flags.set_tiny_after_rounding();
+            }
+        }
         return x;
     }
 
     // no digit is representable
+    ScaledResult<T> r;
     if (n_act >= e) {
-        return round_all_lost<rm>(x, e, n_act);
-    }
-
+        // `x` is nonzero and every digit was discarded, so this is always inexact
+        r = {round_all_lost<rm>(x, e, n_act), true};
+    } else
     // A subnormal is biased into the normal range first; see `round_scaled_split`.
     // Biasing unconditionally would remove this branch, and was measured: it costs
     // about 20% on every input, and only pays off once more than roughly one input
@@ -639,15 +682,80 @@ bit_float<T> round_scaled(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
     // subnormals need `|x| < 2^EMIN`, which emulating a narrower format in a wider
     // container never reaches, so the branch stays.
     if (x.ebits() != 0) {
-        return round_scaled_split<rm, false>(x, n_act);
+        r = round_scaled_split<rm, false>(x, n_act);
+    } else {
+        r = round_scaled_split<rm, true>(x, n_act);
     }
 
-    return round_scaled_split<rm, true>(x, n_act);
+    // set inexact flag if requested
+    if constexpr (CHECK_INEXACT) {
+        if (r.inexact) {
+            flags.set_inexact();
+        }
+    }
+
+    if (tiny_before) {
+        // underflow is tininess together with inexactness
+        if constexpr (CHECK_UNDERFLOW_BEFORE) {
+            if (r.inexact) {
+                flags.set_underflow_before_rounding();
+            }
+        }
+
+        if constexpr (CHECK_TINY_AFTER || CHECK_UNDERFLOW_AFTER) {
+            // Tiny after rounding asks whether the value would still fall below the
+            // smallest normal *were the exponent range unbounded*, so it cannot be
+            // read off `r`: that was rounded at the subnormalized split `n_act`,
+            // which is coarser and can reach `2^emin` when an unbounded rounding
+            // would not. Rounding again at `n_min` answers the question as asked.
+            //
+            // Only the binade directly below `2^emin` can reach it, since rounding
+            // raises the normalized exponent by at most one, so everything lower is
+            // tiny without further work. An exact result keeps its magnitude and is
+            // tiny too, and if `n_min` sits below every digit `x` holds then the
+            // unbounded rounding is exact.
+            bool tiny_after;
+            if (!r.inexact || e < emin - 1 || n_min < params_t::EXPMIN) {
+                tiny_after = true;
+            } else {
+                const ScaledResult<T> u = x.ebits() != 0
+                    ? round_scaled_split<rm, false>(x, n_min)
+                    : round_scaled_split<rm, true>(x, n_min);
+                tiny_after = u.value.compare_mag(bit_float<T>::make_pow2(emin)) < 0;
+            }
+            if (tiny_after) {
+                if constexpr (CHECK_TINY_AFTER) {
+                    flags.set_tiny_after_rounding();
+                }
+                if constexpr (CHECK_UNDERFLOW_AFTER) {
+                    if (r.inexact) {
+                        flags.set_underflow_after_rounding();
+                    }
+                }
+            }
+        }
+    } else if constexpr (CHECK_CARRY) {
+        // A rounding that changes the normalized exponent must land exactly on a
+        // power of two, so a zero significand together with a move away from zero
+        // says so.
+        //
+        // The order of the two tests matters more than either test does. A rounding
+        // moves away from zero about half the time, so leading with that gives the
+        // branch predictor a coin flip and costs five times the rest of this
+        // function put together. Landing on a power of two is rare, so leading with
+        // that keeps the branch almost always false and the comparison behind it
+        // almost never runs.
+        if (r.value.mbits() == 0 && r.value.compare_mag(x) > 0) {
+            flags.set_carry();
+        }
+    }
+
+    return r.value;
 }
 
 /// @brief Rounding of a `bit_float` type by scaling, dispatching on a runtime
 /// rounding mode. See the compile-time overload above.
-template <flag_mask_t FlagMask = Flags::NO_FLAGS, std::floating_point T>
+template <flag_mask_t FlagMask = Flags::ALL_FLAGS, std::floating_point T>
 bit_float<T> round_scaled(bit_float<T> x, prec_t p, std::optional<exp_t> n, RM rm) {
     switch (rm) {
     case RM::RNE:
