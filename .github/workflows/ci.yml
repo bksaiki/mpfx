@@ -6,6 +6,7 @@ jobs:
   build-and-test:
     name: ${{ matrix.os }} (${{ matrix.arch }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -36,6 +37,18 @@ jobs:
       - name: Install dependencies
         run: ${{ matrix.install_deps }}
 
+      # Diagnostic: is the round-to-odd flag path intact, and does pinning the
+      # arithmetic between the register accesses fix it? See scripts/fenv_probe.cpp.
+      - name: FP environment probe
+        run: |
+          MARCH=-march=native
+          c++ -std=c++20 $MARCH -Iinclude -fsyntax-only scripts/fenv_probe.cpp 2>/dev/null || MARCH=
+          for opt in -O0 -O2; do
+            echo "=== $opt $MARCH"
+            c++ -std=c++20 $opt $MARCH -DNDEBUG -Iinclude -o fenv_probe scripts/fenv_probe.cpp
+            ./fenv_probe
+          done
+
       - name: Configure CMake
         run: |
           cmake -B build \
@@ -43,15 +56,35 @@ jobs:
             -DBUILD_TESTS=ON \
             -DBUILD_EXAMPLES=ON \
             -DBUILD_BENCHMARKS=ON \
-            -DUSE_SOFTFLOAT=ON
+            -DUSE_SOFTFLOAT=ON \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 
       - name: Build
         run: cmake --build build --config Release -j$(nproc 2>/dev/null || sysctl -n hw.ncpu)
 
+      # Diagnostic: does the failing loop reproduce outside gtest, and where does
+      # the compiler actually place the operation? See scripts/rto_repro.cpp.
+      - name: RTO repro
+        run: |
+          MARCH=-march=native
+          c++ -std=c++20 $MARCH -Iinclude -fsyntax-only scripts/rto_repro.cpp 2>/dev/null || MARCH=
+          FLAGS="-std=c++20 -O2 $MARCH -DNDEBUG -Iinclude"
+          c++ $FLAGS -o rto_repro scripts/rto_repro.cpp 2>/dev/null
+          ./rto_repro
+          echo "--- repro asm around the FP register accesses"
+          c++ $FLAGS -S -o rto_repro.s scripts/rto_repro.cpp 2>/dev/null
+          python3 scripts/asm_dump.py --dump rto_repro.s
+          echo "--- real test TU, compiled exactly as CMake does"
+          python3 scripts/asm_dump.py --tu test_engine.cpp
+          echo "--- failing test alone (stops at first failure)"
+          ./build/tests/run_tests --gtest_filter=TestEngine.TestEFTEngineAdd \
+            --gtest_break_on_failure 2>&1 | head -20 || true
+
       - name: Run tests
         run: |
           cd build
-          ctest --output-on-failure --verbose
+          set -o pipefail
+          ctest --output-on-failure --timeout 300 2>&1 | head -c 2000000
 
       - name: Run examples
         run: |

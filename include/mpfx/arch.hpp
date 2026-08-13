@@ -1,5 +1,7 @@
 #pragma once
 
+#include <concepts>
+
 // Architecture-specific includes and definitions
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
     #include <xmmintrin.h>
@@ -243,6 +245,25 @@ namespace arch {
     }
 
 #endif
+
+/// @brief Forces `v` to be materialized here, ordering its computation against
+/// neighboring `asm volatile` statements.
+///
+/// Floating-point arithmetic carries no dependency on the register accesses that
+/// bracket a round-to-odd operation, and `FENV_ACCESS` is off by default, so the
+/// compiler is otherwise free to schedule the operation outside that window and
+/// test status flags it never set.
+template <std::floating_point T>
+inline void fp_barrier(T& v) {
+#if defined(MPFX_ARCH_X86)
+    __asm__ volatile("" : "+x"(v));
+#elif defined(MPFX_ARCH_ARM64)
+    __asm__ volatile("" : "+w"(v));
+#else
+    volatile T tmp = v;
+    v = tmp;
+#endif
+}
 
 } // end namespace arch
 } // end namespace mpfx
