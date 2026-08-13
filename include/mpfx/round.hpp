@@ -525,10 +525,16 @@ inline ScaledResult<T> round_scaled_split(bit_float<T> x, exp_t n) {
     // Move the split point onto the binary point. Every representable digit of
     // `x` is then integral and every unrepresentable digit is fractional, so the
     // scaled value lies in `[1, 2^p)`, offset by the bias when `x` is subnormal.
+    //
+    // Both scalings are exponent arithmetic on the encoding, as in `scale_bits`,
+    // and one shifted constant serves both directions: subtracting `d` is the
+    // scaling by `-exp` and adding it back is the scaling by `exp`, since the
+    // wrapped sum is the two's complement either way.
     const exp_t exp = n + 1;
     static constexpr uint_t bias = Biased ? static_cast<uint_t>(params_t::IMPLICIT1) : uint_t{0};
-    const bit_float<T> xb(static_cast<uint_t>(x.to_bits() + bias));
-    const T y = scale_bits(xb, -exp).to_float();
+    const uint_t d = static_cast<uint_t>(exp) << params_t::M;
+    const uint_t yb = static_cast<uint_t>(x.to_bits() + bias - d);
+    const T y = bit_float<T>(yb).to_float();
 
     // case split on rounding mode
     T t;
@@ -563,43 +569,50 @@ inline ScaledResult<T> round_scaled_split(bit_float<T> x, exp_t n) {
         t = std::copysign(std::ceil(std::fabs(y)), y);
     } else if constexpr (rm == RM::RTO) {
         // No round-to-integral instruction covers round to odd or round to even,
-        // but both have a closed form. When `y` is inexact its two candidates are
-        // `floor(y)` and `floor(y) + 1`, exactly one of which is odd, so
+        // but halving gives each a closed form with a single rounding. When `y`
+        // is inexact its two candidates are `floor(y)` and `floor(y) + 1`,
+        // exactly one of which is odd, and
         //
-        //     RTO(y) = 2 * floor(y / 2) + 1
+        //     o = 2 * floor(y / 2)
         //
-        // Computing that unconditionally and selecting it against the exact case
-        // avoids both the residual and a separate probe of the last kept digit, and
-        // leaves no data-dependent branch behind. Every step is exact: halving an
-        // integral value cannot round, and the result stays within `[-2^p, 2^p]`.
-        const T floor_y = std::floor(y);
-        const T odd = static_cast<T>(2) * std::floor(y * static_cast<T>(0.5)) + static_cast<T>(1);
-
-        // `y == floor_y` exactly when `y` is integral, i.e. when nothing was lost
-        t = y == floor_y ? y : odd;
+        // is the even integer at or below `y`, so `o + 1` is that odd candidate.
+        // It also reproduces an exact odd integer: there `o` is `y - 1`. The one
+        // exact case it misses is an even integer `y`, which is exactly when
+        // `y == o`. Every step is exact: halving cannot round, and the result
+        // stays within `[-2^p, 2^p]`.
+        const T half = std::floor(y * static_cast<T>(0.5));
+        const T o = half + half;
+        t = y == o ? y : o + static_cast<T>(1);
     } else if constexpr (rm == RM::RTE) {
-        // the even candidate of the same pair, by the same argument as RTO above
+        // The even candidate of the same pair, by the same halving argument:
+        // ties-to-even on `y / 2` lands on the nearest even integer, so
         //
-        //     RTE(y) = 2 * ceil(floor(y) / 2)
-        const T floor_y = std::floor(y);
-        const T even = static_cast<T>(2) * std::ceil(floor_y * static_cast<T>(0.5));
-        t = y == floor_y ? y : even;
+        //     t0 = 2 * roundeven(y / 2)
+        //
+        // is the even candidate for every inexact `y` and reproduces every even
+        // integer exactly. The one exact case it misses is an odd integer `y`,
+        // which lands exactly one away from `t0` - no other input does, since an
+        // inexact `y` sits strictly within one of `t0`. `y - t0` is exact by
+        // Sterbenz once `|y| >= 1`, and at `y == +/-1` the difference is exact
+        // outright.
+        const T half = round_even(y * static_cast<T>(0.5));
+        const T t0 = half + half;
+        t = std::fabs(y - t0) == static_cast<T>(1) ? y : t0;
     } else {
         MPFX_DEBUG_ASSERT(false, "unreachable");
         t = y;
     }
 
-    // `t` is integral, so `y` differs from it exactly when digits were discarded.
-    // This survives the bias, which shifts `y` and `t` by the same integer.
-    const bool inexact = y != t;
+    // `t` is integral, so `y` differs from it exactly when digits were discarded,
+    // and this survives the bias, which shifts `y` and `t` by the same integer.
+    // The comparison is on the encodings, which `t` needs to extract anyway: every
+    // exact case above reproduces `y` bit for bit, and neither zero nor NaN can
+    // appear here, so distinct encodings mean distinct values.
+    const uint_t tb = bit_float<T>(t).to_bits();
+    const bool inexact = tb != yb;
 
     // scale back and remove the bias; `|t| >= 1`, so no sign is lost on the way
-    const bit_float<T> ub = scale_bits(bit_float<T>(t), exp);
-    if constexpr (Biased) {
-        return {bit_float<T>(static_cast<uint_t>(ub.to_bits() - bias)), inexact};
-    } else {
-        return {ub, inexact};
-    }
+    return {bit_float<T>(static_cast<uint_t>(tb + d - bias)), inexact};
 }
 
 /// @brief Whether rounding `x` at `n_min` with an unbounded exponent range still
