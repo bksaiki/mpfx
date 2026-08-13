@@ -602,6 +602,78 @@ inline ScaledResult<T> round_scaled_split(bit_float<T> x, exp_t n) {
     }
 }
 
+/// @brief Whether rounding `x` at `n_min` with an unbounded exponent range still
+/// lands below `2^emin`.
+/// @tparam rm the rounding mode
+/// @param x the value to round, whose normalized exponent must be `emin - 1`
+/// @param n_min the unsubnormalized split point, at or above `EXPMIN`
+/// @param emin the smallest normalized exponent of the emulated format
+///
+/// The binade directly below `2^emin` is the only one where tininess after rounding
+/// can differ from tininess before it: rounding raises the normalized exponent by at
+/// most one, so anything lower stays tiny however it rounds. Within that binade the
+/// result lies in `[2^(emin-1), 2^emin]`, so the only way not to be tiny is to carry
+/// exactly onto `2^emin`. That asks two much cheaper questions than a second rounding
+/// does - whether `|x|` lies in the last grid cell of the binade, and whether this
+/// mode rounds up out of it.
+///
+/// Both are answered on the encoding, which is linear in the value within a binade
+/// and across the whole subnormal range, so one path serves normal and subnormal `x`
+/// and no denormal reaches the floating-point unit.
+template <RM rm, std::floating_point T>
+inline bool tiny_after_unbounded(bit_float<T> x, exp_t n_min, exp_t emin) {
+    using params_t = typename bit_float<T>::params_t;
+    using uint_t = typename bit_float<T>::uint_t;
+    MPFX_DEBUG_ASSERT(!x.is_nar() && !x.is_zero(), "cannot probe NaN, Inf, or zero");
+    MPFX_DEBUG_ASSERT(x.e() + 1 == emin, "`x` must lie in the binade below `2^emin`");
+    MPFX_DEBUG_ASSERT(n_min >= params_t::EXPMIN, "split point is below the encoding");
+
+    // how many encoding bits lie below the rounding grid
+    const exp_t shift = n_min + 1 - x.exp();
+    if (shift <= 0) {
+        // every value the container can hold is already on the grid, so exact
+        return true;
+    }
+
+    const uint_t mag = static_cast<uint_t>(x.to_bits() & ~params_t::SMASK);
+    const uint_t step = static_cast<uint_t>(uint_t{1} << shift);
+    const uint_t lost = static_cast<uint_t>(mag & (step - 1));
+    const uint_t pow2 = bit_float<T>::make_pow2(emin).to_bits();
+
+    // `lost == 0` is exact, and otherwise only the last cell can carry
+    if (lost == 0 || static_cast<uint_t>((mag - lost) + step) != pow2) {
+        return true;
+    }
+
+    // Does this mode round up out of the last cell? The two candidates are `2^emin`,
+    // whose last kept digit is even, and its predecessor, whose kept digits are all
+    // ones and so odd.
+    bool up;
+    if constexpr (rm == RM::RNE || rm == RM::RNA) {
+        // a tie goes to `2^emin` for both: it is the even candidate, and it is also
+        // the one away from zero
+        up = lost >= (step >> 1);
+    } else if constexpr (rm == RM::RTP) {
+        up = !x.s();
+    } else if constexpr (rm == RM::RTN) {
+        up = x.s();
+    } else if constexpr (rm == RM::RTZ) {
+        up = false;
+    } else if constexpr (rm == RM::RAZ) {
+        up = true;
+    } else if constexpr (rm == RM::RTO) {
+        // the predecessor is the odd candidate
+        up = false;
+    } else if constexpr (rm == RM::RTE) {
+        // `2^emin` is the even candidate
+        up = true;
+    } else {
+        MPFX_DEBUG_ASSERT(false, "unreachable");
+        up = false;
+    }
+    return !up;
+}
+
 /// @brief Rounding of a `bit_float` type by scaling.
 /// @tparam rm the rounding mode
 /// @tparam FlagMask the mask of flags to set
@@ -719,10 +791,11 @@ bit_float<T> round_scaled(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
             if (!r.inexact || e < emin - 1 || n_min < params_t::EXPMIN) {
                 tiny_after = true;
             } else {
-                const ScaledResult<T> u = x.ebits() != 0
-                    ? round_scaled_split<rm, false>(x, n_min)
-                    : round_scaled_split<rm, true>(x, n_min);
-                tiny_after = u.value.compare_mag(bit_float<T>::make_pow2(emin)) < 0;
+                // Reaching here forces `e == emin - 1`: the guard above rules out
+                // anything lower and `tiny_before` rules out anything higher, so
+                // `x` lies in the one binade where the two tininess answers can
+                // differ. See `tiny_after_unbounded`.
+                tiny_after = tiny_after_unbounded<rm>(x, n_min, emin);
             }
             if (tiny_after) {
                 if constexpr (CHECK_TINY_AFTER) {
