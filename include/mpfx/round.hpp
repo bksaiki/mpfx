@@ -434,35 +434,45 @@ inline T scale_mul(T x, exp_t k) {
     return x * c1 * c2;
 }
 
-/// @brief Rounds `x` when every digit is unrepresentable, i.e. `n >= x.e()`.
+/// @brief Rounds `x` when every digit is unrepresentable, i.e. `n >= e`.
 /// @tparam rm the rounding mode
 /// @param x the value to round, neither zero nor NaN/Inf
-/// @param n the actual split point, at or above the normalized exponent of `x`
+/// @param e the normalized exponent of `x`
+/// @param n the actual split point, at or above `e`
 ///
 /// The scaled formulation cannot be used here: `x * 2^-(n+1)` has magnitude
 /// below one, at an exponent low enough to underflow and silently destroy the
 /// residual. It is not needed either. The kept part is `+/-0`, so its least
 /// significant digit is even, and the lost part is nonzero because `x` is not
-/// zero, which leaves the halfway comparison as `|x|` against `2^n`. The result
-/// is therefore either `+/-0` or `+/-2^(n+1)`.
+/// zero, which leaves only the halfway comparison of `|x|` against `2^n`.
+///
+/// That comparison never needs `2^n` to be built, because only two cases exist:
+///
+///   `n == e`  `|x|` lies in `[2^e, 2^(e+1))`, so it is at or above halfway, and
+///             exactly at it when `x` is a power of two
+///   `n > e`   `|x| < 2^(e+1) <= 2^n`, so every value is strictly below halfway
+///
+/// so it reduces to comparing two exponents the caller already holds, plus a
+/// power-of-two test. The result is either `+/-0` or `+/-2^(n+1)`.
 template <RM rm, std::floating_point T>
-bit_float<T> round_all_lost(bit_float<T> x, exp_t n) {
-    using params_t = typename bit_float<T>::params_t;
+inline bit_float<T> round_all_lost(bit_float<T> x, exp_t e, exp_t n) {
     MPFX_DEBUG_ASSERT(!x.is_nar(), "cannot round NaN or Inf");
     MPFX_DEBUG_ASSERT(!x.is_zero(), "cannot round zero");
-    MPFX_DEBUG_ASSERT(n >= x.e(), "not every digit is unrepresentable");
+    MPFX_DEBUG_ASSERT(e == x.e(), "`e` must be the normalized exponent of `x`");
+    MPFX_DEBUG_ASSERT(n >= e, "not every digit is unrepresentable");
 
     // should we round away from zero?
     bool increment;
     if constexpr (rm == RM::RNE || rm == RM::RNA) {
-        // compare `|x|` against the halfway point `2^n`; above `EMAX` the
-        // halfway point exceeds every finite value, so `x` is below it
-        const int cmp = n > params_t::EMAX ? -1 : x.compare_mag(bit_float<T>::make_pow2(n));
-        if (cmp != 0) {
-            increment = cmp > 0;
+        if (n > e) {
+            // strictly below halfway
+            increment = false;
         } else {
-            // exactly halfway, and the kept digit is even
-            increment = rm == RM::RNA;
+            // at or above halfway, and exactly at it when `x` is a power of two
+            const auto c = x.c();
+            const bool exact_halfway = (c & (c - 1)) == 0;
+            // the kept digit is even, so a tie only rounds away for RNA
+            increment = exact_halfway ? rm == RM::RNA : true;
         }
     } else if constexpr (rm == RM::RTP) {
         increment = !x.s();
@@ -483,11 +493,26 @@ bit_float<T> round_all_lost(bit_float<T> x, exp_t n) {
         increment = false;
     }
 
-    if (increment) {
-        return bit_float<T>::make_pow2(n + 1, x.s());
-    } else {
-        return bit_float<T>(x.sbits());
-    }
+    // Select the magnitude rather than branching on it. For the directed modes
+    // the decision follows the sign of `x`, which is not predictable on real
+    // data, and mispredicting it costs more than the whole rest of this function.
+    //
+    // `2^(n+1)` is encoded inline rather than by calling `make_pow2`, which
+    // carries a branch of its own that would stop the compiler from turning the
+    // select into a conditional move. Both alternatives below are computed
+    // unconditionally; the unused one is harmless, since a shift count of zero
+    // and a wrapped exponent field are both well defined.
+    using params_t = typename bit_float<T>::params_t;
+    using uint_t = typename bit_float<T>::uint_t;
+
+    const exp_t k = n + 1;
+    const auto normal = static_cast<uint_t>(static_cast<uint_t>(k + params_t::BIAS) << params_t::M);
+    const auto shift = static_cast<unsigned>(std::max<exp_t>(params_t::EMIN - k, 0));
+    const auto subnormal = static_cast<uint_t>(params_t::IMPLICIT1 >> shift);
+    const uint_t pow2 = k >= params_t::EMIN ? normal : subnormal;
+
+    const uint_t mag = increment ? pow2 : uint_t{0};
+    return bit_float<T>(static_cast<uint_t>(x.sbits() | mag));
 }
 
 /// @brief Should we round away from zero?
@@ -714,7 +739,7 @@ bit_float<T> round_scaled_impl(bit_float<T> x, prec_t p, std::optional<exp_t> n)
 
     // no digit is representable
     if (n_act >= e) {
-        return round_all_lost<rm>(x, n_act);
+        return round_all_lost<rm>(x, e, n_act);
     }
 
     // Subnormals cannot be scaled by exponent arithmetic, and neither can the

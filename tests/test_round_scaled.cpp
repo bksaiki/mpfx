@@ -212,15 +212,16 @@ TEST(TestRoundScaled, ScaleMulUnrepresentableFactorDouble) {
 /// @brief Dispatches `round_all_lost` on a runtime rounding mode.
 template <std::floating_point T>
 bit_float<T> all_lost(bit_float<T> x, exp_t n, RM rm) {
+    const exp_t e = x.e();
     switch (rm) {
-    case RM::RNE: return round_all_lost<RM::RNE>(x, n);
-    case RM::RNA: return round_all_lost<RM::RNA>(x, n);
-    case RM::RTP: return round_all_lost<RM::RTP>(x, n);
-    case RM::RTN: return round_all_lost<RM::RTN>(x, n);
-    case RM::RTZ: return round_all_lost<RM::RTZ>(x, n);
-    case RM::RAZ: return round_all_lost<RM::RAZ>(x, n);
-    case RM::RTO: return round_all_lost<RM::RTO>(x, n);
-    case RM::RTE: return round_all_lost<RM::RTE>(x, n);
+    case RM::RNE: return round_all_lost<RM::RNE>(x, e, n);
+    case RM::RNA: return round_all_lost<RM::RNA>(x, e, n);
+    case RM::RTP: return round_all_lost<RM::RTP>(x, e, n);
+    case RM::RTN: return round_all_lost<RM::RTN>(x, e, n);
+    case RM::RTZ: return round_all_lost<RM::RTZ>(x, e, n);
+    case RM::RAZ: return round_all_lost<RM::RAZ>(x, e, n);
+    case RM::RTO: return round_all_lost<RM::RTO>(x, e, n);
+    case RM::RTE: return round_all_lost<RM::RTE>(x, e, n);
     default: return x;
     }
 }
