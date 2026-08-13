@@ -635,18 +635,27 @@ inline bit_float<T> round_scaled_split_fp(bit_float<T> x, exp_t n) {
     } else if constexpr (rm == RM::RAZ) {
         t = std::copysign(std::ceil(std::fabs(y)), y);
     } else if constexpr (rm == RM::RTO || rm == RM::RTE) {
-        // these still need the lost digits and the last kept digit
-        t = std::trunc(y);
-        const T r = y - t;
-        if (r != static_cast<T>(0)) {
-            // `t` is integral, so halving it is exact and leaves a fraction
-            // exactly when the last kept digit is odd
-            const T h = t * static_cast<T>(0.5);
-            const bool odd = h != std::trunc(h);
-            if (rm == RM::RTO ? !odd : odd) {
-                t += std::copysign(static_cast<T>(1), y);
-            }
+        // No round-to-integral instruction covers these two, but the result has a
+        // closed form. When `y` is inexact its two candidates are `floor(y)` and
+        // `floor(y) + 1`, and exactly one of them is odd, which gives
+        //
+        //     RTO(y) = 2 * floor(y / 2) + 1
+        //     RTE(y) = 2 * ceil(floor(y) / 2)
+        //
+        // Computing that unconditionally and selecting it against the exact case
+        // avoids both the residual and the separate probe of the last kept digit,
+        // and leaves no data-dependent branch behind. Every step is exact: halving
+        // an integral value cannot round, and the results stay within `[-2^p, 2^p]`.
+        const T floor_y = std::floor(y);
+        T inexact;
+        if constexpr (rm == RM::RTO) {
+            inexact = static_cast<T>(2) * std::floor(y * static_cast<T>(0.5)) + static_cast<T>(1);
+        } else {
+            inexact = static_cast<T>(2) * std::ceil(floor_y * static_cast<T>(0.5));
         }
+
+        // `y == floor_y` exactly when `y` is integral, i.e. when nothing was lost
+        t = y == floor_y ? y : inexact;
     } else {
         MPFX_DEBUG_ASSERT(false, "unreachable");
         t = y;
