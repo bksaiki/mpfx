@@ -43,6 +43,8 @@ inline T finalize(T result, unsigned int fexps) {
 /// cannot be hoisted out. See `arch::fp_barrier`.
 template <std::floating_point T, typename Op, typename... Ts>
 inline T round_odd(Op op, Ts... args) {
+    MPFX_FENV_ACCESS_ON
+
     // retire the operands before touching the environment
     (arch::fp_barrier(args), ...);
 

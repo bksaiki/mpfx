@@ -250,6 +250,18 @@ namespace arch {
 
 #endif
 
+/// Tells the compiler that the enclosing block inspects the floating-point
+/// environment, so it may not assume the default rounding mode or that the status
+/// flags go unread. Clang honors this by emitting constrained FP operations, which
+/// carry side effects and cannot drift across the register accesses. GCC does not
+/// implement the pragma (it warns and ignores it), so `fp_barrier` below remains
+/// the only protection there.
+#if defined(__clang__)
+    #define MPFX_FENV_ACCESS_ON _Pragma("STDC FENV_ACCESS ON")
+#else
+    #define MPFX_FENV_ACCESS_ON
+#endif
+
 /// @brief Forces `v` to be materialized here, ordering its computation against
 /// neighboring `asm volatile` statements.
 ///
