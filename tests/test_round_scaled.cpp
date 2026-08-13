@@ -27,6 +27,16 @@ using mpfx::experimental::scale_mul;
 
 namespace {
 
+// Iteration counts. These are unit tests, so the whole file is meant to stay in
+// the tens of milliseconds; the exhaustive sweep below is strided for the same
+// reason. Seeds are fixed, so a given count always covers the same inputs.
+constexpr size_t N_SCALE = 20'000;      // scaling helpers against `ldexp`
+constexpr size_t N_RANDOM = 25'000;     // uniform encodings, times 8 modes
+constexpr size_t N_SUBNORMAL = 10'000;  // subnormal encodings, times 8 modes
+constexpr size_t N_ALL_LOST = 10'000;   // `n >= e` encodings, times 8 modes
+constexpr size_t N_LEGACY = 10'000;     // against the legacy integer path
+constexpr uint64_t EXHAUSTIVE_STRIDE = 65'537;
+
 /// @brief Renders a value as `<hex bits> (<decimal>)` for failure messages.
 template <std::floating_point T>
 std::string describe(T x) {
@@ -69,7 +79,7 @@ template <std::floating_point T>
 void check_scale_bits_normal() {
     using params_t = typename bit_float<T>::params_t;
     using uint_t = typename bit_float<T>::uint_t;
-    static constexpr size_t N = 200'000;
+    static constexpr size_t N = N_SCALE;
 
     std::mt19937_64 rng(0x5CA1E);
     std::uniform_int_distribution<uint_t> bits_dist(0, ~static_cast<uint_t>(0));
@@ -126,7 +136,7 @@ template <std::floating_point T>
 void check_scale_mul() {
     using params_t = typename bit_float<T>::params_t;
     using uint_t = typename bit_float<T>::uint_t;
-    static constexpr size_t N = 200'000;
+    static constexpr size_t N = N_SCALE;
 
     std::mt19937_64 rng(0xB1A5E);
     std::uniform_int_distribution<uint_t> bits_dist(0, ~static_cast<uint_t>(0));
@@ -221,7 +231,7 @@ template <std::floating_point T>
 void check_round_all_lost() {
     using params_t = typename bit_float<T>::params_t;
     using uint_t = typename bit_float<T>::uint_t;
-    static constexpr size_t N = 100'000;
+    static constexpr size_t N = N_ALL_LOST;
     static constexpr RM MODES[] = {
         RM::RNE, RM::RNA, RM::RTP, RM::RTN, RM::RTZ, RM::RAZ, RM::RTO, RM::RTE,
     };
@@ -410,7 +420,7 @@ template <std::floating_point T, bool FieldScale, bool FpReduce>
 void check_round_scaled_random() {
     using params_t = typename bit_float<T>::params_t;
     using uint_t = typename bit_float<T>::uint_t;
-    static constexpr size_t N = 250'000;
+    static constexpr size_t N = N_RANDOM;
 
     std::mt19937_64 rng(0x5EEDU);
     std::uniform_int_distribution<uint_t> bits_dist(0, ~static_cast<uint_t>(0));
@@ -437,7 +447,7 @@ template <std::floating_point T, bool FieldScale, bool FpReduce>
 void check_round_scaled_random_subnormal() {
     using params_t = typename bit_float<T>::params_t;
     using uint_t = typename bit_float<T>::uint_t;
-    static constexpr size_t N = 100'000;
+    static constexpr size_t N = N_SUBNORMAL;
 
     std::mt19937_64 rng(0x50BU);
     std::uniform_int_distribution<uint_t> mant_dist(1, static_cast<uint_t>(params_t::MMASK));
@@ -460,80 +470,114 @@ void check_round_scaled_random_subnormal() {
 }
 
 
-/// @brief Confirms the randomized test actually reaches every path in
+/// @brief Which path through `round_scaled` an input takes, and what kind of
+/// rounding it asks for.
+struct PathCounts {
+    size_t nar_or_zero = 0, below_split = 0, all_lost = 0, field_scale = 0, mul_scale = 0;
+    size_t exact = 0, halfway = 0, inexact = 0;
+};
+
+/// @brief Classifies one input the way `round_scaled` would branch on it.
+template <std::floating_point T>
+void classify(bit_float<T> x, prec_t p, std::optional<exp_t> n, PathCounts& c) {
+    using params_t = typename bit_float<T>::params_t;
+
+    if (x.is_nar() || x.is_zero()) {
+        c.nar_or_zero++;
+        return;
+    }
+
+    const exp_t e = x.e();
+    const exp_t n_min = e - static_cast<exp_t>(p);
+    const exp_t n_act = n.has_value() ? std::max(n_min, *n) : n_min;
+
+    if (n_act < params_t::EXPMIN) {
+        c.below_split++;
+        return;
+    }
+    if (n_act >= e) {
+        c.all_lost++;
+        return;
+    }
+
+    if (x.ebits() != 0) {
+        c.field_scale++;
+    } else {
+        c.mul_scale++;
+    }
+
+    // classify the lost digits using the existing split
+    const auto [hi, rs] = x.split_rs(n_act);
+    (void) hi;
+    if (rs == mpfx::RoundRS::EXACT) {
+        c.exact++;
+    } else if (rs == mpfx::RoundRS::EXACT_HALFWAY) {
+        c.halfway++;
+    } else {
+        c.inexact++;
+    }
+}
+
+/// @brief Confirms the randomized tests actually reach every path in
 /// `round_scaled`, so that coverage cannot quietly disappear if the input
-/// distributions are ever retuned. The counts must stay in step with
-/// `check_round_scaled_random`.
+/// distributions or the iteration counts are ever retuned.
+///
+/// Both generators are classified together, because neither covers everything on
+/// its own: uniform encodings are subnormal only about once in two thousand draws,
+/// which at these counts leaves the multiplying scale and the `n_act < EXPMIN`
+/// path to the subnormal generator. The counts and seeds mirror
+/// `check_round_scaled_random` and `check_round_scaled_random_subnormal`.
 template <std::floating_point T>
 void check_round_scaled_coverage() {
     using params_t = typename bit_float<T>::params_t;
     using uint_t = typename bit_float<T>::uint_t;
-    static constexpr size_t N = 250'000;
 
-    std::mt19937_64 rng(0x5EEDU);
-    std::uniform_int_distribution<uint_t> bits_dist(0, ~static_cast<uint_t>(0));
+    PathCounts c;
     std::uniform_int_distribution<prec_t> prec_dist(1, params_t::P - 1);
-    std::uniform_int_distribution<exp_t> n_dist(params_t::EXPMIN - 1, params_t::EMAX - 1);
-    std::bernoulli_distribution has_n_dist(0.5);
+    std::bernoulli_distribution coin(0.5);
 
-    size_t nar_or_zero = 0, below_split = 0, all_lost = 0, field_scale = 0, mul_scale = 0;
-    size_t exact = 0, halfway = 0, inexact = 0;
-
-    for (size_t i = 0; i < N; i++) {
-        const bit_float<T> x(static_cast<uint_t>(bits_dist(rng)));
-        const prec_t p = prec_dist(rng);
-        const std::optional<exp_t> n =
-            has_n_dist(rng) ? std::optional<exp_t>(n_dist(rng)) : std::nullopt;
-
-        if (x.is_nar() || x.is_zero()) {
-            nar_or_zero++;
-            continue;
-        }
-
-        const exp_t e = x.e();
-        const exp_t n_min = e - static_cast<exp_t>(p);
-        const exp_t n_act = n.has_value() ? std::max(n_min, *n) : n_min;
-
-        if (n_act < params_t::EXPMIN) {
-            below_split++;
-            continue;
-        }
-        if (n_act >= e) {
-            all_lost++;
-            continue;
-        }
-
-        if (x.ebits() != 0) {
-            field_scale++;
-        } else {
-            mul_scale++;
-        }
-
-        // classify the lost digits using the existing split
-        const auto [hi, rs] = x.split_rs(n_act);
-        (void) hi;
-        if (rs == mpfx::RoundRS::EXACT) {
-            exact++;
-        } else if (rs == mpfx::RoundRS::EXACT_HALFWAY) {
-            halfway++;
-        } else {
-            inexact++;
+    {   // the uniform generator
+        std::mt19937_64 rng(0x5EEDU);
+        std::uniform_int_distribution<uint_t> bits_dist(0, ~static_cast<uint_t>(0));
+        std::uniform_int_distribution<exp_t> n_dist(params_t::EXPMIN - 1, params_t::EMAX - 1);
+        for (size_t i = 0; i < N_RANDOM; i++) {
+            const bit_float<T> x(static_cast<uint_t>(bits_dist(rng)));
+            const prec_t p = prec_dist(rng);
+            const std::optional<exp_t> n =
+                coin(rng) ? std::optional<exp_t>(n_dist(rng)) : std::nullopt;
+            classify(x, p, n, c);
         }
     }
 
-    std::cout << "  coverage: nar/zero=" << nar_or_zero << " below_split=" << below_split
-              << " all_lost=" << all_lost << " field_scale=" << field_scale
-              << " mul_scale=" << mul_scale << " | exact=" << exact
-              << " halfway=" << halfway << " inexact=" << inexact << std::endl;
+    {   // the subnormal generator
+        std::mt19937_64 rng(0x50BU);
+        std::uniform_int_distribution<uint_t> mant_dist(1, static_cast<uint_t>(params_t::MMASK));
+        std::uniform_int_distribution<exp_t> n_dist(params_t::EXPMIN - 1, params_t::EMIN);
+        for (size_t i = 0; i < N_SUBNORMAL; i++) {
+            uint_t bits = mant_dist(rng);
+            if (coin(rng)) {
+                bits |= static_cast<uint_t>(params_t::SMASK);
+            }
+            const prec_t p = prec_dist(rng);
+            const std::optional<exp_t> n =
+                coin(rng) ? std::optional<exp_t>(n_dist(rng)) : std::nullopt;
+            classify(bit_float<T>(bits), p, n, c);
+        }
+    }
 
-    EXPECT_GT(nar_or_zero, 0u);
-    EXPECT_GT(below_split, 0u) << "the `n_act < EXPMIN` fast path is never taken";
-    EXPECT_GT(all_lost, 0u) << "the underflow-to-zero path is never taken";
-    EXPECT_GT(field_scale, 0u) << "the exponent-field scaling path is never taken";
-    EXPECT_GT(mul_scale, 0u) << "the multiplying scaling path is never taken";
-    EXPECT_GT(exact, 0u) << "no exact rounding is exercised";
-    EXPECT_GT(halfway, 0u) << "no exact ties are exercised";
-    EXPECT_GT(inexact, 0u) << "no inexact rounding is exercised";
+    std::cout << "  coverage: nar/zero=" << c.nar_or_zero << " below_split=" << c.below_split
+              << " all_lost=" << c.all_lost << " field_scale=" << c.field_scale
+              << " mul_scale=" << c.mul_scale << " | exact=" << c.exact
+              << " halfway=" << c.halfway << " inexact=" << c.inexact << std::endl;
+
+    EXPECT_GT(c.nar_or_zero, 0u);
+    EXPECT_GT(c.below_split, 0u) << "the `n_act < EXPMIN` fast path is never taken";
+    EXPECT_GT(c.all_lost, 0u) << "the underflow-to-zero path is never taken";
+    EXPECT_GT(c.field_scale, 0u) << "the exponent-field scaling path is never taken";
+    EXPECT_GT(c.mul_scale, 0u) << "the multiplying scaling path is never taken";
+    EXPECT_GT(c.exact, 0u) << "no exact rounding is exercised";
+    EXPECT_GT(c.halfway, 0u) << "no exact ties are exercised";
+    EXPECT_GT(c.inexact, 0u) << "no inexact rounding is exercised";
 }
 
 TEST(TestRoundScaled, RandomCoverageFloat) { check_round_scaled_coverage<float>(); }
@@ -593,7 +637,7 @@ template <std::floating_point T, bool FieldScale, bool FpReduce>
 void check_round_scaled_legacy() {
     using params_t = typename bit_float<T>::params_t;
     using uint_t = typename bit_float<T>::uint_t;
-    static constexpr size_t N = 100'000;
+    static constexpr size_t N = N_LEGACY;
 
     std::mt19937_64 rng(0x1EACADEU);
     std::uniform_int_distribution<uint_t> bits_dist(0, ~static_cast<uint_t>(0));
@@ -679,14 +723,9 @@ void check_exhaustive_float(uint64_t stride) {
 
 // A stride keeps the default suite quick while still covering the whole
 // encoding uniformly, including every exponent and both signs.
-TEST(TestRoundScaled, ExhaustiveStridedFloat) { check_exhaustive_float<true, false>(4099); }
-TEST(TestRoundScaled, ExhaustiveStridedFloatFp) { check_exhaustive_float<true, true>(4099); }
-TEST(TestRoundScaled, ExhaustiveStridedFloatScaleMul) { check_exhaustive_float<false, false>(4099); }
-TEST(TestRoundScaled, ExhaustiveStridedFloatFpScaleMul) { check_exhaustive_float<false, true>(4099); }
-
-// Every `float` encoding, on demand only - this takes minutes. Run with
-//   run_tests --gtest_also_run_disabled_tests --gtest_filter='*DISABLED_Exhaustive*'
-TEST(TestRoundScaled, DISABLED_ExhaustiveFloat) { check_exhaustive_float<true, false>(1); }
-TEST(TestRoundScaled, DISABLED_ExhaustiveFloatFp) { check_exhaustive_float<true, true>(1); }
+TEST(TestRoundScaled, ExhaustiveStridedFloat) { check_exhaustive_float<true, false>(EXHAUSTIVE_STRIDE); }
+TEST(TestRoundScaled, ExhaustiveStridedFloatFp) { check_exhaustive_float<true, true>(EXHAUSTIVE_STRIDE); }
+TEST(TestRoundScaled, ExhaustiveStridedFloatScaleMul) { check_exhaustive_float<false, false>(EXHAUSTIVE_STRIDE); }
+TEST(TestRoundScaled, ExhaustiveStridedFloatFpScaleMul) { check_exhaustive_float<false, true>(EXHAUSTIVE_STRIDE); }
 
 } // namespace
