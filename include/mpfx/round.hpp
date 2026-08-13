@@ -198,7 +198,7 @@ inline bool round_tiny_after(bit_float<T> x, exp_t e, exp_t emin, exp_t n) {
 template <RM rm, flag_mask_t FlagMask = Flags::ALL_FLAGS, std::floating_point T>
 bit_float<T> round(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
     using params_t = typename bit_float<T>::params_t;
-    MPFX_DEBUG_ASSERT(p < params_t::P, "target precision must be less than the precision of the container type");
+    MPFX_DEBUG_ASSERT(p <= params_t::P, "target precision cannot exceed the precision of the container type");
     MPFX_DEBUG_ASSERT(!n.has_value() || *n + 1 >= params_t::EXPMIN, "subnormalization point must be at least EMIN - 1");
 
     // which flags to check
@@ -643,12 +643,20 @@ inline bit_float<T> round_scaled_split_fp(bit_float<T> x, exp_t n) {
         t = round_even(y);
     } else if constexpr (rm == RM::RNA) {
         // Ties away from zero has no round-to-integral instruction, and
-        // `std::round` is an out-of-line library call. Biasing by one half
-        // instead turns it into a truncation. The addition is exact unless it
-        // carries into the next binade, and in that case it perturbs the sum by
-        // less than one while leaving it at or above the integer it carried to,
-        // so the truncation is unaffected. Relies on `p < P`.
-        t = std::trunc(y + std::copysign(static_cast<T>(0.5), y));
+        // `std::round` is an out-of-line library call. RNA differs from RNE only
+        // on an exact tie, so take the nearest-even result and correct that one
+        // case. `y - t` is exact, since the difference spans at most `P - 1`
+        // digits below the binary point, so the test for a tie is exact too. A
+        // tie also implies `|y| < 2^(P-1)`, which is where halves still exist, so
+        // stepping one away from zero cannot round either.
+        //
+        // Biasing by one half and truncating is cheaper but is only exact while
+        // `p < P`: the carry into the next binade perturbs the sum by up to
+        // `2^(p-P)` of an integer, which reaches one exactly at `p == P`.
+        t = round_even(y);
+        if (std::fabs(y - t) == static_cast<T>(0.5)) [[unlikely]] {
+            t = std::trunc(y) + std::copysign(static_cast<T>(1), y);
+        }
     } else if constexpr (rm == RM::RTP) {
         // scaling by a positive power of two preserves order, so rounding
         // toward positive infinity commutes with it
@@ -712,7 +720,7 @@ template <RM rm, flag_mask_t FlagMask, bool FieldScale, bool FpReduce, std::floa
 bit_float<T> round_scaled_impl(bit_float<T> x, prec_t p, std::optional<exp_t> n) {
     using params_t = typename bit_float<T>::params_t;
     MPFX_STATIC_ASSERT(FlagMask == Flags::NO_FLAGS, "round_scaled does not compute flags");
-    MPFX_DEBUG_ASSERT(p < params_t::P, "target precision must be less than the precision of the container type");
+    MPFX_DEBUG_ASSERT(p <= params_t::P, "target precision cannot exceed the precision of the container type");
     MPFX_DEBUG_ASSERT(!n.has_value() || *n + 1 >= params_t::EXPMIN, "subnormalization point must be at least EMIN - 1");
 
     // fast path: special values (infinity, NaN)

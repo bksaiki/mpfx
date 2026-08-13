@@ -239,7 +239,7 @@ void check_round_all_lost() {
 
     std::mt19937_64 rng(0xA110C);
     std::uniform_int_distribution<uint_t> bits_dist(0, ~static_cast<uint_t>(0));
-    std::uniform_int_distribution<prec_t> prec_dist(1, params_t::P - 1);
+    std::uniform_int_distribution<prec_t> prec_dist(1, params_t::P);
 
     for (size_t i = 0; i < N; i++) {
         const bit_float<T> x(static_cast<uint_t>(bits_dist(rng)));
@@ -343,7 +343,7 @@ void check_round_scaled_edges() {
     using params_t = typename bit_float<T>::params_t;
     static constexpr prec_t P = params_t::P;
 
-    const std::vector<prec_t> precs = {1, 2, P / 2, P - 1};
+    const std::vector<prec_t> precs = {1, 2, P / 2, P - 1, P};
     const std::vector<std::optional<exp_t>> ns = {
         std::nullopt,
         params_t::EXPMIN - 1,           // the lowest legal subnormalization point
@@ -372,7 +372,9 @@ void check_round_scaled_halfway() {
     using uint_t = typename bit_float<T>::uint_t;
     static constexpr prec_t M = params_t::M;
 
-    // `1 + 2^-p` splits at `n = -p` with a lost part of exactly `2^-p`
+    // `1 + 2^-p` splits at `n = -p` with a lost part of exactly `2^-p`. This stops
+    // below `P` because the halfway digit sits at position `-p` in the mantissa
+    // field, which has no such digit when `p == P`; the random tests cover that.
     for (prec_t p = 1; p < params_t::P; p++) {
         const uint_t one = params_t::IMPLICIT1;
         const auto at = static_cast<uint_t>(one | (static_cast<uint_t>(1) << (M - p)));
@@ -425,7 +427,7 @@ void check_round_scaled_random() {
 
     std::mt19937_64 rng(0x5EEDU);
     std::uniform_int_distribution<uint_t> bits_dist(0, ~static_cast<uint_t>(0));
-    std::uniform_int_distribution<prec_t> prec_dist(1, params_t::P - 1);
+    std::uniform_int_distribution<prec_t> prec_dist(1, params_t::P);
     std::uniform_int_distribution<exp_t> n_dist(params_t::EXPMIN - 1, params_t::EMAX - 1);
     std::bernoulli_distribution has_n_dist(0.5);
 
@@ -452,7 +454,7 @@ void check_round_scaled_random_subnormal() {
 
     std::mt19937_64 rng(0x50BU);
     std::uniform_int_distribution<uint_t> mant_dist(1, static_cast<uint_t>(params_t::MMASK));
-    std::uniform_int_distribution<prec_t> prec_dist(1, params_t::P - 1);
+    std::uniform_int_distribution<prec_t> prec_dist(1, params_t::P);
     // keep `n` near the bottom of the format, where subnormals actually split
     std::uniform_int_distribution<exp_t> n_dist(params_t::EXPMIN - 1, params_t::EMIN);
     std::bernoulli_distribution coin(0.5);
@@ -534,7 +536,7 @@ void check_round_scaled_coverage() {
     using uint_t = typename bit_float<T>::uint_t;
 
     PathCounts c;
-    std::uniform_int_distribution<prec_t> prec_dist(1, params_t::P - 1);
+    std::uniform_int_distribution<prec_t> prec_dist(1, params_t::P);
     std::bernoulli_distribution coin(0.5);
 
     {   // the uniform generator
@@ -642,7 +644,7 @@ void check_round_scaled_legacy() {
 
     std::mt19937_64 rng(0x1EACADEU);
     std::uniform_int_distribution<uint_t> bits_dist(0, ~static_cast<uint_t>(0));
-    std::uniform_int_distribution<prec_t> prec_dist(1, params_t::P - 1);
+    std::uniform_int_distribution<prec_t> prec_dist(1, params_t::P);
     std::uniform_int_distribution<exp_t> n_dist(params_t::EXPMIN - 1, params_t::EMAX - 1);
     std::bernoulli_distribution coin(0.5);
 
@@ -695,6 +697,7 @@ void check_exhaustive_float(uint64_t stride) {
         {12, std::nullopt},                                   // precision only
         {params_t::P - 1, params_t::EMIN - static_cast<exp_t>(params_t::P)}, // IEEE 754 f32
         {4, -10},                                             // narrow, subnormalizing
+        {params_t::P, std::nullopt},                          // the container's own precision
     };
 
     for (const auto& cfg : cfgs) {
