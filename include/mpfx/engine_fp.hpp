@@ -36,10 +36,16 @@ inline T finalize(T result, unsigned int fexps) {
 
 /// @brief Evaluates `op(args...)` in RTZ mode and rounds the result to odd.
 ///
-/// The barriers pin the operation between the two register accesses; see
-/// `arch::fp_barrier` for why that is required.
+/// Only `op` may execute between clearing and reading the status flags, so the
+/// operands are pinned twice: once before the window opens, forcing any pending
+/// arithmetic that computes them to retire outside it (otherwise its own
+/// inexactness is read back as the operation's), and once after, so `op` itself
+/// cannot be hoisted out. See `arch::fp_barrier`.
 template <std::floating_point T, typename Op, typename... Ts>
 inline T round_odd(Op op, Ts... args) {
+    // retire the operands before touching the environment
+    (arch::fp_barrier(args), ...);
+
     // prepare floating-point environment
     const auto old_csr = arch::prepare_rto();
 
