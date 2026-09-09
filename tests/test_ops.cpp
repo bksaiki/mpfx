@@ -1163,3 +1163,48 @@ TEST(OpsF32, TestFmaFFUniform) {
         }
     }
 }
+
+///////////////////////////////////////////////////////////
+// Double-container coverage for the SoftFloat and FloppyFloat engines, mirroring
+// the FP_RTO and EFT tests above: precisions 2..8, the five MPFR-supported
+// rounding modes, uniform inputs on [-1, 1] (sqrt on [0, 1]).
+
+template <mpfx::Engine E>
+static void check_engine_uniform_f64() {
+    static constexpr size_t N = 200000;
+    const std::vector<mpfx::RM> rounding_modes = {
+        mpfx::RM::RNE, mpfx::RM::RTP, mpfx::RM::RTN, mpfx::RM::RTZ, mpfx::RM::RAZ,
+    };
+
+    std::random_device r;
+    std::mt19937_64 rng(r());
+    std::uniform_real_distribution<double> dist(-1.0, 1.0);
+    std::uniform_real_distribution<double> pos_dist(0.0, 1.0);
+
+    for (int p = 2; p <= 8; p++) {
+        for (const auto rm : rounding_modes) {
+            const mpfx::MPContext ctx(p, rm);
+            for (size_t i = 0; i < N; i++) {
+                const double x = dist(rng);
+                const double y = dist(rng);
+                const double z = dist(rng);
+                const double a = pos_dist(rng);
+
+                EXPECT_EQ(ref_add(x, y, p, rm), mpfx::add<E>(x, y, ctx));
+                EXPECT_EQ(ref_sub(x, y, p, rm), mpfx::sub<E>(x, y, ctx));
+                EXPECT_EQ(ref_mul(x, y, p, rm), mpfx::mul<E>(x, y, ctx));
+                EXPECT_EQ(ref_div(x, y, p, rm), mpfx::div<E>(x, y, ctx));
+                EXPECT_EQ(ref_sqrt(a, p, rm), mpfx::sqrt<E>(a, ctx));
+                EXPECT_EQ(ref_fma(x, y, z, p, rm), mpfx::fma<E>(x, y, z, ctx));
+            }
+        }
+    }
+}
+
+TEST(OpsFloat, TestSoftFloatEngineUniform) {
+    check_engine_uniform_f64<mpfx::Engine::SOFTFLOAT>();
+}
+
+TEST(OpsFloat, TestFloppyFloatEngineUniform) {
+    check_engine_uniform_f64<mpfx::Engine::FFLOAT>();
+}

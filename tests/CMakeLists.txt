@@ -10,6 +10,7 @@ set(TEST_SOURCES
     test_ops.cpp
     test_round.cpp
     test_eft.cpp
+    test_exhaustive.cpp
 )
 
 # Create test executable
