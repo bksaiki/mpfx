@@ -11,6 +11,7 @@ set(TEST_SOURCES
     test_round.cpp
     test_round_scaled.cpp
     test_eft.cpp
+    test_exhaustive.cpp
 )
 
 # Create test executable
