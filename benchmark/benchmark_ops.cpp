@@ -9,6 +9,12 @@
  * `prec + 2` guard bits, which do not fit in the narrow format, so the engines
  * work in `double` and round to the target output format.
  *
+ * CPFloat also works in an FP64 container: it evaluates the operation natively
+ * in binary64 and rounds the result to the target format (double rounding). It
+ * is measured twice: `cpfloat` makes one library call per element, like every
+ * other column, and `cpfloat_vec` makes a single call over the whole array,
+ * which is how the library is meant to be used.
+ *
  * The target format is selected on the command line. FloppyFloat only provides
  * f32/f64 instantiations, so its column is reported as `n/a` for FP16. The
  * native-hardware reference is intentionally omitted: there is no portable
@@ -44,6 +50,8 @@
 extern "C" {
     #include <softfloat.h>
 }
+
+#include "cpfloat_wrap.h"
 
 
 enum class OP1 {
@@ -134,6 +142,8 @@ struct Row {
     double mpfr;
     double softfloat;
     double floppyfloat;
+    double cpfloat;
+    double cpfloat_vec;
     double mpfx_rto;
     double mpfx_softfloat;
     double mpfx_ffloat;
@@ -145,6 +155,8 @@ static void print_header() {
         << ", mpfr"
         << ", softfloat"
         << ", floppyfloat"
+        << ", cpfloat"
+        << ", cpfloat_vec"
         << ", mpfx_rto"
         << ", mpfx_sfloat"
         << ", mpfx_ffloat"
@@ -165,6 +177,8 @@ static void print_runtime_row(const Row& r) {
     std::cout << ", "; t(r.mpfr);
     std::cout << ", "; t(r.softfloat);
     std::cout << ", "; t(r.floppyfloat);
+    std::cout << ", "; t(r.cpfloat);
+    std::cout << ", "; t(r.cpfloat_vec);
     std::cout << ", "; t(r.mpfx_rto);
     std::cout << ", "; t(r.mpfx_softfloat);
     std::cout << ", "; t(r.mpfx_ffloat);
@@ -190,6 +204,8 @@ static void print_speedup_row(const Row& r) {
     sp(r.mpfr);
     sp(r.softfloat);
     sp(r.floppyfloat);
+    sp(r.cpfloat);
+    sp(r.cpfloat_vec);
     sp(r.mpfx_rto);
     sp(r.mpfx_softfloat);
     sp(r.mpfx_ffloat);
@@ -551,6 +567,180 @@ double floppyfloat_op3(const std::vector<float>& x_vals, const std::vector<float
 }
 
 ////////////////////////////////////////////////////////////
+// CPFloat references (FP64 container, double rounding). Inputs are the exact
+// `double` widenings of the target-format samples.
+
+static cpfw_rm cvt_rm_cpfloat(mpfx::RM rm) {
+    switch (rm) {
+        case mpfx::RM::RNE:
+            return CPFW_RND_NE;
+        case mpfx::RM::RTP:
+            return CPFW_RND_TP;
+        case mpfx::RM::RTN:
+            return CPFW_RND_TN;
+        case mpfx::RM::RTZ:
+            return CPFW_RND_TZ;
+        case mpfx::RM::RAZ:
+            return CPFW_RND_NA;
+        default:
+            throw std::runtime_error("invalid rounding mode");
+    }
+}
+
+// Target format: FP16 is 11 significand bits over [-14, 15], FP32 is 24 bits
+// over [-126, 127]; subnormals on in both.
+template <bool FP16>
+static cpfw_ctx* make_cpfloat_ctx(const mpfx::Context& ctx) {
+    cpfw_ctx* cpf = FP16 ? cpfw_create(11, -14, 15, cvt_rm_cpfloat(ctx.rm()))
+                         : cpfw_create(24, -126, 127, cvt_rm_cpfloat(ctx.rm()));
+    if (cpf == nullptr) {
+        throw std::runtime_error("CPFloat rejected the target format");
+    }
+    return cpf;
+}
+
+template <bool FP16, OP1 O>
+double cpfloat_op1(const std::vector<double>& x_vals, const mpfx::Context& ctx, size_t N) {
+    cpfw_ctx* cpf = make_cpfloat_ctx<FP16>(ctx);
+
+    volatile double result = 0.0;
+    auto start = std::chrono::steady_clock::now();
+
+    for (size_t i = 0; i < N; i++) {
+        if constexpr (O == OP1::SQRT) {
+            result = cpfw_sqrt(cpf, x_vals[i]);
+        } else {
+            MPFX_STATIC_ASSERT(false, "unsupported OP1");
+        }
+    }
+
+    auto end = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+    (void) result;
+    cpfw_free(cpf);
+    return duration;
+}
+
+template <bool FP16, OP2 O>
+double cpfloat_op2(const std::vector<double>& x_vals, const std::vector<double>& y_vals, const mpfx::Context& ctx, size_t N) {
+    cpfw_ctx* cpf = make_cpfloat_ctx<FP16>(ctx);
+
+    volatile double result = 0.0;
+    auto start = std::chrono::steady_clock::now();
+
+    for (size_t i = 0; i < N; i++) {
+        if constexpr (O == OP2::ADD) {
+            result = cpfw_add(cpf, x_vals[i], y_vals[i]);
+        } else if constexpr (O == OP2::SUB) {
+            result = cpfw_sub(cpf, x_vals[i], y_vals[i]);
+        } else if constexpr (O == OP2::MUL) {
+            result = cpfw_mul(cpf, x_vals[i], y_vals[i]);
+        } else if constexpr (O == OP2::DIV) {
+            result = cpfw_div(cpf, x_vals[i], y_vals[i]);
+        } else {
+            MPFX_STATIC_ASSERT(false, "unsupported OP2");
+        }
+    }
+
+    auto end = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+    (void) result;
+    cpfw_free(cpf);
+    return duration;
+}
+
+template <bool FP16, OP3 O>
+double cpfloat_op3(const std::vector<double>& x_vals, const std::vector<double>& y_vals, const std::vector<double>& z_vals, const mpfx::Context& ctx, size_t N) {
+    cpfw_ctx* cpf = make_cpfloat_ctx<FP16>(ctx);
+
+    volatile double result = 0.0;
+    auto start = std::chrono::steady_clock::now();
+
+    for (size_t i = 0; i < N; i++) {
+        if constexpr (O == OP3::FMA) {
+            result = cpfw_fma(cpf, x_vals[i], y_vals[i], z_vals[i]);
+        } else {
+            MPFX_STATIC_ASSERT(false, "unsupported OP3");
+        }
+    }
+
+    auto end = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+    (void) result;
+    cpfw_free(cpf);
+    return duration;
+}
+
+// Array variants: one CPFloat call over all N elements. The output buffer is
+// allocated outside the timed region.
+
+template <bool FP16, OP1 O>
+double cpfloat_vec_op1(const std::vector<double>& x_vals, const mpfx::Context& ctx, size_t N) {
+    cpfw_ctx* cpf = make_cpfloat_ctx<FP16>(ctx);
+    std::vector<double> out(N);
+
+    auto start = std::chrono::steady_clock::now();
+    if constexpr (O == OP1::SQRT) {
+        cpfw_sqrt_n(cpf, out.data(), x_vals.data(), N);
+    } else {
+        MPFX_STATIC_ASSERT(false, "unsupported OP1");
+    }
+    auto end = std::chrono::steady_clock::now();
+
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+    volatile double sink = out[N - 1];
+    (void) sink;
+    cpfw_free(cpf);
+    return duration;
+}
+
+template <bool FP16, OP2 O>
+double cpfloat_vec_op2(const std::vector<double>& x_vals, const std::vector<double>& y_vals, const mpfx::Context& ctx, size_t N) {
+    cpfw_ctx* cpf = make_cpfloat_ctx<FP16>(ctx);
+    std::vector<double> out(N);
+
+    auto start = std::chrono::steady_clock::now();
+    if constexpr (O == OP2::ADD) {
+        cpfw_add_n(cpf, out.data(), x_vals.data(), y_vals.data(), N);
+    } else if constexpr (O == OP2::SUB) {
+        cpfw_sub_n(cpf, out.data(), x_vals.data(), y_vals.data(), N);
+    } else if constexpr (O == OP2::MUL) {
+        cpfw_mul_n(cpf, out.data(), x_vals.data(), y_vals.data(), N);
+    } else if constexpr (O == OP2::DIV) {
+        cpfw_div_n(cpf, out.data(), x_vals.data(), y_vals.data(), N);
+    } else {
+        MPFX_STATIC_ASSERT(false, "unsupported OP2");
+    }
+    auto end = std::chrono::steady_clock::now();
+
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+    volatile double sink = out[N - 1];
+    (void) sink;
+    cpfw_free(cpf);
+    return duration;
+}
+
+template <bool FP16, OP3 O>
+double cpfloat_vec_op3(const std::vector<double>& x_vals, const std::vector<double>& y_vals, const std::vector<double>& z_vals, const mpfx::Context& ctx, size_t N) {
+    cpfw_ctx* cpf = make_cpfloat_ctx<FP16>(ctx);
+    std::vector<double> out(N);
+
+    auto start = std::chrono::steady_clock::now();
+    if constexpr (O == OP3::FMA) {
+        cpfw_fma_n(cpf, out.data(), x_vals.data(), y_vals.data(), z_vals.data(), N);
+    } else {
+        MPFX_STATIC_ASSERT(false, "unsupported OP3");
+    }
+    auto end = std::chrono::steady_clock::now();
+
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+    volatile double sink = out[N - 1];
+    (void) sink;
+    cpfw_free(cpf);
+    return duration;
+}
+
+////////////////////////////////////////////////////////////
 // MPFX engine implementations. Inputs are target-format values widened to
 // `double` (exact); each engine emulates the format's rounding in the f64
 // container.
@@ -633,6 +823,8 @@ Row benchmark_op1(const mpfx::Context& output_ctx, size_t N) {
         mpfr_op1<O>(x_wide, output_ctx, N),
         softfloat_op1<FP16, O>(x_sf, output_ctx, N),
         floppyfloat_op1<FP16, O>(x_f, output_ctx, N),
+        cpfloat_op1<FP16, O>(x_wide, output_ctx, N),
+        cpfloat_vec_op1<FP16, O>(x_wide, output_ctx, N),
         mpfx_op1<mpfx::Engine::FP_RTO, O, Flags>(x_wide, output_ctx, N),
         mpfx_op1<mpfx::Engine::SOFTFLOAT, O, Flags>(x_wide, output_ctx, N),
         mpfx_op1<mpfx::Engine::FFLOAT, O, Flags>(x_wide, output_ctx, N),
@@ -654,6 +846,8 @@ Row benchmark_op2(const mpfx::Context& output_ctx, size_t N) {
         mpfr_op2<O>(x_wide, y_wide, output_ctx, N),
         softfloat_op2<FP16, O>(x_sf, y_sf, output_ctx, N),
         floppyfloat_op2<FP16, O>(x_f, y_f, output_ctx, N),
+        cpfloat_op2<FP16, O>(x_wide, y_wide, output_ctx, N),
+        cpfloat_vec_op2<FP16, O>(x_wide, y_wide, output_ctx, N),
         mpfx_op2<mpfx::Engine::FP_RTO, O, Flags>(x_wide, y_wide, output_ctx, N),
         mpfx_op2<mpfx::Engine::SOFTFLOAT, O, Flags>(x_wide, y_wide, output_ctx, N),
         mpfx_op2<mpfx::Engine::FFLOAT, O, Flags>(x_wide, y_wide, output_ctx, N),
@@ -677,6 +871,8 @@ Row benchmark_op3(const mpfx::Context& output_ctx, size_t N) {
         mpfr_op3<O>(x_wide, y_wide, z_wide, output_ctx, N),
         softfloat_op3<FP16, O>(x_sf, y_sf, z_sf, output_ctx, N),
         floppyfloat_op3<FP16, O>(x_f, y_f, z_f, output_ctx, N),
+        cpfloat_op3<FP16, O>(x_wide, y_wide, z_wide, output_ctx, N),
+        cpfloat_vec_op3<FP16, O>(x_wide, y_wide, z_wide, output_ctx, N),
         mpfx_op3<mpfx::Engine::FP_RTO, O, Flags>(x_wide, y_wide, z_wide, output_ctx, N),
         mpfx_op3<mpfx::Engine::SOFTFLOAT, O, Flags>(x_wide, y_wide, z_wide, output_ctx, N),
         mpfx_op3<mpfx::Engine::FFLOAT, O, Flags>(x_wide, y_wide, z_wide, output_ctx, N),
