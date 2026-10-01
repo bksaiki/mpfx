@@ -53,7 +53,7 @@ jobs:
         run: |
           cd build
           set -o pipefail
-          ctest --output-on-failure --timeout 300 2>&1 | head -c 2000000
+          ctest --output-on-failure --timeout 300 -j$(nproc 2>/dev/null || sysctl -n hw.ncpu) 2>&1 | head -c 2000000
 
       - name: Run examples
         run: |

@@ -32,4 +32,5 @@ target_link_libraries(run_tests
 )
 
 # Register tests with CTest
-add_test(NAME AllTests COMMAND run_tests)
+include(GoogleTest)
+gtest_discover_tests(run_tests)
