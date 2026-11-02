@@ -1,3 +1,31 @@
+/**
+ * @file mx_dot_prod.cpp
+ * @brief MX dot product: SoftFloat vs. MPFX.
+ *
+ * Draws pairs of standard-normal vectors of length 4096 and quantizes each
+ * into OCP MX blocks of 32 elements with a shared power-of-two scale,
+ * rounding to nearest, ties to even, and saturating at the element format's
+ * largest value. For each pairing of element formats (E5M2 x E5M2,
+ * E5M2 x E4M3, E4M3 x E4M3), it computes the dot product of every pair two
+ * ways, with SoftFloat (`mx_dot_prod_sf`) and with MPFX (`mx_dot_prod_impl`):
+ * each block's exact dot product, scaled, is added into an FP32 accumulator
+ * rounding to nearest, ties to even. Only those two loops are timed.
+ *
+ * The two implementations must then agree bit for bit, with a finite result,
+ * on every input; a pairing that does not prints FAIL in place of its times,
+ * and the program exits 1. On 23,000 drawn inputs, a version that adds each
+ * block's dot product to the accumulator in plain double, then rounds to
+ * FP32, passes the check too.
+ *
+ * Build with CMake and -DBUILD_EXAMPLES=ON (needs SoftFloat; see
+ * install_softfloat.sh), then run
+ *
+ *     mx_dot_prod <num_inputs> [seed]
+ *
+ * The seed defaults to 1. Memory grows by 130 to 160 KB per input (vectors
+ * and blocks), so 100,000 inputs need 13 to 16 GB.
+ */
+
 #include <algorithm>
 #include <array>
 #include <bit>
@@ -5,6 +33,7 @@
 #include <cmath>
 #include <cstdint>
 #include <iomanip>
+#include <iostream>
 #include <random>
 #include <sstream>
 #include <string>
@@ -94,115 +123,6 @@ constexpr double exp2i(int e) {
 }
 
 
-template <std::floating_point T>
-inline std::tuple<T, T> fast_two_sum(T x, T y) {
-    const T s = x + y;
-    const T yy = s - x;
-    const T t = y - yy;
-    return { s, t };
-}
-
-template <std::floating_point T>
-inline std::tuple<T, T> two_sum(T x, T y) {
-    const bool swap = std::fabs(x) < std::fabs(y);
-    const T a = swap ? y : x;
-    const T b = swap ? x : y;
-    return fast_two_sum(a, b);
-}
-
-// Sorted: if true, assumes |a[0]| >= |a[1]| (uses fast_two_sum for first pair)
-template <bool Sorted = false, std::floating_point T>
-inline void distill3(std::array<T, 3>& a) {
-    const auto [s0, e0] = Sorted ? fast_two_sum(a[0], a[1]) : two_sum(a[0], a[1]);
-    const auto [s1, e1] = two_sum(s0, a[2]);
-    const auto [b1, b2] = two_sum(e0, e1);
-
-    // branchless conditional swap to ensure |a[0]| >= |a[1]|
-    const bool swap = std::fabs(s1) < std::fabs(b1);
-    const T hi = swap ? b1 : s1;
-    const T lo = swap ? s1 : b1;
-    a = { hi, lo, b2 };
-}
-
-// Sorted: if true, assumes |a[0]| >= |a[1]| and |a[2]| >= |a[3]| (uses fast_two_sum for both initial pairs)
-template <bool Sorted = false, std::floating_point T>
-inline void distill4(std::array<T, 4>& a) {
-    const auto [s0, e0] = Sorted ? fast_two_sum(a[0], a[1]) : two_sum(a[0], a[1]);
-    const auto [s1, e1] = Sorted ? fast_two_sum(a[2], a[3]) : two_sum(a[2], a[3]);
-    const auto [s2, e2] = two_sum(s0, s1);
-    const auto [t0, f0] = two_sum(e0, e1);
-    const auto [t1, f1] = two_sum(t0, e2);
-
-    // branchless conditional swap to ensure |a[2]| >= |a[3]|
-    const bool swap = std::fabs(f1) < std::fabs(f0);
-    const T lo = swap ? f1 : f0;
-    const T hi = swap ? f0 : f1;
-
-    // outputs are in sorted order: |s2| >= |t1| >= |hi| >= |lo|
-    a = { s2, t1, hi, lo };
-}
-
-// Computes the error-free transformation of the sum of three numbers.
-// Returns the rounded sum and the first-order error term.
-template <std::floating_point T>
-std::tuple<T, T> eft_add3(T x0, T x1, T x2) {
-    // perform 2 rounds of distillation
-    std::array<T, 3> a = { x0, x1, x2 };
-    distill3<false>(a);
-    distill3<true>(a);
-    return { a[0], a[1] };
-}
-
-// Computes the error-free transformation of the sum of four numbers.
-// Returns the rounded sum and the first-order error term.
-template <std::floating_point T>
-std::tuple<T, T> eft_add4(T x0, T x1, T x2, T x3) {
-    // perform 3 rounds of distillation
-    std::array<T, 4> a = { x0, x1, x2, x3 };
-    distill4<false>(a);
-    distill4<true>(a);
-    distill4<true>(a);
-    return { a[0], a[1] };
-}
-
-/// @brief Finalizes the rounding of an EFT result to round-to-odd.
-/// Assumes `high` and `low` are both finite.
-template <std::floating_point T>
-inline T round_finalize(T high, T low) {
-    MPFX_DEBUG_ASSERT(std::isfinite(high), "round_finalize: high part is not finite");
-    MPFX_DEBUG_ASSERT(std::isfinite(low), "round_finalize: low part is not finite");
-    using FP = typename mpfx::float_params<T>::params;
-    using U = typename mpfx::float_params<T>::uint_t;
-    static constexpr auto SIGN_SHIFT = FP::N - 1;
-
-    // fast path: low part is zero
-    if (low == static_cast<T>(0)) {
-        return high; // exact result, no adjustment needed
-    }
-
-    // slow path: low part is non-zero (so is high part)
-    const U b_high = std::bit_cast<U>(high);
-    const U b_low = std::bit_cast<U>(low);
-
-    // compute sign difference
-    const int sign_high = b_high >> SIGN_SHIFT;
-    const int sign_low = b_low >> SIGN_SHIFT;
-    const int sign_diff = sign_high ^ sign_low;
-
-    // compute adjustment for RTZ: +1 for negative `high`, -1 for positive `high`
-    // only apply if the signs differ
-    const int adjust_mask = -static_cast<int>(sign_diff);
-    const int adjust = static_cast<int>((sign_high << 1) - 1) & adjust_mask;
-
-    // apply adjustment and jam sticky bit for RTO
-    U result = b_high + adjust;
-    result |= 1;
-
-    // reinterpret back to floating-point
-    return std::bit_cast<T>(result);
-}
-
-
 using mx_block_t = std::tuple<double, std::array<double, 32>>;
 
 template <size_t K, MX F, size_t N>
@@ -254,35 +174,6 @@ std::vector<mx_block_t> mx_block_quantize(const std::array<double, N>& vec) {
     }
 
     return blocks;
-}
-
-template <int P = 24>
-double mx_dot_prod_ref(const std::vector<mx_block_t>& a_blocks, const std::vector<mx_block_t>& b_blocks) {
-    MPFX_ASSERT(a_blocks.size() == b_blocks.size(), "block size mismatch");
-
-    double result = 0.0;
-    for (size_t i = 0; i < a_blocks.size(); i++) {
-        // unpack blocks
-        const auto [a_scale, a_elts] = a_blocks[i];
-        const auto [b_scale, b_elts] = b_blocks[i];
-
-        // multiply scales
-        const double scale = a_scale + b_scale;
-
-        // compute unscaled dot product
-        double prod = 0.0;
-        for (size_t j = 0; j < a_elts.size(); j++) {
-            prod += a_elts[j] * b_elts[j];
-        }
-
-        // scale the product
-        const double scaled = scale * prod;
-
-        // add to result
-        result += scaled;
-    }
-
-    return result;
 }
 
 template <MX FA, MX FB>
@@ -412,7 +303,7 @@ double mx_dot_prod_impl(const std::vector<mx_block_t>& a_blocks, const std::vect
                 prod += static_cast<int64_t>(p * TO_FIXED);
             }
 
-            // break up prod into 2 parts of 32 digits each
+            // break up prod into 2 parts of 40 and 15 digits
             static constexpr int SPLIT = 40;
             static constexpr mpfx::uint128_t MASK = (mpfx::uint128_t(1) << SPLIT) - 1;
 
@@ -434,7 +325,7 @@ double mx_dot_prod_impl(const std::vector<mx_block_t>& a_blocks, const std::vect
             // perform `scale * prod + result` using error-free transformations
             result = mpfx::add3(scaled_hi, scaled_lo, result, accum_ctx);
         } else {
-            // compute unscaled dot product using FP128
+            // compute unscaled dot product in double precision, exact for these formats
             double prod = 0.0;
             for (size_t j = 0; j < a_elts.size(); j++) {
                 prod += a_elts[j] * b_elts[j];
