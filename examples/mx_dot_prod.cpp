@@ -216,9 +216,9 @@ std::vector<mx_block_t> mx_block_quantize(const std::array<double, N>& vec) {
     constexpr int MAX = mx_params<F>::MAX;
     int EMAX = std::ilogb(MAX);
 
-    // Quantize with round-toward-zero so an element can never round up past
-    // MAX into infinity (which would poison the FP128 accumulation with NaN).
-    const mpfx::Context ctx(P, NMIN, MAX, mpfx::RM::RTZ);
+    // Round to nearest and saturate, so an element past MAX becomes MAX
+    // rather than infinity, which would make the dot product meaningless.
+    const mpfx::Context ctx(P, NMIN, MAX, mpfx::RM::RNE, mpfx::OverflowMode::TO_MAXVAL);
 
     // quantize vector into blocks
     std::vector<mx_block_t> blocks(num_blocks);
