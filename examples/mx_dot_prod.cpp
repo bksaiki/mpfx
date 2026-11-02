@@ -521,20 +521,24 @@ TimingResult time_dot_prod(
 
 
 int main(int argc, char* argv[]) {
-    // Command line argument specifies number of inputs to test
-    if (argc != 2) {
-        std::cerr << "Usage: " << argv[0] << " <num_inputs>" << std::endl;
+    // Command line arguments: number of inputs to test, and an optional seed
+    // for them, fixed by default so a run can be repeated. The same seed gives
+    // the same inputs only under the same standard library, since the
+    // algorithm behind std::normal_distribution varies between them.
+    if (argc < 2 || argc > 3) {
+        std::cerr << "Usage: " << argv[0] << " <num_inputs> [seed]" << std::endl;
         return 1;
     }
 
     const size_t N = std::stoul(argv[1]);
+    const uint64_t seed = argc == 3 ? std::stoull(argv[2]) : 1;
+    std::cout << "Seed: " << seed << std::endl;
 
     // Configuration
     static constexpr size_t LEN = 4096;
 
     // Generate random test data
-    std::random_device rd;
-    std::mt19937_64 rng(rd());
+    std::mt19937_64 rng(seed);
     std::normal_distribution<double> dist(0.0, 1.0);
 
     // Random data
