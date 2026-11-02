@@ -12,3 +12,6 @@ echo "Running benchmark_round..."
 
 echo "Running mixed_dot_prod..."
 "$SCRIPT_DIR"/build/examples/mixed_dot_prod
+
+echo "Running mx_dot_prod..."
+"$SCRIPT_DIR"/build/examples/mx_dot_prod 100
