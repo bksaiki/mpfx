@@ -90,3 +90,6 @@ third_party/
 ### Python ###
 __pycache__/
 .env/
+
+### Eval ###
+output/

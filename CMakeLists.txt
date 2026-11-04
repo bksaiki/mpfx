@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.15)
 project(mpfx
     VERSION 0.1.0
     DESCRIPTION "Number library for software floating-point arithmetic"
-    LANGUAGES CXX
+    LANGUAGES C CXX
 )
 
 # Build type
@@ -27,6 +27,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra")
 set(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -pedantic -DMPFX_DEBUG")
 set(CMAKE_CXX_FLAGS_RELEASE "-O2 -march=native -mtune=native -DNDEBUG")
+set(CMAKE_C_FLAGS_RELEASE "-O2 -march=native -mtune=native -DNDEBUG")
 
 # Profiling flags
 if(ENABLE_PROFILING)
@@ -82,6 +83,16 @@ FetchContent_MakeAvailable(floppyfloat)
 # Include FloppyFloat headers
 include_directories(${floppyfloat_SOURCE_DIR}/src)
 add_definitions(-DUSE_FLOPPYFLOAT)
+
+# CPFloat (header-only C; benchmarks only, see benchmark/cpfloat_wrap.c)
+if(BUILD_BENCHMARKS)
+    FetchContent_Declare(
+      cpfloat
+      GIT_REPOSITORY https://github.com/north-numerical-computing/cpfloat.git
+      GIT_TAG        3583976741eb4d0e99b57d6d157ab6a7bbdb037f
+    )
+    FetchContent_Populate(cpfloat)
+endif()
 
 # SoftFloat
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)

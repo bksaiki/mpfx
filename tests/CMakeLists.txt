@@ -11,6 +11,7 @@ set(TEST_SOURCES
     test_round.cpp
     test_round_scaled.cpp
     test_eft.cpp
+    test_exhaustive.cpp
 )
 
 # Create test executable
@@ -31,4 +32,5 @@ target_link_libraries(run_tests
 )
 
 # Register tests with CTest
-add_test(NAME AllTests COMMAND run_tests)
+include(GoogleTest)
+gtest_discover_tests(run_tests)

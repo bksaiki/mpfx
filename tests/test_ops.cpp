@@ -628,7 +628,7 @@ static const std::vector<mpfx::RM> F32_ROUNDING_MODES = {
 };
 
 TEST(OpsF32, TestAddEFTUniform) {
-    static constexpr size_t N = 200000;
+    static constexpr size_t N = 1000000;
     std::random_device r;
     std::mt19937_64 rng(r());
     for (int p = 2; p <= 8; p++) {
@@ -648,7 +648,7 @@ TEST(OpsF32, TestAddEFTUniform) {
 }
 
 TEST(OpsF32, TestSubEFTUniform) {
-    static constexpr size_t N = 200000;
+    static constexpr size_t N = 1000000;
     std::random_device r;
     std::mt19937_64 rng(r());
     for (int p = 2; p <= 8; p++) {
@@ -668,7 +668,7 @@ TEST(OpsF32, TestSubEFTUniform) {
 }
 
 TEST(OpsF32, TestMulEFTUniform) {
-    static constexpr size_t N = 200000;
+    static constexpr size_t N = 1000000;
     std::random_device r;
     std::mt19937_64 rng(r());
     for (int p = 2; p <= 8; p++) {
@@ -688,7 +688,7 @@ TEST(OpsF32, TestMulEFTUniform) {
 }
 
 TEST(OpsF32, TestDivEFTUniform) {
-    static constexpr size_t N = 200000;
+    static constexpr size_t N = 1000000;
     std::random_device r;
     std::mt19937_64 rng(r());
     for (int p = 2; p <= 8; p++) {
@@ -709,13 +709,13 @@ TEST(OpsF32, TestDivEFTUniform) {
 }
 
 TEST(OpsF32, TestSqrtEFTUniform) {
-    static constexpr size_t N = 200000;
+    static constexpr size_t N = 1000000;
     std::random_device r;
     std::mt19937_64 rng(r());
     for (int p = 2; p <= 8; p++) {
         for (const auto rm : F32_ROUNDING_MODES) {
             const mpfx::MPContext ctx(p, rm);
-            std::uniform_real_distribution<float> dist(0.0f, 4.0f);
+            std::uniform_real_distribution<float> dist(0.0f, 1.0f);
             for (size_t i = 0; i < N; i++) {
                 const float x = dist(rng);
 
@@ -728,7 +728,7 @@ TEST(OpsF32, TestSqrtEFTUniform) {
 }
 
 TEST(OpsF32, TestFmaEFTUniform) {
-    static constexpr size_t N = 200000;
+    static constexpr size_t N = 1000000;
     std::random_device r;
     std::mt19937_64 rng(r());
     for (int p = 2; p <= 8; p++) {
@@ -749,7 +749,7 @@ TEST(OpsF32, TestFmaEFTUniform) {
 }
 
 TEST(OpsF32, TestAdd3EFTUniform) {
-    static constexpr size_t N = 200000;
+    static constexpr size_t N = 1000000;
     std::random_device r;
     std::mt19937_64 rng(r());
     for (int p = 2; p <= 8; p++) {
@@ -770,7 +770,7 @@ TEST(OpsF32, TestAdd3EFTUniform) {
 }
 
 TEST(OpsF32, TestAdd4EFTUniform) {
-    static constexpr size_t N = 200000;
+    static constexpr size_t N = 1000000;
     std::random_device r;
     std::mt19937_64 rng(r());
     for (int p = 2; p <= 8; p++) {
@@ -796,7 +796,7 @@ TEST(OpsF32, TestAdd4EFTUniform) {
 // p <= 22, so the same MPFR oracles apply.
 
 TEST(OpsF32, TestAddFPUniform) {
-    static constexpr size_t N = 200000;
+    static constexpr size_t N = 1000000;
     std::random_device r;
     std::mt19937_64 rng(r());
     for (int p = 2; p <= 8; p++) {
@@ -816,7 +816,7 @@ TEST(OpsF32, TestAddFPUniform) {
 }
 
 TEST(OpsF32, TestSubFPUniform) {
-    static constexpr size_t N = 200000;
+    static constexpr size_t N = 1000000;
     std::random_device r;
     std::mt19937_64 rng(r());
     for (int p = 2; p <= 8; p++) {
@@ -836,7 +836,7 @@ TEST(OpsF32, TestSubFPUniform) {
 }
 
 TEST(OpsF32, TestMulFPUniform) {
-    static constexpr size_t N = 200000;
+    static constexpr size_t N = 1000000;
     std::random_device r;
     std::mt19937_64 rng(r());
     for (int p = 2; p <= 8; p++) {
@@ -856,7 +856,7 @@ TEST(OpsF32, TestMulFPUniform) {
 }
 
 TEST(OpsF32, TestDivFPUniform) {
-    static constexpr size_t N = 200000;
+    static constexpr size_t N = 1000000;
     std::random_device r;
     std::mt19937_64 rng(r());
     for (int p = 2; p <= 8; p++) {
@@ -877,13 +877,13 @@ TEST(OpsF32, TestDivFPUniform) {
 }
 
 TEST(OpsF32, TestSqrtFPUniform) {
-    static constexpr size_t N = 200000;
+    static constexpr size_t N = 1000000;
     std::random_device r;
     std::mt19937_64 rng(r());
     for (int p = 2; p <= 8; p++) {
         for (const auto rm : F32_ROUNDING_MODES) {
             const mpfx::MPContext ctx(p, rm);
-            std::uniform_real_distribution<float> dist(0.0f, 4.0f);
+            std::uniform_real_distribution<float> dist(0.0f, 1.0f);
             for (size_t i = 0; i < N; i++) {
                 const float x = dist(rng);
 
@@ -896,7 +896,7 @@ TEST(OpsF32, TestSqrtFPUniform) {
 }
 
 TEST(OpsF32, TestFmaFPUniform) {
-    static constexpr size_t N = 200000;
+    static constexpr size_t N = 1000000;
     std::random_device r;
     std::mt19937_64 rng(r());
     for (int p = 2; p <= 8; p++) {
@@ -920,7 +920,7 @@ TEST(OpsF32, TestFmaFPUniform) {
 // Correctly rounded for context precision p <= 22, so the MPFR oracles apply.
 
 TEST(OpsF32, TestAddSFUniform) {
-    static constexpr size_t N = 200000;
+    static constexpr size_t N = 1000000;
     std::random_device r;
     std::mt19937_64 rng(r());
     for (int p = 2; p <= 8; p++) {
@@ -940,7 +940,7 @@ TEST(OpsF32, TestAddSFUniform) {
 }
 
 TEST(OpsF32, TestSubSFUniform) {
-    static constexpr size_t N = 200000;
+    static constexpr size_t N = 1000000;
     std::random_device r;
     std::mt19937_64 rng(r());
     for (int p = 2; p <= 8; p++) {
@@ -960,7 +960,7 @@ TEST(OpsF32, TestSubSFUniform) {
 }
 
 TEST(OpsF32, TestMulSFUniform) {
-    static constexpr size_t N = 200000;
+    static constexpr size_t N = 1000000;
     std::random_device r;
     std::mt19937_64 rng(r());
     for (int p = 2; p <= 8; p++) {
@@ -980,7 +980,7 @@ TEST(OpsF32, TestMulSFUniform) {
 }
 
 TEST(OpsF32, TestDivSFUniform) {
-    static constexpr size_t N = 200000;
+    static constexpr size_t N = 1000000;
     std::random_device r;
     std::mt19937_64 rng(r());
     for (int p = 2; p <= 8; p++) {
@@ -1001,13 +1001,13 @@ TEST(OpsF32, TestDivSFUniform) {
 }
 
 TEST(OpsF32, TestSqrtSFUniform) {
-    static constexpr size_t N = 200000;
+    static constexpr size_t N = 1000000;
     std::random_device r;
     std::mt19937_64 rng(r());
     for (int p = 2; p <= 8; p++) {
         for (const auto rm : F32_ROUNDING_MODES) {
             const mpfx::MPContext ctx(p, rm);
-            std::uniform_real_distribution<float> dist(0.0f, 4.0f);
+            std::uniform_real_distribution<float> dist(0.0f, 1.0f);
             for (size_t i = 0; i < N; i++) {
                 const float x = dist(rng);
 
@@ -1020,7 +1020,7 @@ TEST(OpsF32, TestSqrtSFUniform) {
 }
 
 TEST(OpsF32, TestFmaSFUniform) {
-    static constexpr size_t N = 200000;
+    static constexpr size_t N = 1000000;
     std::random_device r;
     std::mt19937_64 rng(r());
     for (int p = 2; p <= 8; p++) {
@@ -1044,7 +1044,7 @@ TEST(OpsF32, TestFmaSFUniform) {
 // Correctly rounded for context precision p <= 22, so the MPFR oracles apply.
 
 TEST(OpsF32, TestAddFFUniform) {
-    static constexpr size_t N = 200000;
+    static constexpr size_t N = 1000000;
     std::random_device r;
     std::mt19937_64 rng(r());
     for (int p = 2; p <= 8; p++) {
@@ -1064,7 +1064,7 @@ TEST(OpsF32, TestAddFFUniform) {
 }
 
 TEST(OpsF32, TestSubFFUniform) {
-    static constexpr size_t N = 200000;
+    static constexpr size_t N = 1000000;
     std::random_device r;
     std::mt19937_64 rng(r());
     for (int p = 2; p <= 8; p++) {
@@ -1084,7 +1084,7 @@ TEST(OpsF32, TestSubFFUniform) {
 }
 
 TEST(OpsF32, TestMulFFUniform) {
-    static constexpr size_t N = 200000;
+    static constexpr size_t N = 1000000;
     std::random_device r;
     std::mt19937_64 rng(r());
     for (int p = 2; p <= 8; p++) {
@@ -1104,7 +1104,7 @@ TEST(OpsF32, TestMulFFUniform) {
 }
 
 TEST(OpsF32, TestDivFFUniform) {
-    static constexpr size_t N = 200000;
+    static constexpr size_t N = 1000000;
     std::random_device r;
     std::mt19937_64 rng(r());
     for (int p = 2; p <= 8; p++) {
@@ -1125,13 +1125,13 @@ TEST(OpsF32, TestDivFFUniform) {
 }
 
 TEST(OpsF32, TestSqrtFFUniform) {
-    static constexpr size_t N = 200000;
+    static constexpr size_t N = 1000000;
     std::random_device r;
     std::mt19937_64 rng(r());
     for (int p = 2; p <= 8; p++) {
         for (const auto rm : F32_ROUNDING_MODES) {
             const mpfx::MPContext ctx(p, rm);
-            std::uniform_real_distribution<float> dist(0.0f, 4.0f);
+            std::uniform_real_distribution<float> dist(0.0f, 1.0f);
             for (size_t i = 0; i < N; i++) {
                 const float x = dist(rng);
 
@@ -1144,7 +1144,7 @@ TEST(OpsF32, TestSqrtFFUniform) {
 }
 
 TEST(OpsF32, TestFmaFFUniform) {
-    static constexpr size_t N = 200000;
+    static constexpr size_t N = 1000000;
     std::random_device r;
     std::mt19937_64 rng(r());
     for (int p = 2; p <= 8; p++) {
@@ -1162,4 +1162,49 @@ TEST(OpsF32, TestFmaFFUniform) {
             }
         }
     }
+}
+
+///////////////////////////////////////////////////////////
+// Double-container coverage for the SoftFloat and FloppyFloat engines, mirroring
+// the FP_RTO and EFT tests above: precisions 2..8, the five MPFR-supported
+// rounding modes, uniform inputs on [-1, 1] (sqrt on [0, 1]).
+
+template <mpfx::Engine E>
+static void check_engine_uniform_f64() {
+    static constexpr size_t N = 1000000;
+    const std::vector<mpfx::RM> rounding_modes = {
+        mpfx::RM::RNE, mpfx::RM::RTP, mpfx::RM::RTN, mpfx::RM::RTZ, mpfx::RM::RAZ,
+    };
+
+    std::random_device r;
+    std::mt19937_64 rng(r());
+    std::uniform_real_distribution<double> dist(-1.0, 1.0);
+    std::uniform_real_distribution<double> pos_dist(0.0, 1.0);
+
+    for (int p = 2; p <= 8; p++) {
+        for (const auto rm : rounding_modes) {
+            const mpfx::MPContext ctx(p, rm);
+            for (size_t i = 0; i < N; i++) {
+                const double x = dist(rng);
+                const double y = dist(rng);
+                const double z = dist(rng);
+                const double a = pos_dist(rng);
+
+                EXPECT_EQ(ref_add(x, y, p, rm), mpfx::add<E>(x, y, ctx));
+                EXPECT_EQ(ref_sub(x, y, p, rm), mpfx::sub<E>(x, y, ctx));
+                EXPECT_EQ(ref_mul(x, y, p, rm), mpfx::mul<E>(x, y, ctx));
+                EXPECT_EQ(ref_div(x, y, p, rm), mpfx::div<E>(x, y, ctx));
+                EXPECT_EQ(ref_sqrt(a, p, rm), mpfx::sqrt<E>(a, ctx));
+                EXPECT_EQ(ref_fma(x, y, z, p, rm), mpfx::fma<E>(x, y, z, ctx));
+            }
+        }
+    }
+}
+
+TEST(OpsFloat, TestSoftFloatEngineUniform) {
+    check_engine_uniform_f64<mpfx::Engine::SOFTFLOAT>();
+}
+
+TEST(OpsFloat, TestFloppyFloatEngineUniform) {
+    check_engine_uniform_f64<mpfx::Engine::FFLOAT>();
 }
