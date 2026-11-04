@@ -113,16 +113,6 @@ under `tests/`, and the programs under `examples/`, `benchmark/`, and
 
 ## Examples and benchmarks
 
-- `examples/mx_dot_prod.cpp` never checks that its SoftFloat and MPFX
-  results agree, and two defects stand in the way. The quantizer's
-  `Context` does not saturate, so an element that rounds above the
-  format's maximum becomes an infinity (1.9 × 2^15 at p = 3 rounds
-  to 2^16 > 57344), and `to_fixed` returns `int64_t`, which an
-  E5M2 × E5M2 product at quantum 2^−32 overflows (57344² needs
-  49 × 2^58). `mx_dot_prod_ref`, which it never calls, adds the block
-  scales where the other two multiply them. Fix these, then check
-  SoftFloat against MPFX bit for bit, so the case study is tested,
-  not only timed.
 - `examples/mixed_dot_prod.cpp` accumulates in
   `IEEE754Context(11, 32)`, commented as FP32, which is (8, 32).
 - The paper's performance comparison comes from a harness outside
@@ -135,6 +125,10 @@ under `tests/`, and the programs under `examples/`, `benchmark/`, and
 - A SoftFloat implementation with the same transformations as the
   MPFX one in `mx_dot_prod`, so the reported speedup isolates the
   library's contribution.
+- Test `mx_dot_prod`'s rounding on constructed inputs whose sums do
+  not fit in a double: on 23,000 drawn inputs, a version that adds each
+  block's dot product in plain double, then rounds to FP32, also passes
+  the check.
 
 ## Later
 
@@ -143,3 +137,6 @@ under `tests/`, and the programs under `examples/`, `benchmark/`, and
   per-operation path.
 - A same-mode engine for directed targets, which the rules license
   with no padding.
+- Only tests call `to_fixed`, which scales by `std::ldexp`,
+  an out-of-line libm call with GCC 15 and glibc. Speed it up or
+  prune it.

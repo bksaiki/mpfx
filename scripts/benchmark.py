@@ -289,7 +289,8 @@ def _rm_shade(base, r: int):
     return c
 
 
-def plot_speedup(output_dir: Path, bare: bool = False):
+def plot_speedup(output_dir: Path, bare: bool = False, exclude: list[str] = [],
+                 ylim: list[float] | None = None):
     # One merged figure: a subplot row per format; within each subplot the bars
     # are grouped by operation, then clustered by treatment (hue), then by
     # rounding mode (shade). Heights are speedup relative to SoftFloat (>1 =
@@ -309,7 +310,9 @@ def plot_speedup(output_dir: Path, bare: bool = False):
                 for key, ov in overheads.items()
             }
 
-    treatments = DISPLAY_COLUMNS  # SoftFloat is the 1.0 reference, not a bar
+    # SoftFloat is the 1.0 reference, not a bar; `exclude` drops treatments
+    # from the plot only (tables and TeX rows keep them)
+    treatments = [c for c in DISPLAY_COLUMNS if c not in exclude]
     R = len(RMS)
     T = len(treatments)
 
@@ -335,8 +338,9 @@ def plot_speedup(output_dir: Path, bare: bool = False):
         x += op_gap
     extent = x - op_gap
 
-    base_colors = plt.cm.tab10(np.linspace(0, 1, 10))[:T]
-    col_index = {c: i for i, c in enumerate(treatments)}
+    # colors follow `tab10` order over the plotted treatments, so excluding
+    # one leaves no gap in the palette
+    base_colors = {c: plt.cm.tab10(i) for i, c in enumerate(treatments)}
 
     fig, axes = plt.subplots(
         len(FORMATS), 1,
@@ -345,13 +349,13 @@ def plot_speedup(output_dir: Path, bare: bool = False):
     )
     axes = axes.flatten()
 
-    for ax, fmt in zip(axes, FORMATS):
+    for i, (ax, fmt) in enumerate(zip(axes, FORMATS)):
         for (xpos, op, col, r) in layout:
             height = speedups[(fmt, RMS[r])].get((op, col), math.nan)
             if math.isnan(height):
                 continue  # e.g. FloppyFloat under FP16 (not run)
             ax.bar(xpos, height, width=bar_w,
-                   color=_rm_shade(base_colors[col_index[col]], r),
+                   color=_rm_shade(base_colors[col], r),
                    edgecolor='black', linewidth=0.3)
 
         ax.axhline(1.0, color='red', linewidth=0.9, linestyle='--', alpha=0.7)
@@ -360,11 +364,17 @@ def plot_speedup(output_dir: Path, bare: bool = False):
         ax.set_xlim(-bar_w, extent)
         ax.set_ylabel(f'Speedup vs. {NAMES[BASELINE]}')
         ax.set_title(fmt.upper(), fontsize=13)
+        if ylim is not None:
+            ax.set_ylim(0, ylim[i])
+            clipped = [(op, NAMES[col], RMS[r].upper()) for (_, op, col, r) in layout
+                       if speedups[(fmt, RMS[r])].get((op, col), math.nan) > ylim[i]]
+            if clipped:
+                print(f"WARNING: {fmt} y-limit {ylim[i]} clips {len(clipped)} bar(s), e.g. {clipped[0]}")
         ax.grid(axis='y', alpha=0.3, linestyle='--')
 
     # two legends: hue distinguishes treatment, shade distinguishes rounding mode
-    treat_handles = [plt.Rectangle((0, 0), 1, 1, fc=_rm_shade(base_colors[i], R - 1),
-                                   edgecolor='black', linewidth=0.5) for i in range(T)]
+    treat_handles = [plt.Rectangle((0, 0), 1, 1, fc=_rm_shade(base_colors[c], R - 1),
+                                   edgecolor='black', linewidth=0.5) for c in treatments]
     treat_labels = [NAMES[c] for c in treatments]
     rm_handles = [plt.Rectangle((0, 0), 1, 1, fc=_rm_shade(np.array([0.35, 0.35, 0.35, 1.0]), r),
                                 edgecolor='black', linewidth=0.5) for r in range(R)]
@@ -450,6 +460,10 @@ if __name__ == "__main__":
     parser.add_argument('--num-inputs', type=int, default=10_000_000, help='Number of inputs per benchmark run.')
     parser.add_argument('--replot', action='store_true', help='Re-generate plots from existing benchmark data.')
     parser.add_argument('--bare', action='store_true', help='Strip the plot title and legend (e.g. for paper figures).')
+    parser.add_argument('--plot-exclude', action='append', default=[], choices=DISPLAY_COLUMNS, metavar='COLUMN',
+                        help=f'Omit a treatment from the plot only; repeatable. One of: {", ".join(DISPLAY_COLUMNS)}.')
+    parser.add_argument('--ylim', type=float, nargs=len(FORMATS), metavar='MAX',
+                        help=f'Plot y-axis maximum per format, in order: {", ".join(FORMATS)} (default: automatic).')
     args = parser.parse_args()
 
     # arguments
@@ -459,6 +473,8 @@ if __name__ == "__main__":
     num_inputs: int = args.num_inputs
     replot: bool = args.replot
     bare: bool = args.bare
+    plot_exclude: list[str] = args.plot_exclude
+    ylim: list[float] | None = args.ylim
 
     # log config
     print(f"Output Directory: {output_dir}")
@@ -487,7 +503,7 @@ if __name__ == "__main__":
     report_fastest_mpfx(output_dir)
 
     # single merged speedup plot across all formats and rounding modes
-    plot_speedup(output_dir, bare=bare)
+    plot_speedup(output_dir, bare=bare, exclude=plot_exclude, ylim=ylim)
 
     # emit LaTeX table rows (speedup vs SoftFloat)
     report_tex(output_dir)

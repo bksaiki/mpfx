@@ -1,5 +1,7 @@
+#include <cstdint>
 #include <limits>
 #include <random>
+#include <type_traits>
 
 #include <mpfx.hpp>
 #include <gtest/gtest.h>
@@ -184,4 +186,38 @@ TEST(TestConvert, TestUnpackPackFP32) {
         const float y = mpfx::make_float<float>(s, exp, c);
         EXPECT_EQ(x, y);
     }
+}
+
+TEST(TestConvert, TestToFixedInt64) {
+    static_assert(std::is_same_v<decltype(mpfx::to_fixed(1.0, 0)), int64_t>);
+
+    EXPECT_EQ(mpfx::to_fixed(0.0, -10), 0);
+    EXPECT_EQ(mpfx::to_fixed(-0.0, -10), 0);
+    EXPECT_EQ(mpfx::to_fixed(0.75, -2), 3);
+    EXPECT_EQ(mpfx::to_fixed(-0.75, -2), -3);
+    EXPECT_EQ(mpfx::to_fixed(96.0, 5), 3);
+
+    // extremes of int64_t that a double represents exactly
+    EXPECT_EQ(mpfx::to_fixed(0x1.fffffffffffffp62, 0), INT64_C(0x7ffffffffffffc00));
+    EXPECT_EQ(mpfx::to_fixed(-0x1p63, 0), std::numeric_limits<int64_t>::min());
+}
+
+TEST(TestConvert, TestToFixedInt128) {
+    using mpfx::int128_t;
+    static_assert(std::is_same_v<decltype(mpfx::to_fixed<int128_t>(1.0, 0)), int128_t>);
+
+    EXPECT_TRUE(mpfx::to_fixed<int128_t>(0.0, -10) == 0);
+    EXPECT_TRUE(mpfx::to_fixed<int128_t>(0.75, -2) == 3);
+    EXPECT_TRUE(mpfx::to_fixed<int128_t>(-0.75, -2) == -3);
+
+    // E5M2 max squared (49 * 2^26) at quantum 2^-32: 49 * 2^58 > INT64_MAX
+    const double e5m2_sq = 57344.0 * 57344.0;
+    const int128_t expected = static_cast<int128_t>(49) << 58;
+    EXPECT_TRUE(expected > std::numeric_limits<int64_t>::max());
+    EXPECT_TRUE(mpfx::to_fixed<int128_t>(e5m2_sq, -32) == expected);
+    EXPECT_TRUE(mpfx::to_fixed<int128_t>(-e5m2_sq, -32) == -expected);
+
+    // beyond the uint64_t range
+    EXPECT_TRUE(mpfx::to_fixed<int128_t>(0x1.8p100, 0) == (static_cast<int128_t>(3) << 99));
+    EXPECT_TRUE(mpfx::to_fixed<int128_t>(-0x1.8p100, 0) == -(static_cast<int128_t>(3) << 99));
 }
