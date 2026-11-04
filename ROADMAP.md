@@ -126,7 +126,9 @@ under `tests/`, and the programs under `examples/`, `benchmark/`, and
   MPFX one in `mx_dot_prod`, so the reported speedup isolates the
   library's contribution.
 - Test `mx_dot_prod`'s rounding on constructed inputs whose sums do
-  not fit in a double; the example's header says why.
+  not fit in a double: on 23,000 drawn inputs, a version that adds each
+  block's dot product in plain double, then rounds to FP32, also passes
+  the check.
 
 ## Later
 

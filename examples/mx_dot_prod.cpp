@@ -13,9 +13,8 @@
  *
  * The two implementations must then agree bit for bit, with a finite result,
  * on every input; a pairing that does not prints FAIL in place of its times,
- * and the program exits 1. On 23,000 drawn inputs, a version that adds each
- * block's dot product to the accumulator in plain double, then rounds to
- * FP32, passes the check too.
+ * and the program exits 1. The check does not test the accumulator's
+ * rounding (see ROADMAP.md).
  *
  * Build with CMake and -DBUILD_EXAMPLES=ON (needs SoftFloat; see
  * install_softfloat.sh), then run
@@ -69,7 +68,6 @@ struct mx_params<MX::E4M3> {
     static constexpr int P = 4;
     static constexpr int NMIN = -10;
     static constexpr double MAX = 448.0;
-    
 };
 
 template <>
@@ -111,8 +109,7 @@ constexpr const char* mx_name(MX m) {
     return "???";
 }
 
-// Exact power of two, 2^e, as a double. Constexpr so that fixed-point scale
-// factors fold into a single multiply instead of an out-of-line ldexp call.
+// Exact 2^e, usable in constant expressions.
 constexpr double exp2i(int e) {
     double r = 1.0;
     const double base = e < 0 ? 0.5 : 2.0;
@@ -133,7 +130,7 @@ std::vector<mx_block_t> mx_block_quantize(const std::array<double, N>& vec) {
     // rounding context
     constexpr int P = mx_params<F>::P;
     constexpr int NMIN = mx_params<F>::NMIN;
-    constexpr int MAX = mx_params<F>::MAX;
+    constexpr double MAX = mx_params<F>::MAX;
     int EMAX = std::ilogb(MAX);
 
     // Round to nearest and saturate, so an element past MAX becomes MAX
@@ -145,7 +142,7 @@ std::vector<mx_block_t> mx_block_quantize(const std::array<double, N>& vec) {
     for (size_t i = 0; i < num_blocks; i++) {
         const size_t start_idx = i * K;
         const size_t end_idx = std::min(start_idx + K, N);
-            
+
         // compute largest exponent
         int max_e = 0;
         bool e_valid = false;
@@ -161,7 +158,7 @@ std::vector<mx_block_t> mx_block_quantize(const std::array<double, N>& vec) {
             }
         }
 
-        // scale factor is 2 ** max_e
+        // scale factor is 2^(max_e - EMAX)
         const double scale = std::ldexp(1.0, max_e - EMAX);
 
         // divide by scale and quantize
@@ -182,19 +179,15 @@ double mx_dot_prod_sf(const std::vector<mx_block_t>& a_blocks, const std::vector
 
     float32_t result {};
     for (size_t i = 0; i < a_blocks.size(); i++) {
-        // unpack blocks
         const auto [a_scale, a_elts] = a_blocks[i];
         const auto [b_scale, b_elts] = b_blocks[i];
 
-        // multiply scales
         const double scale = a_scale * b_scale;
 
         // compute inner dot product
         float128_t scaled_prod;
         if constexpr (FA == MX::E5M2 || FB == MX::E5M2) {
-            // need to use FP128 uniformly
-
-            // compute unscaled dot product using FP128
+            // compute unscaled dot product in FP128
             float128_t prod {};
             for (size_t j = 0; j < a_elts.size(); j++) {
                 const double p = a_elts[j] * b_elts[j];
@@ -243,16 +236,13 @@ double mx_dot_prod_impl(const std::vector<mx_block_t>& a_blocks, const std::vect
     constexpr auto B_EXPMIN = mx_params<FB>::NMIN + 1;
     MPFX_ASSERT(a_blocks.size() == b_blocks.size(), "block size mismatch");
 
-    // rounding contexts
     const mpfx::IEEE754Context accum_ctx(8, 32, mpfx::RM::RNE);
 
     double result = 0.0;
     for (size_t i = 0; i < a_blocks.size(); i++) {
-        // unpack blocks
         const auto [a_scale, a_elts] = a_blocks[i];
         const auto [b_scale, b_elts] = b_blocks[i];
 
-        // multiply scales
         const double scale = a_scale * b_scale;
 
         // compute scaled dot product
@@ -282,8 +272,10 @@ double mx_dot_prod_impl(const std::vector<mx_block_t>& a_blocks, const std::vect
             const mpfx::uint128_t prod_lo = abs_prod & MASK;
 
             // convert to double with scaling (apply sign to all parts uniformly)
-            double scaled_hi = sgn * static_cast<double>(prod_hi) * std::ldexp(1.0, A_EXPMIN + B_EXPMIN + SPLIT);
-            double scaled_lo = sgn * static_cast<double>(prod_lo) * std::ldexp(1.0, A_EXPMIN + B_EXPMIN);
+            constexpr double HI_SCALE = exp2i(A_EXPMIN + B_EXPMIN + SPLIT);
+            constexpr double LO_SCALE = exp2i(A_EXPMIN + B_EXPMIN);
+            double scaled_hi = sgn * static_cast<double>(prod_hi) * HI_SCALE;
+            double scaled_lo = sgn * static_cast<double>(prod_lo) * LO_SCALE;
 
             // scale the product
             scaled_hi *= scale;
@@ -293,8 +285,7 @@ double mx_dot_prod_impl(const std::vector<mx_block_t>& a_blocks, const std::vect
             result = mpfx::add3(scaled_hi, scaled_lo, result, accum_ctx);
         } else if constexpr ((FA == MX::E5M2 && FB == MX::E4M3) || (FA == MX::E4M3 && FB == MX::E5M2)) {
             // unscaled dot product should be performed with at least 2*P bits of
-            // precision. The product fits in int64, and multiplying by the constant
-            // 2^-(A_EXPMIN+B_EXPMIN) folds at compile time (vs. an out-of-line ldexp).
+            // precision; the product fits in int64.
             constexpr double TO_FIXED = exp2i(-(A_EXPMIN + B_EXPMIN));
 
             int64_t prod = 0;
@@ -307,16 +298,16 @@ double mx_dot_prod_impl(const std::vector<mx_block_t>& a_blocks, const std::vect
             static constexpr int SPLIT = 40;
             static constexpr mpfx::uint128_t MASK = (mpfx::uint128_t(1) << SPLIT) - 1;
 
-            // break up prod into 2 parts so that we can convert to double without rounding
-            // decompose absolute value to avoid cancellation in EFT
             const double sgn = prod < 0 ? -1.0 : 1.0;
             const uint64_t abs_prod = prod < 0 ? static_cast<uint64_t>(-prod) : static_cast<uint64_t>(prod);
             const uint64_t prod_hi = abs_prod >> SPLIT;
             const uint64_t prod_lo = abs_prod & MASK;
 
             // convert to double with scaling (apply sign to both parts uniformly)
-            double scaled_hi = sgn * static_cast<double>(prod_hi) * std::ldexp(1.0, A_EXPMIN + B_EXPMIN + SPLIT);
-            double scaled_lo = sgn * static_cast<double>(prod_lo) * std::ldexp(1.0, A_EXPMIN + B_EXPMIN);
+            constexpr double HI_SCALE = exp2i(A_EXPMIN + B_EXPMIN + SPLIT);
+            constexpr double LO_SCALE = exp2i(A_EXPMIN + B_EXPMIN);
+            double scaled_hi = sgn * static_cast<double>(prod_hi) * HI_SCALE;
+            double scaled_lo = sgn * static_cast<double>(prod_lo) * LO_SCALE;
 
             // scale the product
             scaled_hi *= scale;
@@ -354,7 +345,7 @@ TimingResult time_dot_prod(
     for (size_t i = 0; i < N; i++) {
         x_blocks[i] = mx_block_quantize<32, FA>(x_vals[i]);
         y_blocks[i] = mx_block_quantize<32, FB>(y_vals[i]);
-    } 
+    }
 
     // Time softfloat reference implementation
     double sf_time;
@@ -386,7 +377,7 @@ TimingResult time_dot_prod(
 
     // Check the timed results: the two implementations compute the same
     // function, so they must agree bit for bit, and on these inputs a
-    // correct result is always finite. A fast wrong result is no speedup.
+    // correct result is always finite.
     size_t num_mismatches = 0;
     for (size_t i = 0; i < N; i++) {
         const bool agree = std::isfinite(sf_results[i])
@@ -412,10 +403,8 @@ TimingResult time_dot_prod(
 
 
 int main(int argc, char* argv[]) {
-    // Command line arguments: number of inputs to test, and an optional seed
-    // for them, fixed by default so a run can be repeated. The same seed gives
-    // the same inputs only under the same standard library, since the
-    // algorithm behind std::normal_distribution varies between them.
+    // <num_inputs> [seed]: a seed reproduces inputs only under the same
+    // standard library (std::normal_distribution varies between them).
     if (argc < 2 || argc > 3) {
         std::cerr << "Usage: " << argv[0] << " <num_inputs> [seed]" << std::endl;
         return 1;
@@ -425,14 +414,12 @@ int main(int argc, char* argv[]) {
     const uint64_t seed = argc == 3 ? std::stoull(argv[2]) : 1;
     std::cout << "Seed: " << seed << std::endl;
 
-    // Configuration
     static constexpr size_t LEN = 4096;
 
     // Generate random test data
     std::mt19937_64 rng(seed);
     std::normal_distribution<double> dist(0.0, 1.0);
 
-    // Random data
     std::vector<std::array<double, LEN>> x_vals(N);
     std::vector<std::array<double, LEN>> y_vals(N);
     for (size_t i = 0; i < N; i++) {
@@ -442,14 +429,10 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // Time implementations
     std::vector<TimingResult> results;
     results.push_back(time_dot_prod<MX::E5M2, MX::E5M2>(x_vals, y_vals));
     results.push_back(time_dot_prod<MX::E5M2, MX::E4M3>(x_vals, y_vals));
     results.push_back(time_dot_prod<MX::E4M3, MX::E4M3>(x_vals, y_vals));
-    // results.push_back(time_dot_prod<MX::E3M2, MX::E3M2>(x_vals, y_vals));
-    // results.push_back(time_dot_prod<MX::E2M3, MX::E2M3>(x_vals, y_vals));
-    // results.push_back(time_dot_prod<MX::E2M1, MX::E2M1>(x_vals, y_vals));
 
     // Print table; a configuration whose results fail the check shows no times
     const int cw = 14; // column width
