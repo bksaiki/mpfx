@@ -137,6 +137,6 @@ under `tests/`, and the programs under `examples/`, `benchmark/`, and
   per-operation path.
 - A same-mode engine for directed targets, which the rules license
   with no padding.
-- Nothing in the tree calls `to_fixed`, which scales by `std::ldexp`,
+- Only tests call `to_fixed`, which scales by `std::ldexp`,
   an out-of-line libm call with GCC 15 and glibc. Speed it up or
   prune it.
