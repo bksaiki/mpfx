@@ -15,6 +15,41 @@
 
 namespace mpfx {
 
+namespace detail {
+
+/// @brief Sign of an exact zero sum (IEEE 754-2019 §6.3).
+/// An exact zero sum is +0 under every rounding direction except RTN, where it is -0.
+/// Terms that are all zeros of one sign keep that sign. The engines already give +0
+/// (or the terms' shared sign), so only RTN needs a fix.
+/// @param r unrounded result
+/// @param rm rounding mode of the target format
+/// @param a first term
+/// @param rest remaining terms
+template<std::floating_point T, std::same_as<T>... Ts>
+inline T exact_zero_sum(T r, RM rm, T a, Ts... rest) {
+    if (r != 0 || rm != RM::RTN) {
+        return r;
+    }
+    const bool one_sign = (a == 0) && (... && (rest == 0))
+        && (... && (std::signbit(rest) == std::signbit(a)));
+    return one_sign ? r : -static_cast<T>(0);
+}
+
+/// @brief Sign of an exact zero `x * y + z`, by the rule for sums.
+/// The product is a term of sign `signbit(x) != signbit(y)`, and is zero only if `x` or `y` is,
+/// so no multiplication is needed.
+template<std::floating_point T>
+inline T exact_zero_fma(T r, RM rm, T x, T y, T z) {
+    if (r != 0 || rm != RM::RTN) {
+        return r;
+    }
+    const bool one_sign = (x == 0 || y == 0) && z == 0
+        && (std::signbit(x) != std::signbit(y)) == std::signbit(z);
+    return one_sign ? r : -static_cast<T>(0);
+}
+
+} // end namespace detail
+
 /// @brief Engine types for arithmetic operations
 enum class Engine {
     FP_RTO,    // Native floating-point using RTO emulation
@@ -96,27 +131,27 @@ T add(T x, T y, const Context& ctx) {
         // compute result using RTO engine
         const T r = engine_fp::add(x, y, ctx.round_prec());
         // use context to round
-        result = ctx.round<FlagMask>(r);
+        result = ctx.round<FlagMask>(detail::exact_zero_sum(r, ctx.rm(), x, y));
     } else if constexpr (E == Engine::FP_EXACT) {
         // compute result using exact engine
         const T r = x + y;
         // use context to round
-        result = ctx.round<FlagMask>(r);
+        result = ctx.round<FlagMask>(detail::exact_zero_sum(r, ctx.rm(), x, y));
     } else if constexpr (E == Engine::SOFTFLOAT) {
         // compute result using SoftFloat engine
         const T r = engine_sf::add(x, y, ctx.round_prec());
         // use context to round
-        result = ctx.round<FlagMask>(r);
+        result = ctx.round<FlagMask>(detail::exact_zero_sum(r, ctx.rm(), x, y));
     } else if constexpr (E == Engine::FFLOAT) {
         // compute result using FloppyFloat engine
         const T r = engine_ff::add(x, y, ctx.round_prec());
         // use context to round
-        result = ctx.round<FlagMask>(r);
+        result = ctx.round<FlagMask>(detail::exact_zero_sum(r, ctx.rm(), x, y));
     } else if constexpr (E == Engine::EFT) {
         // compute result using Error-Free Transformation engine
         const T r = engine_eft::add(x, y, ctx.round_prec());
         // use context to round
-        result = ctx.round<FlagMask>(r);
+        result = ctx.round<FlagMask>(detail::exact_zero_sum(r, ctx.rm(), x, y));
     } else {
         MPFX_STATIC_ASSERT(false, "Unsupported engine");
     }
@@ -152,27 +187,27 @@ T sub(T x, T y, const Context& ctx) {
         // compute result using RTO engine
         const T r = engine_fp::sub(x, y, ctx.round_prec());
         // use context to round
-        result = ctx.round<FlagMask>(r);
+        result = ctx.round<FlagMask>(detail::exact_zero_sum(r, ctx.rm(), x, -y));
     } else if constexpr (E == Engine::FP_EXACT) {
         // compute result using exact engine
         const T r = x - y;
         // use context to round
-        result = ctx.round<FlagMask>(r);
+        result = ctx.round<FlagMask>(detail::exact_zero_sum(r, ctx.rm(), x, -y));
     } else if constexpr (E == Engine::SOFTFLOAT) {
         // compute result using SoftFloat engine
         const T r = engine_sf::sub(x, y, ctx.round_prec());
         // use context to round
-        result = ctx.round<FlagMask>(r);
+        result = ctx.round<FlagMask>(detail::exact_zero_sum(r, ctx.rm(), x, -y));
     } else if constexpr (E == Engine::FFLOAT) {
         // compute result using FloppyFloat engine
         const T r = engine_ff::sub(x, y, ctx.round_prec());
         // use context to round
-        result = ctx.round<FlagMask>(r);
+        result = ctx.round<FlagMask>(detail::exact_zero_sum(r, ctx.rm(), x, -y));
     } else if constexpr (E == Engine::EFT) {
         // compute result using error-free transformations
         const T r = engine_eft::sub(x, y, ctx.round_prec());
         // use context to round
-        result = ctx.round<FlagMask>(r);
+        result = ctx.round<FlagMask>(detail::exact_zero_sum(r, ctx.rm(), x, -y));
     } else {
         MPFX_STATIC_ASSERT(false, "Unsupported engine");
     }
@@ -358,8 +393,8 @@ T sqrt(T x, const Context& ctx) {
     // check for special values to raise status flags
     if constexpr (FlagMask & Flags::INVALID_FLAG) {
         if (std::isnan(result)) [[unlikely]] {
-            if (x < 0.0 && std::isfinite(x)) {
-                // invalid operation: sqrt of negative number
+            if (x < 0.0) {
+                // invalid operation: sqrt of a negative number, -inf included
                 flags.set_invalid();
             }
         }
@@ -387,22 +422,22 @@ T fma(T x, T y, T z, const Context& ctx) {
         // compute result using RTO engine
         const T r = engine_fp::fma(x, y, z, ctx.round_prec());
         // use context to round
-        result = ctx.round<FlagMask>(r);
+        result = ctx.round<FlagMask>(detail::exact_zero_fma(r, ctx.rm(), x, y, z));
     } else if constexpr (E == Engine::SOFTFLOAT) {
         // compute result using SoftFloat engine
         const T r = engine_sf::fma(x, y, z, ctx.round_prec());
         // use context to round
-        result = ctx.round<FlagMask>(r);
+        result = ctx.round<FlagMask>(detail::exact_zero_fma(r, ctx.rm(), x, y, z));
     } else if constexpr (E == Engine::FFLOAT) {
         // compute result using FloppyFloat engine
         const T r = engine_ff::fma(x, y, z, ctx.round_prec());
         // use context to round
-        result = ctx.round<FlagMask>(r);
+        result = ctx.round<FlagMask>(detail::exact_zero_fma(r, ctx.rm(), x, y, z));
     } else if constexpr (E == Engine::EFT) {
         // compute result using error-free transformations
         const T r = engine_eft::fma(x, y, z, ctx.round_prec());
         // use context to round
-        result = ctx.round<FlagMask>(r);
+        result = ctx.round<FlagMask>(detail::exact_zero_fma(r, ctx.rm(), x, y, z));
     } else {
         MPFX_STATIC_ASSERT(false, "Unsupported engine");
     }
@@ -450,7 +485,7 @@ T add3(T x, T y, T z, const Context& ctx) {
         // compute result using error-free transformations
         const T r = engine_eft::add3(x, y, z, ctx.round_prec());
         // use context to round
-        result = ctx.round<FlagMask>(r);
+        result = ctx.round<FlagMask>(detail::exact_zero_sum(r, ctx.rm(), x, y, z));
     } else {
         MPFX_STATIC_ASSERT(false, "Unsupported engine");
     }
@@ -494,7 +529,7 @@ T add4(T x, T y, T z, T w, const Context& ctx) {
         // compute result using error-free transformations
         const T r = engine_eft::add4(x, y, z, w, ctx.round_prec());
         // use context to round
-        result = ctx.round<FlagMask>(r);
+        result = ctx.round<FlagMask>(detail::exact_zero_sum(r, ctx.rm(), x, y, z, w));
     } else {
         MPFX_STATIC_ASSERT(false, "Unsupported engine");
     }

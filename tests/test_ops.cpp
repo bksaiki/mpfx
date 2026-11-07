@@ -142,6 +142,50 @@ static double ref_fma(double x, double y, double z, int p, mpfx::RM rm) {
 }
 
 
+// IEEE 754-2019 §6.3: an exact zero sum is -0 under RTN and +0 otherwise,
+// unless every term is a zero of one sign. `EXPECT_EQ` on doubles cannot see
+// the sign of zero, so these check `std::signbit`.
+template<mpfx::Engine E, typename T>
+static void check_exact_zero_sign() {
+    constexpr auto F = mpfx::Flags::ALL_FLAGS;
+    const T one = 1;
+    const T zero = 0;
+    for (const auto rm : { mpfx::RM::RNE, mpfx::RM::RTP, mpfx::RM::RTN, mpfx::RM::RTZ, mpfx::RM::RAZ }) {
+        const mpfx::IEEE754Context ctx(5, 16, rm);
+        const bool neg = rm == mpfx::RM::RTN;
+
+        EXPECT_EQ(std::signbit(mpfx::add<E, F, T>(one, -one, ctx)), neg);
+        EXPECT_EQ(std::signbit(mpfx::sub<E, F, T>(one, one, ctx)), neg);
+        EXPECT_EQ(std::signbit(mpfx::fma<E, F, T>(one, one, -one, ctx)), neg);
+        EXPECT_EQ(std::signbit(mpfx::add<E, F, T>(zero, -zero, ctx)), neg);
+        EXPECT_EQ(std::signbit(mpfx::sub<E, F, T>(zero, zero, ctx)), neg);
+
+        // zeros of one sign keep it
+        EXPECT_FALSE(std::signbit(mpfx::add<E, F, T>(zero, zero, ctx)));
+        EXPECT_TRUE(std::signbit(mpfx::add<E, F, T>(-zero, -zero, ctx)));
+        EXPECT_TRUE(std::signbit(mpfx::sub<E, F, T>(-zero, zero, ctx)));
+        EXPECT_TRUE(std::signbit(mpfx::fma<E, F, T>(-zero, one, -zero, ctx)));
+        EXPECT_FALSE(std::signbit(mpfx::fma<E, F, T>(zero, one, zero, ctx)));
+
+        if constexpr (E == mpfx::Engine::EFT) {
+            EXPECT_EQ(std::signbit(mpfx::add3<E, F, T>(one, -one, zero, ctx)), neg);
+            EXPECT_EQ(std::signbit(mpfx::add4<E, F, T>(one, one, -one, -one, ctx)), neg);
+            EXPECT_TRUE(std::signbit(mpfx::add3<E, F, T>(-zero, -zero, -zero, ctx)));
+            EXPECT_FALSE(std::signbit(mpfx::add4<E, F, T>(zero, zero, zero, zero, ctx)));
+        }
+    }
+}
+
+TEST(OpsFloat, TestExactZeroSign) {
+    check_exact_zero_sign<mpfx::Engine::FP_RTO, double>();
+    check_exact_zero_sign<mpfx::Engine::EFT, double>();
+    check_exact_zero_sign<mpfx::Engine::SOFTFLOAT, double>();
+    check_exact_zero_sign<mpfx::Engine::FFLOAT, double>();
+    check_exact_zero_sign<mpfx::Engine::FP_RTO, float>();
+    check_exact_zero_sign<mpfx::Engine::EFT, float>();
+}
+
+
 TEST(OpsFloat, TestAddUniform) {
     static constexpr size_t N = 1000000;
 

@@ -170,7 +170,9 @@ private:
     double direct(Op op, const Format& f, mpfr_rnd_t rnd, bool bound_emax) {
         const bool exact_path = (op != Op::DIV && op != Op::SQRT);
         if (exact_path) {
-            const int t_hi = apply(hi_, op, MPFR_RNDZ);  // default (huge) range
+            // Exact at 512 bits, so `rnd` only picks the sign of an exact zero:
+            // -0 under RNDD, +0 otherwise (IEEE 754-2019 §6.3, as mpfr_add does).
+            const int t_hi = apply(hi_, op, rnd);  // default (huge) range
             EXPECT_EQ(t_hi, 0) << "exact intermediate lost precision";
         }
         ExpRange range(f.mpfr_emin(), bound_emax ? f.mpfr_emax() : default_emax_);
