@@ -146,6 +146,15 @@ TEST(TestFlags, TestInvalidFlag) {
     mpfx::sqrt(-0.5, ctx);
     EXPECT_TRUE(mpfx::flags.invalid());
 
+    // Test sqrt: -inf is negative too (IEEE 754-2019 §7.2)
+    mpfx::flags.reset();
+    mpfx::sqrt(neg_inf, ctx);
+    EXPECT_TRUE(mpfx::flags.invalid());
+
+    mpfx::flags.reset();
+    mpfx::sqrt<mpfx::Engine::EFT>(neg_inf, ctx);
+    EXPECT_TRUE(mpfx::flags.invalid());
+
     // Test sqrt: NaN propagation should NOT set invalid flag
     mpfx::flags.reset();
     mpfx::sqrt(nan, ctx);
